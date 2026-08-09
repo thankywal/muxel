@@ -17,7 +17,6 @@ export const EMBEDDING_DIMENSIONS = 1024;
 export interface ResourceIds {
   d1DatabaseId: string;
   kvNamespaceId: string;
-  r2Bucket: string;
   vectorizeIndex: string;
 }
 
@@ -99,18 +98,6 @@ async function createKv(options: ProvisionOptions): Promise<string> {
   throw new MuxelError("upstream_failure", "could not determine the KV namespace id", { title });
 }
 
-async function createR2(options: ProvisionOptions): Promise<string> {
-  const name = `${options.prefix}-documents`;
-  progress(`  r2 bucket ${name}`);
-  const created = await runWrangler(["r2", "bucket", "create", name], { cwd: options.cwd });
-  if (created.code !== 0 && !alreadyExists(`${created.stdout}${created.stderr}`)) {
-    throw new MuxelError("upstream_failure", "could not create the R2 bucket", {
-      stderr: created.stderr.trim().slice(0, 500),
-    });
-  }
-  return name;
-}
-
 async function createVectorize(options: ProvisionOptions): Promise<string> {
   const name = `${options.prefix}-knowledge`;
   progress(`  vectorize index ${name}`);
@@ -129,7 +116,6 @@ async function createVectorize(options: ProvisionOptions): Promise<string> {
   if (created.code !== 0 && !alreadyExists(`${created.stdout}${created.stderr}`)) {
     throw new MuxelError("upstream_failure", "could not create the Vectorize index", {
       stderr: created.stderr.trim().slice(0, 500),
-      hint: "Vectorize requires the Workers Paid plan",
     });
   }
   return name;
@@ -141,7 +127,6 @@ export async function provision(options: ProvisionOptions): Promise<ResourceIds>
   return {
     d1DatabaseId: await createD1(options),
     kvNamespaceId: await createKv(options),
-    r2Bucket: await createR2(options),
     vectorizeIndex: await createVectorize(options),
   };
 }

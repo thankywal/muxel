@@ -28,14 +28,14 @@ Three things, all free, about six minutes.
    Keep both tokens.
 2. **Your Telegram account id.** Send `/start` to
    [@userinfobot](https://t.me/userinfobot). It replies with a number.
-3. **A Cloudflare account** on the Workers Paid plan, which is 5 USD a month.
-   Vectorize needs it.
+3. **A Cloudflare account.** The free plan is enough. No payment method is
+   needed, and Muxel does not use any resource that asks for one.
 
 ## Deploy from the browser
 
 Click the button above. Cloudflare will ask you to connect GitHub, then walk you
-through a setup page. Accept the suggested names for the KV namespace, the D1
-database and the R2 bucket, and fill in four fields.
+through a setup page. Accept the suggested names for the KV namespace and the
+D1 database, then fill in four fields.
 
 **The Vectorize index needs two values that cannot be filled in for you.**
 Cloudflare picks them when the index is created and the Worker configuration has
@@ -120,11 +120,28 @@ and effectively free.
 
 ## Running costs
 
-Muxel charges nothing. Your Cloudflare bill is the only cost.
+Muxel charges nothing, and a small shop fits inside the Cloudflare free plan.
 
-Vectorize requires the Workers Paid plan at 5 USD a month. A shop under roughly
-three hundred customer messages a day typically stays inside the free inference
-allowance on top of that.
+| Resource   | Free allowance                        | What it means here                |
+| ---------- | ------------------------------------- | --------------------------------- |
+| Workers AI | 10,000 neurons a day                  | about 330 replies a day on Gemma 4 |
+| Vectorize  | 5 M stored, 30 M queried dimensions   | about 4,800 chunks of documents   |
+| D1         | 5 GB, 100 k row writes a day          | far past what a shop generates    |
+| Workers    | 100,000 requests a day                | far past what a shop generates    |
+
+At 1,024 dimensions per vector, the Vectorize storage allowance works out to
+roughly 4,800 chunks, which is on the order of a thousand pages of price lists
+and policies.
+
+Going past the inference allowance costs 0.011 USD per 1,000 neurons, so the
+step beyond free is cents rather than a plan change. Selecting a model from
+another provider is the one thing that needs money up front, because you pay
+that provider directly.
+
+Muxel deliberately uses no R2 bucket. It would only archive the original of an
+uploaded file, which nothing reads back, and enabling R2 requires a payment
+method even inside its own free tier. Add a binding named `DOCUMENTS` if you
+want originals kept.
 
 ## Security
 

@@ -28,12 +28,11 @@
     }
   ],
 
-  "r2_buckets": [
-    {
-      "binding": "DOCUMENTS",
-      "bucket_name": "muxel-documents"
-    }
-  ],
+  // There is deliberately no R2 binding. Muxel would only use it to archive the
+  // original of an uploaded document, which nothing ever reads back, and
+  // enabling R2 requires a payment method even inside its free tier. Everything
+  // else here runs on the Workers Free plan. Add a binding named DOCUMENTS if
+  // you want originals kept; the runtime picks it up automatically.
 
   "kv_namespaces": [
     {

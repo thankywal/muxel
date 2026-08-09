@@ -69,10 +69,16 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
     });
   }
 
-  const objectKey = `${input.businessId}/${generateId()}/${input.filename}`;
-  await env.DOCUMENTS.put(objectKey, input.body, {
-    httpMetadata: { contentType: input.contentType },
-  });
+  // Archiving the original is optional. Nothing reads it back, and requiring
+  // it would put an R2 billing prompt in front of someone setting up their
+  // first shop for a convenience they may never use.
+  let objectKey = "";
+  if (env.DOCUMENTS !== undefined) {
+    objectKey = `${input.businessId}/${generateId()}/${input.filename}`;
+    await env.DOCUMENTS.put(objectKey, input.body, {
+      httpMetadata: { contentType: input.contentType },
+    });
+  }
 
   const document = await createDocument(env, {
     businessId: input.businessId,

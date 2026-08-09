@@ -68,7 +68,6 @@ async function writeConfiguration(cwd: string, ids: ResourceIds): Promise<void> 
   const updated = source
     .replace(/("database_id"\s*:\s*")[^"]*(")/, `$1${ids.d1DatabaseId}$2`)
     .replace(/("binding"\s*:\s*"STATE",\s*\n\s*"id"\s*:\s*")[^"]*(")/, `$1${ids.kvNamespaceId}$2`)
-    .replace(/("bucket_name"\s*:\s*")[^"]*(")/, `$1${ids.r2Bucket}$2`)
     .replace(/("index_name"\s*:\s*")[^"]*(")/, `$1${ids.vectorizeIndex}$2`);
 
   if (updated === source) {
@@ -167,7 +166,6 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
         ["account", accountId],
         ["database", resources.d1DatabaseId],
         ["namespace", resources.kvNamespaceId],
-        ["bucket", resources.r2Bucket],
         ["index", resources.vectorizeIndex],
         ["worker", workerUrl ?? "not deployed"],
         ["setup", setup],

@@ -9,7 +9,6 @@
 export interface Env {
   // Storage and compute bindings, all provisioned inside the operator account.
   readonly DB: D1Database;
-  readonly DOCUMENTS: R2Bucket;
   readonly STATE: KVNamespace;
   readonly KNOWLEDGE: Vectorize;
   readonly AI: Ai;
@@ -41,6 +40,17 @@ export interface Env {
    * generates one on first use and keeps it in KV.
    */
   readonly MASTER_KEY?: string;
+
+  /**
+   * Optional archive of uploaded files.
+   *
+   * Nothing reads it back. It exists only so that a future change to the
+   * segmentation strategy could be replayed without asking the owner to upload
+   * everything again, which is not worth putting a billing prompt in front of
+   * someone setting up their first shop. Add an R2 binding named DOCUMENTS to
+   * turn it on.
+   */
+  readonly DOCUMENTS?: R2Bucket;
 }
 
 /** Settings that must be present before setup can complete. */
