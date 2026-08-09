@@ -1,0 +1,29 @@
+{
+  "name": "@muxel/core",
+  "version": "0.1.0",
+  "description": "Shared domain types, identifiers and protocol codecs for Muxel",
+  "license": "Apache-2.0",
+  "author": "thankywal",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thankywal/muxel.git",
+    "directory": "packages/core"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

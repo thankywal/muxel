@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    // The DOM lib is used only for the web standard globals that both the
+    // Workers runtime and Node provide: TextEncoder, crypto, atob and btoa.
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": ["src/**/*.ts"]
+}
