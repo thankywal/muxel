@@ -1,0 +1,32 @@
+{
+  "name": "muxel-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Muxel workspace root",
+  "license": "Apache-2.0",
+  "author": "thankywal",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thankywal/muxel.git"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "build": "pnpm -r --filter=./packages/* run build",
+    "typecheck": "pnpm -r --filter=./packages/* run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "pnpm run typecheck",
+    "clean": "pnpm -r exec rm -rf dist .wrangler node_modules/.cache"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "wrangler": "^4.95.0"
+  }
+}
