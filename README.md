@@ -73,13 +73,51 @@ page runs setup again and says what is wrong.
 <details>
 <summary>After deploying, make your copy private</summary>
 
-Cloudflare clones this repository into your own GitHub account. No business data
-ever goes there, because all of it lives in your D1, R2 and Vectorize resources
-rather than in files. The clone does end up holding your resource identifiers,
-which are not credentials but are not worth publishing either. Set the
-repository to private under Settings, Change visibility. Builds keep working.
+Cloudflare copies this repository into your own GitHub account, and the copy is
+created **public**.
+
+No business data ever goes there. Documents, conversations and customer records
+live in D1 and Vectorize, and the Worker has no way to write to git. Secrets are
+not written either: they are stored as Worker secrets, and `.dev.vars` is
+ignored.
+
+What the copy does hold is the identifiers of the resources in your account,
+written into `wrangler.jsonc` during deployment. Those are not credentials and
+cannot be used to read anything without your account, but they are not worth
+publishing. Set the repository to private under Settings, Change visibility.
+Builds keep working.
 
 </details>
+
+## Staying up to date
+
+The deploy button makes an independent copy rather than a GitHub fork, so there
+is no Sync fork button and nothing links your copy back here.
+
+`.github/workflows/update.yml` closes that gap. It runs daily inside your own
+GitHub account, pulls this repository, keeps your `wrangler.jsonc` and pushes to
+your copy. That push triggers your Workers Build, which redeploys and finishes
+setup. Muxel needs no access to your account for any of it.
+
+An update is only applied if the upstream commit's own tests passed, so a broken
+commit does not reach a live shop unattended. Run it immediately from the
+Actions tab with **Run workflow**.
+
+Your copy tracks upstream, so its history is replaced rather than merged and
+local code edits do not survive. Configure through the console instead. If you
+do intend to change the code, disable the workflow in the Actions tab first.
+
+A deployment created before this workflow existed does not have it yet. Update
+once by hand and every update after that is automatic:
+
+```bash
+git clone https://github.com/<you>/muxel.git && cd muxel
+git remote add upstream https://github.com/thankywal/muxel.git
+git fetch upstream
+git checkout upstream/main -- .
+git checkout HEAD -- wrangler.jsonc
+git commit -am "Update from upstream" && git push
+```
 
 ## Deploy from a terminal
 
