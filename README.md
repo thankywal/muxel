@@ -62,11 +62,13 @@ Then the two secrets:
 | `ADMIN_BOT_TOKEN`   | Console bot token from BotFather           |
 | `OWNER_TELEGRAM_ID` | Your number from @userinfobot, digits only |
 
-Everything else provisions itself. When the deploy finishes, open the Worker
-address Cloudflare shows you. That first visit is what lets the Worker learn its
-own public address and register the Telegram webhook, so do not skip it.
+Everything else provisions itself, including the Telegram webhook: the deploy
+step makes the first request to the Worker so it can learn its own address.
 
-Then open your console bot and send `/start`.
+When the build finishes, open your console bot and send `/start`.
+
+If the bot stays silent, open the Worker address Cloudflare showed you. That
+page runs setup again and says what is wrong.
 
 <details>
 <summary>After deploying, make your copy private</summary>
