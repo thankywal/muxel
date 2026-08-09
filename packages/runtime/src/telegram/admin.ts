@@ -40,13 +40,52 @@ import type { Env } from "../env.js";
 import { TelegramClient, type TelegramUpdate } from "./api.js";
 import { buildKeyboard, resolveSpilled, row, type ButtonSpec } from "./keyboard.js";
 
-/** Selectable models, addressed by index so callback payloads stay short. */
-export const MODEL_PRESETS: readonly { readonly label: string; readonly id: string }[] = [
-  { label: "Llama 3.3 70B", id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
-  { label: "Llama 4 Scout", id: "workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct" },
-  { label: "Gemini 2.5 Flash", id: "google-ai-studio/gemini-2.5-flash" },
-  { label: "DeepSeek Chat", id: "deepseek/deepseek-chat" },
-  { label: "Claude Sonnet 4.5", id: "anthropic/claude-sonnet-4-5" },
+export interface ModelPreset {
+  readonly label: string;
+  readonly id: string;
+  /**
+   * Whether the operator must supply a provider key before this model works.
+   *
+   * A Cloudflare token reaches Workers AI models and nothing else. For any
+   * other provider the gateway forwards that token upstream, where it is
+   * rejected. Those models need a key stored in the gateway or unified billing
+   * credit, so the console marks them rather than letting an operator select a
+   * model that will fail on the first customer message.
+   */
+  readonly requiresProviderKey: boolean;
+}
+
+/**
+ * Selectable models, addressed by index so callback payloads stay short.
+ *
+ * Ordered cheapest first. Costs below are measured against a retrieval reply of
+ * roughly 2,000 input tokens, using the completion lengths these models
+ * actually produced rather than the length of the visible answer.
+ */
+export const MODEL_PRESETS: readonly ModelPreset[] = [
+  // About 0.33 US cents per thousand replies, and roughly 330 replies a day sit
+  // inside the free daily allowance.
+  {
+    label: "Gemma 4 26B",
+    id: "workers-ai/@cf/google/gemma-4-26b-a4b-it",
+    requiresProviderKey: false,
+  },
+  // Terser and a little faster, about 2.6 times the cost of Gemma 4.
+  {
+    label: "Llama 3.3 70B",
+    id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    requiresProviderKey: false,
+  },
+  {
+    label: "GPT-5.6 Luna",
+    id: "openai/gpt-5.6-luna",
+    requiresProviderKey: true,
+  },
+  {
+    label: "Claude Sonnet 4.5",
+    id: "anthropic/claude-sonnet-4-5",
+    requiresProviderKey: true,
+  },
 ];
 
 const PENDING_PREFIX = "pending:";
@@ -148,15 +187,26 @@ function businessScreen(
 
 function modelScreen(business: Business): Screen {
   return {
-    text: `<b>Model for ${escapeHtml(business.name)}</b>\n\nPick the model that answers customers.`,
+    text: [
+      `<b>Model for ${escapeHtml(business.name)}</b>`,
+      "",
+      "Pick the model that answers customers.",
+      "",
+      "Models marked with a key need a provider key stored in your AI Gateway.",
+      "Your Cloudflare login on its own covers the unmarked ones.",
+    ].join("\n"),
     rows: [
-      ...MODEL_PRESETS.map((preset, index) =>
-        row({
-          text: preset.id === business.model ? `${preset.label} (current)` : preset.label,
+      ...MODEL_PRESETS.map((preset, index) => {
+        const marks = [
+          preset.id === business.model ? "current" : null,
+          preset.requiresProviderKey ? "needs key" : null,
+        ].filter((mark) => mark !== null);
+        return row({
+          text: marks.length > 0 ? `${preset.label} (${marks.join(", ")})` : preset.label,
           action: "setmdl",
           args: [business.id, String(index)],
-        }),
-      ),
+        });
+      }),
       row({ text: "Back", action: "biz", args: [business.id] }),
     ],
   };

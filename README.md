@@ -141,6 +141,26 @@ packages/runtime    the Worker
 packages/cli        the muxel command
 ```
 
+### Checking the pipeline without Telegram
+
+`scripts/e2e.mjs` runs the whole retrieval path against a real Cloudflare
+account with no Worker deployed and no bot connected. It segments the sample
+business document in `fixtures/`, embeds it, retrieves against a set of Burmese
+questions and prints what each model answered.
+
+```bash
+export CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=...
+node scripts/e2e.mjs --models "workers-ai/@cf/google/gemma-4-26b-a4b-it"
+```
+
+The question set includes two answers that must be refusals and one subject the
+document says nothing about, so a model that invents an answer fails visibly.
+If the token cannot reach Vectorize the run falls back to an exact local cosine
+search and says so, which keeps it usable on a token that only carries Workers
+AI permissions.
+
+### Command line contract
+
 The command line tool is designed to be driven by scripts and coding agents as
 well as people. Every command accepts `--json`, never requires an interactive
 terminal, and exits with a code that identifies the failure class rather than a

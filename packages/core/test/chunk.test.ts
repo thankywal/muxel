@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunkText } from "../src/rag/chunk.js";
+import { chunkText } from "../src/chunk.js";
 
 /**
  * Burmese is written without spaces between words. A splitter that counts

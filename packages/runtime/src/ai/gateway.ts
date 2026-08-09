@@ -15,6 +15,7 @@ const GATEWAY_ROOT = "https://gateway.ai.cloudflare.com/v1";
 
 interface CompletionChoice {
   readonly message?: { readonly content?: string };
+  readonly finish_reason?: string;
 }
 
 interface CompletionResponse {
@@ -26,6 +27,18 @@ interface CompletionResponse {
   };
 }
 
+/**
+ * Default output budget.
+ *
+ * Reasoning models spend most of their completion budget before emitting a
+ * single visible character. Measured against Gemma 4, a reply of 133 characters
+ * consumed between 366 and 566 completion tokens, and the hidden portion varied
+ * from nothing to about 1,400 characters on identical input. A budget sized for
+ * the visible answer alone truncates the model mid thought and yields an empty
+ * reply, so the default is set well above what the answer itself needs.
+ */
+const DEFAULT_OUTPUT_TOKENS = 2000;
+
 export interface GenerateInput {
   readonly model: string;
   readonly system: string;
@@ -36,8 +49,61 @@ export interface GenerateInput {
   readonly businessId: string;
 }
 
-/** Sends a chat completion and returns the assistant reply. */
+interface Attempt {
+  readonly text: string;
+  readonly finishReason: string | null;
+  readonly model: string;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+}
+
+/**
+ * Sends a chat completion and returns the assistant reply.
+ *
+ * A reasoning model can return an empty message when it exhausts the budget
+ * before finishing. That happens intermittently on identical input, so a single
+ * empty response is retried once with a larger budget rather than surfaced to
+ * the customer as a failure.
+ */
 export async function generate(env: Env, input: GenerateInput): Promise<InferenceResult> {
+  const budget = input.maxOutputTokens ?? DEFAULT_OUTPUT_TOKENS;
+
+  const first = await attempt(env, input, budget);
+  if (first.text.length > 0) {
+    return toResult(first);
+  }
+
+  console.warn("empty completion, retrying with a larger budget", {
+    businessId: input.businessId,
+    model: input.model,
+    finishReason: first.finishReason,
+    outputTokens: first.outputTokens,
+  });
+
+  const second = await attempt(env, input, budget * 2);
+  if (second.text.length === 0) {
+    throw new MuxelError("upstream_failure", "inference returned no content", {
+      model: input.model,
+      finishReason: second.finishReason,
+    });
+  }
+  return toResult(second);
+}
+
+function toResult(attempted: Attempt): InferenceResult {
+  return {
+    text: attempted.text,
+    model: attempted.model,
+    inputTokens: attempted.inputTokens,
+    outputTokens: attempted.outputTokens,
+  };
+}
+
+async function attempt(
+  env: Env,
+  input: GenerateInput,
+  maxOutputTokens: number,
+): Promise<Attempt> {
   const url = `${GATEWAY_ROOT}/${env.CF_ACCOUNT_ID}/${env.AI_GATEWAY_ID}/compat/chat/completions`;
 
   const response = await fetch(url, {
@@ -51,7 +117,7 @@ export async function generate(env: Env, input: GenerateInput): Promise<Inferenc
     },
     body: JSON.stringify({
       model: input.model,
-      max_tokens: input.maxOutputTokens ?? 600,
+      max_tokens: maxOutputTokens,
       messages: [
         { role: "system", content: input.system },
         ...input.history.map((turn) => ({ role: turn.role, content: turn.content })),
@@ -71,15 +137,13 @@ export async function generate(env: Env, input: GenerateInput): Promise<Inferenc
   }
 
   const payload = (await response.json()) as CompletionResponse;
-  const text = payload.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || text.length === 0) {
-    throw new MuxelError("upstream_failure", "inference returned no content", {
-      model: input.model,
-    });
-  }
+  const choice = payload.choices?.[0];
 
   return {
-    text,
+    // An empty string is a valid outcome here. The caller decides whether to
+    // retry, because only it knows how much budget was already spent.
+    text: choice?.message?.content ?? "",
+    finishReason: choice?.finish_reason ?? null,
     model: payload.model ?? input.model,
     inputTokens: payload.usage?.prompt_tokens ?? null,
     outputTokens: payload.usage?.completion_tokens ?? null,

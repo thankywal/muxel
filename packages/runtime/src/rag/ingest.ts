@@ -7,12 +7,11 @@
  * HTML and CSV, rather than bundling a parser into the Worker.
  */
 
-import { generateId, MuxelError } from "@muxel/core";
+import { chunkText, generateId, MuxelError } from "@muxel/core";
 
 import { embedBatch } from "../ai/gateway.js";
 import { createDocument, insertChunks, setDocumentStatus } from "../db/queries.js";
 import type { Env } from "../env.js";
-import { chunkText } from "./chunk.js";
 
 /** Largest upload accepted. Telegram itself caps bot downloads at 20 MB. */
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
