@@ -1,18 +1,19 @@
 # Muxel secrets.
 #
-# Copy to .dev.vars for local development. The deploy flow reads this file to
-# work out what to ask for, so keep the keys accurate and the values empty.
+# The deploy flow reads this file to work out what to ask for, so it lists only
+# what setup cannot proceed without. Copy it to .dev.vars for local development.
 # Never commit real values: .dev.vars is ignored by git for that reason.
+#
+# Models from other providers need CF_ACCOUNT_ID and AI_GATEWAY_TOKEN as well.
+# Those are deliberately not listed here, because the default model does not
+# need them and an empty box with no explanation is worse than no box. Add them
+# from Settings, Variables and Secrets if you switch a business to GPT or
+# Claude.
 
-# Required. Token of the Telegram bot that serves the operator console.
+# Token of the Telegram bot that serves your private console.
 # Create it with @BotFather, then paste the whole token here.
 ADMIN_BOT_TOKEN=
 
-# Required. Your numeric Telegram account id, digits only.
+# Your numeric Telegram account id, digits only.
 # Send /start to @userinfobot in Telegram to find it.
 OWNER_TELEGRAM_ID=
-
-# Optional. Only needed if you switch a business to a model that is not on
-# Workers AI, such as GPT or Claude. The default model needs neither of these.
-CF_ACCOUNT_ID=
-AI_GATEWAY_TOKEN=

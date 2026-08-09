@@ -33,6 +33,32 @@ import { TelegramClient } from "./telegram/api.js";
 
 export const ORIGIN_KEY = "system:origin";
 
+/**
+ * Dimension count of the default embedding model.
+ *
+ * The Vectorize binding in wrangler.jsonc can only name an index. Its dimension
+ * count and distance metric are chosen when the index is created, which for a
+ * one click deploy means a human typing them into a form. Getting either wrong
+ * produces an index that accepts nothing, and the failure would otherwise only
+ * appear when a customer asks a question. Setup checks it instead.
+ */
+const EMBEDDING_DIMENSIONS = 1024;
+
+async function checkIndex(env: Env): Promise<string | null> {
+  let dimensions: number | undefined;
+  try {
+    dimensions = (await env.KNOWLEDGE.describe()).dimensions;
+  } catch (error) {
+    return `The Vectorize index could not be read: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+  if (dimensions !== undefined && dimensions !== EMBEDDING_DIMENSIONS) {
+    return `The Vectorize index has ${dimensions} dimensions but the embedding model produces ${EMBEDDING_DIMENSIONS}. Delete the index, create it again with ${EMBEDDING_DIMENSIONS} dimensions and the cosine metric, then reload this page.`;
+  }
+  return null;
+}
+
 export interface SetupOutcome {
   readonly ok: boolean;
   readonly schemaVersion: number;
@@ -67,6 +93,19 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
       businessName: null,
       missing: ["OWNER_TELEGRAM_ID"],
       note: "OWNER_TELEGRAM_ID must be the numeric Telegram account id, digits only.",
+    };
+  }
+
+  const indexProblem = await checkIndex(env);
+  if (indexProblem !== null) {
+    return {
+      ok: false,
+      schemaVersion: 0,
+      botUsername: null,
+      owner: null,
+      businessName: null,
+      missing: [],
+      note: indexProblem,
     };
   }
 

@@ -15,7 +15,7 @@
   },
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "build": "pnpm -r --filter=./packages/* run build && pnpm run build:worker",
+    "build": "pnpm -r --filter=./packages/* run build",
     "build:worker": "wrangler deploy --dry-run --outdir dist",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",

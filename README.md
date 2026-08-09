@@ -34,11 +34,27 @@ Three things, all free, about six minutes.
 ## Deploy from the browser
 
 Click the button above. Cloudflare will ask you to connect GitHub, then walk you
-through a setup page where you paste:
+through a setup page. Accept the suggested names for the KV namespace, the D1
+database and the R2 bucket, and fill in four fields.
 
-| Setting             | Value                                     |
-| ------------------- | ----------------------------------------- |
-| `ADMIN_BOT_TOKEN`   | Console bot token from BotFather          |
+**The Vectorize index needs two values that cannot be filled in for you.**
+Cloudflare picks them when the index is created and the Worker configuration has
+no way to carry them, so the boxes arrive empty:
+
+| Vectorize field | Value    |
+| --------------- | -------- |
+| Dimensions      | `1024`   |
+| Metric          | `cosine` |
+
+Anything else produces an index that silently rejects everything. Setup checks
+this and refuses to continue if it is wrong, so a mistake is recoverable, but
+getting it right the first time saves deleting the index and starting again.
+
+Then the two secrets:
+
+| Setting             | Value                                      |
+| ------------------- | ------------------------------------------ |
+| `ADMIN_BOT_TOKEN`   | Console bot token from BotFather           |
 | `OWNER_TELEGRAM_ID` | Your number from @userinfobot, digits only |
 
 Everything else provisions itself. When the deploy finishes, open the Worker

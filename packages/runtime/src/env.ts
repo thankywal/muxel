@@ -11,7 +11,7 @@ export interface Env {
   readonly DB: D1Database;
   readonly DOCUMENTS: R2Bucket;
   readonly STATE: KVNamespace;
-  readonly KNOWLEDGE: VectorizeIndex;
+  readonly KNOWLEDGE: Vectorize;
   readonly AI: Ai;
 
   // Configuration with defaults in wrangler.jsonc.

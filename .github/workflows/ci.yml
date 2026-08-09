@@ -34,8 +34,6 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      # Also dry run bundles the Worker, so a change that breaks the bundle
-      # fails here rather than at deploy time.
       - name: Build
         run: pnpm build
 
@@ -44,3 +42,9 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The deploy flow runs `pnpm run build` and then `pnpm run deploy`, so the
+      # bundle is only exercised at deploy time. Doing it here as well means a
+      # change that breaks it fails in review rather than in someone's account.
+      - name: Verify the Worker bundles
+        run: pnpm run build:worker
