@@ -254,6 +254,34 @@ export async function getBotByWebhookPath(
   };
 }
 
+/** Returns the console bot for this deployment, if one has been connected. */
+export async function getAdminBot(env: Env): Promise<Bot | null> {
+  const row = await env.DB.prepare(
+    "SELECT * FROM bot WHERE role = 'admin' ORDER BY created_at LIMIT 1",
+  ).first<BotRow>();
+  return row === null ? null : toBot(row);
+}
+
+/** Returns the oldest business, used as the default target during setup. */
+export async function firstBusiness(env: Env): Promise<Business | null> {
+  const row = await env.DB.prepare(
+    "SELECT * FROM business ORDER BY created_at LIMIT 1",
+  ).first<BusinessRow>();
+  return row === null ? null : toBusiness(row);
+}
+
+/** Replaces the webhook path and secret of an existing bot. */
+export async function updateBotWebhook(
+  env: Env,
+  input: { botId: string; webhookPath: string; webhookSecretHash: string },
+): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE bot SET webhook_path = ?, webhook_secret_hash = ? WHERE id = ?",
+  )
+    .bind(input.webhookPath, input.webhookSecretHash, input.botId)
+    .run();
+}
+
 export async function listBots(env: Env, businessId: string): Promise<Bot[]> {
   assertValidId(businessId, "businessId");
   const result = await env.DB.prepare(

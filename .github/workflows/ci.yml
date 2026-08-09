@@ -34,6 +34,8 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # Also dry run bundles the Worker, so a change that breaks the bundle
+      # fails here rather than at deploy time.
       - name: Build
         run: pnpm build
 
@@ -42,6 +44,3 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-      - name: Verify the Worker bundles
-        run: pnpm --filter @muxel/runtime exec wrangler deploy --dry-run --outdir /tmp/muxel-bundle

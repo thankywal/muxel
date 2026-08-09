@@ -1,0 +1,75 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "muxel",
+  "main": "packages/runtime/src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  "placement": { "mode": "smart" },
+
+  // The identifiers below are placeholders. Both setup paths replace them: the
+  // deploy button provisions each resource and rewrites this file, and the
+  // command line tool does the same locally. They are all zeros rather than
+  // blank so the configuration stays valid and the Worker still bundles before
+  // setup.
+  //
+  // The schema is applied by the Worker itself on first use, so there is no
+  // migrations directory. src/db/migrate.ts is the only definition of it.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "muxel",
+      "database_id": "00000000000000000000000000000000"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "muxel-documents"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "STATE",
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+
+  "vectorize": [
+    {
+      "binding": "KNOWLEDGE",
+      "index_name": "muxel-knowledge"
+    }
+  ],
+
+  "ai": {
+    "binding": "AI"
+  },
+
+  "vars": {
+    "MUXEL_ENV": "production",
+
+    // bge-m3 is multilingual and costs almost nothing against the daily free
+    // allowance. Changing it means rebuilding the Vectorize index, so it is
+    // deliberately not exposed in the console.
+    "EMBEDDING_MODEL": "@cf/baai/bge-m3",
+
+    // Cheapest model a plain Cloudflare login can reach, and the only tier
+    // where a small shop stays inside the free daily allowance.
+    "DEFAULT_MODEL": "workers-ai/@cf/google/gemma-4-26b-a4b-it",
+
+    "AI_GATEWAY_ID": "muxel",
+
+    // Name and reply language of the business created during setup. Both can
+    // be changed later from the console.
+    "BUSINESS_NAME": "My Business",
+    "BUSINESS_LOCALE": "en"
+  }
+}

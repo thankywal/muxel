@@ -2,8 +2,10 @@
  * First run setup.
  *
  * Creates every resource inside the operator Cloudflare account, writes the
- * identifiers into the Worker configuration, applies the schema, uploads the
- * secrets and deploys. Nothing about the deployment is recorded anywhere else.
+ * identifiers into the Worker configuration, uploads the secrets, deploys and
+ * then triggers the Worker's own setup endpoint so the schema is applied and
+ * the Telegram webhook is registered. Nothing about the deployment is recorded
+ * anywhere else.
  */
 
 import { randomBytes } from "node:crypto";
@@ -18,13 +20,18 @@ import { runDoctor } from "./doctor.js";
 import { provision, type ResourceIds } from "./provision.js";
 
 export interface InitOptions {
-  /** Directory holding wrangler.jsonc and the migrations. */
+  /** Directory holding wrangler.jsonc. */
   readonly cwd: string;
   /** Name prefix applied to every created resource. */
   readonly prefix: string;
-  /** Token presented to the AI Gateway compatibility endpoint. */
-  readonly gatewayToken: string;
-  /** Cloudflare account id. Read from wrangler when omitted. */
+  /** Telegram bot that will serve the operator console. */
+  readonly adminBotToken: string;
+  /** Telegram account permitted to administer the deployment. */
+  readonly ownerTelegramId: string;
+  /** Name of the business created during setup. */
+  readonly businessName?: string;
+  /** Only needed for models outside the Workers AI catalogue. */
+  readonly gatewayToken?: string;
   readonly accountId?: string;
   /** Skip the deploy step, leaving the configuration in place. */
   readonly skipDeploy?: boolean;
@@ -35,6 +42,7 @@ export interface InitResult {
   readonly accountId: string;
   readonly resources: ResourceIds;
   readonly workerUrl: string | null;
+  readonly setup: string;
 }
 
 /** Generates the base64 master key that seals bot tokens at rest. */
@@ -81,11 +89,34 @@ async function putSecret(cwd: string, name: string, value: string): Promise<void
   }
 }
 
+/**
+ * Calls the Worker's setup endpoint.
+ *
+ * The Worker cannot learn its own public address until a request arrives, so
+ * this call is what lets it register the Telegram webhook.
+ */
+async function triggerSetup(workerUrl: string): Promise<string> {
+  const response = await fetch(`${workerUrl}/setup`, {
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (response.ok) {
+    return "complete";
+  }
+  return `the Worker answered ${response.status}; open ${workerUrl}/setup in a browser to see why`;
+}
+
 export async function runInit(options: InitOptions): Promise<InitResult> {
   const health = await runDoctor();
   if (!health.ok) {
     throw new MuxelError("not_configured", "prerequisites are not satisfied", {
       failed: health.checks.filter((check) => !check.ok).map((check) => check.name),
+    });
+  }
+
+  if (!/^\d+$/.test(options.ownerTelegramId)) {
+    throw new MuxelError("invalid_input", "owner telegram id must be digits only", {
+      value: options.ownerTelegramId,
+      remedy: "send /start to @userinfobot in Telegram to find it",
     });
   }
 
@@ -101,25 +132,32 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   progress("Writing configuration");
   await writeConfiguration(options.cwd, resources);
 
-  progress("Applying database schema");
-  await requireWrangler(
-    ["d1", "migrations", "apply", options.prefix, "--remote"],
-    { cwd: options.cwd },
-  );
-
   progress("Uploading secrets");
   await putSecret(options.cwd, "MASTER_KEY", generateMasterKey());
-  await putSecret(options.cwd, "CF_ACCOUNT_ID", accountId);
-  await putSecret(options.cwd, "AI_GATEWAY_TOKEN", options.gatewayToken);
+  await putSecret(options.cwd, "ADMIN_BOT_TOKEN", options.adminBotToken);
+  await putSecret(options.cwd, "OWNER_TELEGRAM_ID", options.ownerTelegramId);
+  if (options.gatewayToken !== undefined && options.gatewayToken.length > 0) {
+    await putSecret(options.cwd, "AI_GATEWAY_TOKEN", options.gatewayToken);
+    await putSecret(options.cwd, "CF_ACCOUNT_ID", accountId);
+  }
 
   let workerUrl: string | null = null;
+  let setup = "skipped";
   if (options.skipDeploy !== true) {
     progress("Deploying the Worker");
     const deployed = await requireWrangler(["deploy"], { cwd: options.cwd });
-    workerUrl = `${deployed.stdout}${deployed.stderr}`.match(/https:\/\/[^\s]+\.workers\.dev/)?.[0] ?? null;
+    workerUrl =
+      `${deployed.stdout}${deployed.stderr}`.match(/https:\/\/[^\s]+\.workers\.dev/)?.[0] ?? null;
+
+    if (workerUrl !== null) {
+      progress("Registering the Telegram webhook");
+      setup = await triggerSetup(workerUrl);
+    } else {
+      setup = "could not determine the Worker address; open /setup in a browser";
+    }
   }
 
-  const result: InitResult = { ok: true, accountId, resources, workerUrl };
+  const result: InitResult = { ok: true, accountId, resources, workerUrl, setup };
 
   emit(result, () =>
     [
@@ -132,9 +170,10 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
         ["bucket", resources.r2Bucket],
         ["index", resources.vectorizeIndex],
         ["worker", workerUrl ?? "not deployed"],
+        ["setup", setup],
       ]),
       "",
-      "Next: run muxel claim to take ownership from Telegram.",
+      "Open your console bot in Telegram and send /start.",
     ].join("\n"),
   );
 

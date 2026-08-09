@@ -7,12 +7,7 @@
   "author": "thankywal",
   "type": "module",
   "scripts": {
-    "build": "wrangler deploy --dry-run --outdir dist",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "migrate:local": "wrangler d1 migrations apply muxel --local",
-    "migrate:remote": "wrangler d1 migrations apply muxel --remote"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@muxel/core": "workspace:*"

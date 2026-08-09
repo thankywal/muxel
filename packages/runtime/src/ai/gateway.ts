@@ -99,11 +99,76 @@ function toResult(attempted: Attempt): InferenceResult {
   };
 }
 
+/** Prefix marking a model that the Workers AI binding can serve directly. */
+const PLATFORM_PREFIX = "workers-ai/";
+
+function buildMessages(input: GenerateInput): { role: string; content: string }[] {
+  return [
+    { role: "system", content: input.system },
+    ...input.history.map((turn) => ({ role: turn.role, content: turn.content })),
+    { role: "user", content: input.userMessage },
+  ];
+}
+
 async function attempt(
   env: Env,
   input: GenerateInput,
   maxOutputTokens: number,
 ): Promise<Attempt> {
+  return input.model.startsWith(PLATFORM_PREFIX)
+    ? attemptOnPlatform(env, input, maxOutputTokens)
+    : attemptOnGateway(env, input, maxOutputTokens);
+}
+
+/**
+ * Runs a Workers AI model through the binding.
+ *
+ * The binding needs no account identifier and no API token, which is what lets
+ * a one click deploy work with nothing but a bot token. Any model outside the
+ * platform catalogue has to go through the gateway instead, and that path does
+ * need credentials.
+ */
+async function attemptOnPlatform(
+  env: Env,
+  input: GenerateInput,
+  maxOutputTokens: number,
+): Promise<Attempt> {
+  const modelId = input.model.slice(PLATFORM_PREFIX.length);
+
+  const raw = (await env.AI.run(
+    modelId as keyof AiModels,
+    { messages: buildMessages(input), max_tokens: maxOutputTokens } as never,
+  )) as {
+    response?: string;
+    choices?: readonly { message?: { content?: string }; finish_reason?: string }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+  };
+
+  // Older platform models answer with a bare `response` string while newer ones
+  // use the chat completion shape. Both are accepted so a model swap does not
+  // become a code change.
+  const choice = raw.choices?.[0];
+  return {
+    text: choice?.message?.content ?? raw.response ?? "",
+    finishReason: choice?.finish_reason ?? null,
+    model: input.model,
+    inputTokens: raw.usage?.prompt_tokens ?? null,
+    outputTokens: raw.usage?.completion_tokens ?? null,
+  };
+}
+
+async function attemptOnGateway(
+  env: Env,
+  input: GenerateInput,
+  maxOutputTokens: number,
+): Promise<Attempt> {
+  if (!env.CF_ACCOUNT_ID || !env.AI_GATEWAY_TOKEN) {
+    throw new MuxelError("not_configured", "this model needs a provider key", {
+      model: input.model,
+      remedy: "set CF_ACCOUNT_ID and AI_GATEWAY_TOKEN, or pick a Workers AI model",
+    });
+  }
+
   const url = `${GATEWAY_ROOT}/${env.CF_ACCOUNT_ID}/${env.AI_GATEWAY_ID}/compat/chat/completions`;
 
   const response = await fetch(url, {
@@ -118,11 +183,7 @@ async function attempt(
     body: JSON.stringify({
       model: input.model,
       max_tokens: maxOutputTokens,
-      messages: [
-        { role: "system", content: input.system },
-        ...input.history.map((turn) => ({ role: turn.role, content: turn.content })),
-        { role: "user", content: input.userMessage },
-      ],
+      messages: buildMessages(input),
     }),
   });
 

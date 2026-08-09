@@ -23,9 +23,7 @@ import {
 
 import { seal, sha256Hex } from "../crypto.js";
 import {
-  addOperator,
   canAccessBusiness,
-  countOperators,
   createBot,
   createBusiness,
   findOperator,
@@ -37,6 +35,7 @@ import {
   updateBusinessModel,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
+import { resolveMasterKey } from "../secrets.js";
 import { TelegramClient, type TelegramUpdate } from "./api.js";
 import { buildKeyboard, resolveSpilled, row, type ButtonSpec } from "./keyboard.js";
 
@@ -90,7 +89,6 @@ export const MODEL_PRESETS: readonly ModelPreset[] = [
 
 const PENDING_PREFIX = "pending:";
 const PENDING_TTL_SECONDS = 600;
-const CLAIM_KEY = "bootstrap:claim";
 
 interface Pending {
   readonly kind: "business_name" | "bot_token";
@@ -413,16 +411,9 @@ export async function handleAdminUpdate(
   }
   const userId = message.from.id;
   const chatId = message.chat.id;
-  const text = (message.text ?? "").trim();
 
-  // Bootstrap. The first person to present the claim code becomes the owner,
-  // which proves control of the Telegram account rather than trusting a number
-  // typed into a form.
-  if (text.startsWith("/claim")) {
-    await handleClaim(env, client, { chatId, userId, text });
-    return;
-  }
-
+  // Ownership is installed during setup from OWNER_TELEGRAM_ID, so by the time
+  // a message can reach this handler the operator table is already populated.
   const operator = await findOperator(env, userId);
   if (operator === null) {
     await client.sendMessage({
@@ -439,36 +430,6 @@ export async function handleAdminUpdate(
   }
 
   await render(env, client, { chatId }, homeScreen());
-}
-
-async function handleClaim(
-  env: Env,
-  client: TelegramClient,
-  input: { chatId: number; userId: number; text: string },
-): Promise<void> {
-  if ((await countOperators(env)) > 0) {
-    await client.sendMessage({
-      chatId: input.chatId,
-      text: "This deployment already has an owner.",
-    });
-    return;
-  }
-  const supplied = input.text.split(/\s+/)[1] ?? "";
-  const expected = await env.STATE.get(CLAIM_KEY);
-  if (expected === null) {
-    await client.sendMessage({
-      chatId: input.chatId,
-      text: "No claim code is active. Run muxel claim to issue one.",
-    });
-    return;
-  }
-  if (supplied !== expected) {
-    await client.sendMessage({ chatId: input.chatId, text: "That claim code is not valid." });
-    return;
-  }
-  await addOperator(env, { telegramUserId: input.userId, role: "owner" });
-  await env.STATE.delete(CLAIM_KEY);
-  await render(env, client, { chatId: input.chatId }, homeScreen());
 }
 
 async function handlePendingInput(
@@ -524,7 +485,7 @@ async function handlePendingInput(
       role: input.pending.role ?? "reply",
       username,
       webhookPath,
-      tokenCiphertext: await seal(env.MASTER_KEY, text),
+      tokenCiphertext: await seal(await resolveMasterKey(env), text),
       webhookSecretHash: await sha256Hex(webhookSecret),
     });
     await incoming.setWebhook({

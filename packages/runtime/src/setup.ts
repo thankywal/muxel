@@ -1,0 +1,190 @@
+/**
+ * First run setup.
+ *
+ * A one click deploy leaves a Worker with an empty database, no schema, no
+ * owner and a bot that Telegram does not know how to reach. It also leaves the
+ * Worker unable to discover its own public address, because that is assigned
+ * after the code is uploaded.
+ *
+ * Visiting this route supplies the missing piece. The request carries the
+ * public origin, so setup can register the Telegram webhook against it, record
+ * it for later repair, apply the schema and install the configured owner.
+ *
+ * Every step is idempotent. Visiting twice re-points the webhook and changes
+ * nothing else, which is also the repair path when a deployment moves to a
+ * custom domain.
+ */
+
+import { generateId, generateShortId } from "@muxel/core";
+
+import { seal, sha256Hex } from "./crypto.js";
+import {
+  addOperator,
+  createBot,
+  createBusiness,
+  firstBusiness,
+  getAdminBot,
+  updateBotWebhook,
+} from "./db/queries.js";
+import { ensureSchema } from "./db/migrate.js";
+import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
+import { resolveMasterKey } from "./secrets.js";
+import { TelegramClient } from "./telegram/api.js";
+
+export const ORIGIN_KEY = "system:origin";
+
+export interface SetupOutcome {
+  readonly ok: boolean;
+  readonly schemaVersion: number;
+  readonly botUsername: string | null;
+  readonly owner: number | null;
+  readonly businessName: string | null;
+  readonly missing: readonly string[];
+  readonly note: string;
+}
+
+export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> {
+  const missing = missingConfiguration(env);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      schemaVersion: 0,
+      botUsername: null,
+      owner: null,
+      businessName: null,
+      missing,
+      note: "Add the missing settings as Worker secrets, then reload this page.",
+    };
+  }
+
+  const owner = ownerTelegramId(env);
+  if (owner === null) {
+    return {
+      ok: false,
+      schemaVersion: 0,
+      botUsername: null,
+      owner: null,
+      businessName: null,
+      missing: ["OWNER_TELEGRAM_ID"],
+      note: "OWNER_TELEGRAM_ID must be the numeric Telegram account id, digits only.",
+    };
+  }
+
+  const schemaVersion = await ensureSchema(env);
+  const masterKey = await resolveMasterKey(env);
+
+  // The bot token is validated before anything is written, so a typo does not
+  // leave a half configured deployment behind.
+  const token = env.ADMIN_BOT_TOKEN as string;
+  const client = new TelegramClient(token);
+  const me = await client.getMe();
+  const username = me.username ?? "unknown";
+
+  await addOperator(env, { telegramUserId: owner, role: "owner" });
+
+  const business =
+    (await firstBusiness(env)) ??
+    (await createBusiness(env, {
+      name: env.BUSINESS_NAME?.trim() || "My Business",
+      locale: env.BUSINESS_LOCALE?.trim() || "en",
+      model: env.DEFAULT_MODEL,
+    }));
+
+  // A fresh path and secret on every run means an address leaked from an old
+  // deployment stops working as soon as setup is repeated.
+  const webhookPath = generateId(24);
+  const webhookSecret = generateShortId() + generateShortId();
+  const webhookSecretHash = await sha256Hex(webhookSecret);
+
+  const existing = await getAdminBot(env);
+  if (existing === null) {
+    await createBot(env, {
+      businessId: business.id,
+      role: "admin",
+      username,
+      webhookPath,
+      tokenCiphertext: await seal(masterKey, token),
+      webhookSecretHash,
+    });
+  } else {
+    await updateBotWebhook(env, { botId: existing.id, webhookPath, webhookSecretHash });
+  }
+
+  await client.setWebhook({
+    url: `${origin}/tg/${webhookPath}`,
+    secretToken: webhookSecret,
+  });
+
+  await env.STATE.put(ORIGIN_KEY, origin);
+
+  return {
+    ok: true,
+    schemaVersion,
+    botUsername: username,
+    owner,
+    businessName: business.name,
+    missing: [],
+    note:
+      existing === null
+        ? "Setup complete."
+        : "Webhook re-registered against the current address.",
+  };
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Renders the outcome as a page a non technical owner can act on. */
+export function renderSetupPage(outcome: SetupOutcome): string {
+  const body = outcome.ok
+    ? `
+      <p class="ok">Your assistant is connected.</p>
+      <dl>
+        <dt>Console bot</dt><dd>@${escapeHtml(outcome.botUsername ?? "")}</dd>
+        <dt>Business</dt><dd>${escapeHtml(outcome.businessName ?? "")}</dd>
+        <dt>Owner</dt><dd>Telegram id ${outcome.owner}</dd>
+      </dl>
+      <p>Open <strong>@${escapeHtml(outcome.botUsername ?? "")}</strong> in Telegram and send
+      <code>/start</code>. Everything after that is buttons.</p>`
+    : `
+      <p class="bad">Not ready yet.</p>
+      <p>${escapeHtml(outcome.note)}</p>
+      ${
+        outcome.missing.length > 0
+          ? `<p>Missing: <code>${outcome.missing.map(escapeHtml).join("</code>, <code>")}</code></p>`
+          : ""
+      }`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muxel setup</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 16px/1.6 ui-sans-serif, system-ui, sans-serif;
+    max-width: 34rem; margin: 4rem auto; padding: 0 1.25rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .sub { opacity: 0.65; margin-top: 0; }
+  .ok { color: #15803d; font-weight: 600; }
+  .bad { color: #b91c1c; font-weight: 600; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 1.5rem 0; }
+  dt { opacity: 0.65; }
+  dd { margin: 0; }
+  code {
+    font: 0.9em ui-monospace, monospace;
+    background: rgba(127,127,127,0.15); padding: 0.1em 0.35em; border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+  <h1>Muxel</h1>
+  <p class="sub">Running in your own Cloudflare account.</p>
+  ${body}
+</body>
+</html>`;
+}

@@ -12,7 +12,6 @@ import { isMuxelError, MuxelError } from "@muxel/core";
 import { flagBoolean, flagString, parseArgs, requireFlag, type ParsedArgs } from "./args.js";
 import { EXIT, exitCodeFor, type ExitCode } from "./exit.js";
 import { emit, emitError, setOutputMode } from "./output.js";
-import { runClaim } from "./commands/claim.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runInit } from "./commands/init.js";
 import { runStatus } from "./commands/status.js";
@@ -28,9 +27,8 @@ Usage
   muxel <command> [options]
 
 Commands
-  init      Create resources, apply the schema and deploy
+  init      Create resources, deploy and connect your console bot
   deploy    Redeploy the Worker from the current directory
-  claim     Issue a one time code that grants console ownership
   status    Report the readiness of a running deployment
   doctor    Check local prerequisites
   version   Print the version
@@ -41,10 +39,13 @@ Global options
   --dir <path>      Directory holding wrangler.jsonc (default: .)
 
 init options
-  --gateway-token <token>   Token for the AI Gateway endpoint (required)
-  --prefix <name>           Resource name prefix (default: muxel)
-  --account-id <id>         Cloudflare account id (default: from wrangler)
-  --skip-deploy             Configure everything but do not deploy
+  --admin-bot-token <token>   Console bot token from @BotFather (required)
+  --owner-telegram-id <id>    Your Telegram account id, digits only (required)
+  --business <name>           Name of the first business
+  --prefix <name>             Resource name prefix (default: muxel)
+  --account-id <id>           Cloudflare account id (default: from wrangler)
+  --gateway-token <token>     Only for models outside Workers AI
+  --skip-deploy               Configure everything but do not deploy
 
 status options
   --url <url>       Base url of the deployment (required)
@@ -54,6 +55,16 @@ Exit codes
   4 unauthorized   5 upstream failure   6 not found
 `;
 
+/**
+ * Builds a single key object when a flag was supplied, or nothing when it was
+ * not. Spreading the result keeps optional properties absent rather than
+ * present and undefined, which the strict option types reject.
+ */
+function optional(args: ParsedArgs, flag: string, key: string): Record<string, string> {
+  const value = flagString(args, flag);
+  return value === undefined ? {} : { [key]: value };
+}
+
 async function dispatch(args: ParsedArgs): Promise<ExitCode> {
   const dir = flagString(args, "dir") ?? process.cwd();
 
@@ -62,10 +73,11 @@ async function dispatch(args: ParsedArgs): Promise<ExitCode> {
       await runInit({
         cwd: dir,
         prefix: flagString(args, "prefix") ?? "muxel",
-        gatewayToken: requireFlag(args, "gateway-token"),
-        ...(flagString(args, "account-id") !== undefined
-          ? { accountId: flagString(args, "account-id") as string }
-          : {}),
+        adminBotToken: requireFlag(args, "admin-bot-token"),
+        ownerTelegramId: requireFlag(args, "owner-telegram-id"),
+        ...optional(args, "business", "businessName"),
+        ...optional(args, "gateway-token", "gatewayToken"),
+        ...optional(args, "account-id", "accountId"),
         skipDeploy: flagBoolean(args, "skip-deploy"),
       });
       return EXIT.ok;
@@ -75,11 +87,6 @@ async function dispatch(args: ParsedArgs): Promise<ExitCode> {
       const result = await requireWrangler(["deploy"], { cwd: dir });
       const url = `${result.stdout}${result.stderr}`.match(/https:\/\/[^\s]+\.workers\.dev/)?.[0] ?? null;
       emit({ ok: true, url }, () => `Deployed. ${url ?? ""}`.trim());
-      return EXIT.ok;
-    }
-
-    case "claim": {
-      await runClaim({ cwd: dir, binding: flagString(args, "binding") ?? "STATE" });
       return EXIT.ok;
     }
 
