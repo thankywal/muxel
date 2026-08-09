@@ -86,6 +86,35 @@ export interface InferenceResult {
   readonly outputTokens: number | null;
 }
 
+export type CustomerStage = "new" | "lead" | "customer" | "blocked";
+
+export interface Customer {
+  readonly id: string;
+  readonly businessId: string;
+  readonly telegramUserId: number;
+  readonly chatId: number;
+  readonly displayName: string;
+  readonly username: string;
+  readonly stage: CustomerStage;
+  readonly tags: string;
+  readonly note: string;
+  readonly messageCount: number;
+  readonly firstSeen: string;
+  readonly lastSeen: string;
+}
+
+/**
+ * A durable fact about a customer, distilled from what they have said.
+ *
+ * Facts are short and self contained so that the whole set for one customer can
+ * be dropped into a prompt without a retrieval step.
+ */
+export interface CustomerFact {
+  readonly id: string;
+  readonly fact: string;
+  readonly createdAt: string;
+}
+
 /** Usage counters surfaced to the operator through the admin interface. */
 export interface UsageSnapshot {
   readonly businessId: string;

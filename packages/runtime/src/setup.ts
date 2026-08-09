@@ -24,7 +24,7 @@ import {
   createBusiness,
   firstBusiness,
   getAdminBot,
-  updateBotWebhook,
+  replaceBotIdentity,
 } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
 import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
@@ -136,17 +136,27 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
   const webhookSecretHash = await sha256Hex(webhookSecret);
 
   const existing = await getAdminBot(env);
+  const sealed = await seal(masterKey, token);
   if (existing === null) {
     await createBot(env, {
       businessId: business.id,
       role: "admin",
       username,
       webhookPath,
-      tokenCiphertext: await seal(masterKey, token),
+      tokenCiphertext: sealed,
       webhookSecretHash,
     });
   } else {
-    await updateBotWebhook(env, { botId: existing.id, webhookPath, webhookSecretHash });
+    // Credentials and username are rewritten too, so changing ADMIN_BOT_TOKEN
+    // and running setup again actually moves the console to the new bot rather
+    // than leaving the row describing the old one.
+    await replaceBotIdentity(env, {
+      botId: existing.id,
+      username,
+      tokenCiphertext: sealed,
+      webhookPath,
+      webhookSecretHash,
+    });
   }
 
   await client.setWebhook({

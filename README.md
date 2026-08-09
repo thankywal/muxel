@@ -17,6 +17,11 @@ you control.
   policies and product information.
 * Retrieval grounded replies, so the assistant quotes what your documents say
   instead of inventing an answer, and says so plainly when it does not know.
+* Memory of who it is talking to. Durable facts are distilled from
+  conversations, so a returning customer does not have to repeat themselves.
+* A customer list with stages, notes and a delete that really deletes.
+* Instructions you write yourself, replaced from the console as text or a
+  markdown file, with an undo when a change makes things worse.
 * Any number of businesses in one deployment, each isolated from the others.
 
 ## Before you start
@@ -118,6 +123,51 @@ a US cent per thousand answers, and roughly 330 replies a day fall inside the
 free daily allowance. Embeddings always run on `bge-m3`, which is multilingual
 and effectively free.
 
+## Instructions and documents are different things
+
+The console keeps them apart because the assistant has to trust them
+differently.
+
+| | Instructions | Documents |
+| --- | --- | --- |
+| Who writes it | you | you, but often from a supplier or a customer |
+| How it is treated | rules the assistant follows | facts it may quote |
+| Where it goes | the system prompt | inside quoted delimiters |
+
+Instructions are your own text, so they set tone and policy. Documents are
+untrusted input, so the assistant is told in advance to read them as data. A
+sentence inside a PDF cannot change how the assistant behaves, and the rule
+against inventing prices survives whatever your instructions say.
+
+Send a document to the console at any time and it joins the knowledge of
+whichever business you last opened. Instructions are replaced explicitly from
+the Instructions screen, as a message or a `.md` file, and the previous version
+is kept so a bad change can be undone.
+
+## Memory
+
+Facts about a customer are distilled from their conversation every few
+messages and stored against their record. A returning customer does not have to
+repeat what they bought or how they pay.
+
+Facts live in D1 and are loaded by key rather than embedded and searched. One
+person accumulates tens of facts, not thousands, so a single indexed query
+returns all of them. That leaves the whole Vectorize allowance for documents,
+where semantic search is worth its cost.
+
+The customer screen shows what is remembered, and offers both forgetting the
+facts and deleting the person outright.
+
+## Changing the console bot
+
+From the console, open Bots and choose Replace console bot, then send the new
+token. The old bot is detached first so the two never answer at once, and the
+new one confirms in the same chat.
+
+If you have lost access to the console entirely, change the `ADMIN_BOT_TOKEN`
+secret in the Cloudflare dashboard and visit `/setup` again. That path rewrites
+the stored credentials as well as the webhook.
+
 ## Running costs
 
 Muxel charges nothing, and a small shop fits inside the Cloudflare free plan.
@@ -204,9 +254,10 @@ generic 1. See `muxel help` for the table.
 ## Status
 
 Version 0.1 targets Cloudflare and Telegram. The callback codec, the
-segmentation, the credential sealing and the retrieval pipeline are covered by
-tests, and the pipeline has been run end to end against a live account. Adding
-knowledge from the console is not wired up yet.
+segmentation, the credential sealing, the memory extraction parser and the
+retrieval pipeline are covered by tests, and the pipeline has been run end to
+end against a live account. The console has not yet been exercised against a
+deployed bot.
 
 ## License
 

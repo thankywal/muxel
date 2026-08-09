@@ -143,7 +143,7 @@ async function dispatch(
   const client = new TelegramClient(token);
 
   if (bot.role === "admin") {
-    await handleAdminUpdate(env, client, bot, update, origin);
+    await handleAdminUpdate(env, client, update, origin);
     return;
   }
 

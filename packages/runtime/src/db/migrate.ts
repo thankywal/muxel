@@ -109,6 +109,53 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 2,
+    statements: [
+      // One row per person who has ever written to a reply bot. This is the
+      // customer record the console lists and the anchor for remembered facts.
+      `CREATE TABLE IF NOT EXISTS customer (
+         id               TEXT PRIMARY KEY,
+         business_id      TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         telegram_user_id INTEGER NOT NULL,
+         chat_id          INTEGER NOT NULL,
+         display_name     TEXT NOT NULL DEFAULT '',
+         username         TEXT NOT NULL DEFAULT '',
+         stage            TEXT NOT NULL DEFAULT 'new'
+                            CHECK (stage IN ('new', 'lead', 'customer', 'blocked')),
+         tags             TEXT NOT NULL DEFAULT '',
+         note             TEXT NOT NULL DEFAULT '',
+         message_count    INTEGER NOT NULL DEFAULT 0,
+         first_seen       TEXT NOT NULL,
+         last_seen        TEXT NOT NULL,
+         UNIQUE (business_id, telegram_user_id)
+       )`,
+      `CREATE INDEX IF NOT EXISTS customer_business_idx ON customer (business_id, last_seen DESC)`,
+
+      // Durable facts distilled from conversations. Deliberately not embedded:
+      // a customer accumulates tens of facts, not thousands, so every one can
+      // be loaded by key. That keeps the Vectorize allowance for documents.
+      `CREATE TABLE IF NOT EXISTS customer_memory (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         customer_id TEXT NOT NULL REFERENCES customer (id) ON DELETE CASCADE,
+         fact        TEXT NOT NULL,
+         created_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS customer_memory_idx ON customer_memory (customer_id, created_at DESC)`,
+
+      // Previous instruction documents, so a prompt that breaks the assistant
+      // can be rolled back. A bad prompt fails quietly, which is exactly the
+      // kind of mistake that needs an undo.
+      `CREATE TABLE IF NOT EXISTS prompt_version (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         prompt      TEXT NOT NULL,
+         created_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS prompt_version_idx ON prompt_version (business_id, created_at DESC)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

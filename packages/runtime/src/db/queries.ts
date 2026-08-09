@@ -15,6 +15,9 @@ import {
   type Business,
   type BusinessDocument,
   type ChatTurn,
+  type Customer,
+  type CustomerFact,
+  type CustomerStage,
   type DocumentStatus,
 } from "@muxel/core";
 
@@ -270,15 +273,36 @@ export async function firstBusiness(env: Env): Promise<Business | null> {
   return row === null ? null : toBusiness(row);
 }
 
-/** Replaces the webhook path and secret of an existing bot. */
-export async function updateBotWebhook(
+/**
+ * Points an existing bot row at a different Telegram bot.
+ *
+ * Used both when an operator swaps the console bot from the console and when
+ * the ADMIN_BOT_TOKEN secret changes and setup runs again. Updating the
+ * credentials and the username together is what makes a swap actually take
+ * effect rather than leaving the row describing the previous bot.
+ */
+export async function replaceBotIdentity(
   env: Env,
-  input: { botId: string; webhookPath: string; webhookSecretHash: string },
+  input: {
+    botId: string;
+    username: string;
+    tokenCiphertext: string;
+    webhookPath: string;
+    webhookSecretHash: string;
+  },
 ): Promise<void> {
   await env.DB.prepare(
-    "UPDATE bot SET webhook_path = ?, webhook_secret_hash = ? WHERE id = ?",
+    `UPDATE bot
+        SET username = ?, token_ciphertext = ?, webhook_path = ?, webhook_secret_hash = ?
+      WHERE id = ?`,
   )
-    .bind(input.webhookPath, input.webhookSecretHash, input.botId)
+    .bind(
+      input.username,
+      input.tokenCiphertext,
+      input.webhookPath,
+      input.webhookSecretHash,
+      input.botId,
+    )
     .run();
 }
 
@@ -501,6 +525,239 @@ export async function recentTurns(
   return result.results
     .map((row) => ({ role: row.role as "user" | "assistant", content: row.content }))
     .reverse();
+}
+
+// Customers ------------------------------------------------------------------
+
+interface CustomerRow {
+  id: string;
+  business_id: string;
+  telegram_user_id: number;
+  chat_id: number;
+  display_name: string;
+  username: string;
+  stage: string;
+  tags: string;
+  note: string;
+  message_count: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+function toCustomer(row: CustomerRow): Customer {
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    telegramUserId: row.telegram_user_id,
+    chatId: row.chat_id,
+    displayName: row.display_name,
+    username: row.username,
+    stage: row.stage as CustomerStage,
+    tags: row.tags,
+    note: row.note,
+    messageCount: row.message_count,
+    firstSeen: row.first_seen,
+    lastSeen: row.last_seen,
+  };
+}
+
+/**
+ * Records that a person wrote to a reply bot.
+ *
+ * Called on every inbound customer message, so it has to be a single round trip
+ * in the common case. The insert carries the counters and the update bumps them,
+ * which avoids reading first.
+ */
+export async function touchCustomer(
+  env: Env,
+  input: {
+    businessId: string;
+    telegramUserId: number;
+    chatId: number;
+    displayName: string;
+    username: string;
+  },
+): Promise<{ id: string; messageCount: number }> {
+  const timestamp = now();
+  await env.DB.prepare(
+    `INSERT INTO customer
+       (id, business_id, telegram_user_id, chat_id, display_name, username,
+        stage, tags, note, message_count, first_seen, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?, 'new', '', '', 1, ?, ?)
+     ON CONFLICT (business_id, telegram_user_id) DO UPDATE SET
+       chat_id       = excluded.chat_id,
+       display_name  = excluded.display_name,
+       username      = excluded.username,
+       message_count = message_count + 1,
+       last_seen     = excluded.last_seen`,
+  )
+    .bind(
+      generateId(),
+      input.businessId,
+      input.telegramUserId,
+      input.chatId,
+      input.displayName,
+      input.username,
+      timestamp,
+      timestamp,
+    )
+    .run();
+
+  const row = await env.DB.prepare(
+    "SELECT id, message_count FROM customer WHERE business_id = ? AND telegram_user_id = ?",
+  )
+    .bind(input.businessId, input.telegramUserId)
+    .first<{ id: string; message_count: number }>();
+  if (row === null) {
+    throw notFound("customer row vanished after upsert", { businessId: input.businessId });
+  }
+  return { id: row.id, messageCount: row.message_count };
+}
+
+export async function listCustomers(
+  env: Env,
+  businessId: string,
+  limit = 20,
+): Promise<Customer[]> {
+  assertValidId(businessId, "businessId");
+  const result = await env.DB.prepare(
+    "SELECT * FROM customer WHERE business_id = ? ORDER BY last_seen DESC LIMIT ?",
+  )
+    .bind(businessId, limit)
+    .all<CustomerRow>();
+  return result.results.map(toCustomer);
+}
+
+export async function getCustomer(env: Env, customerId: string): Promise<Customer> {
+  assertValidId(customerId, "customerId");
+  const row = await env.DB.prepare("SELECT * FROM customer WHERE id = ?")
+    .bind(customerId)
+    .first<CustomerRow>();
+  if (row === null) {
+    throw notFound("customer not found", { customerId });
+  }
+  return toCustomer(row);
+}
+
+export async function setCustomerStage(
+  env: Env,
+  customerId: string,
+  stage: CustomerStage,
+): Promise<void> {
+  assertValidId(customerId, "customerId");
+  await env.DB.prepare("UPDATE customer SET stage = ? WHERE id = ?").bind(stage, customerId).run();
+}
+
+export async function setCustomerNote(
+  env: Env,
+  customerId: string,
+  note: string,
+): Promise<void> {
+  assertValidId(customerId, "customerId");
+  await env.DB.prepare("UPDATE customer SET note = ? WHERE id = ?").bind(note, customerId).run();
+}
+
+/** Removes a customer along with everything remembered about them. */
+export async function forgetCustomer(env: Env, customerId: string): Promise<void> {
+  assertValidId(customerId, "customerId");
+  await env.DB.prepare("DELETE FROM customer WHERE id = ?").bind(customerId).run();
+}
+
+// Memory ----------------------------------------------------------------------
+
+export async function listFacts(
+  env: Env,
+  customerId: string,
+  limit = 40,
+): Promise<CustomerFact[]> {
+  assertValidId(customerId, "customerId");
+  const result = await env.DB.prepare(
+    "SELECT id, fact, created_at FROM customer_memory WHERE customer_id = ? ORDER BY created_at DESC LIMIT ?",
+  )
+    .bind(customerId, limit)
+    .all<{ id: string; fact: string; created_at: string }>();
+  return result.results.map((row) => ({
+    id: row.id,
+    fact: row.fact,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function addFacts(
+  env: Env,
+  input: { businessId: string; customerId: string; facts: readonly string[] },
+): Promise<void> {
+  if (input.facts.length === 0) {
+    return;
+  }
+  const statement = env.DB.prepare(
+    "INSERT INTO customer_memory (id, business_id, customer_id, fact, created_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  const timestamp = now();
+  await env.DB.batch(
+    input.facts.map((fact) =>
+      statement.bind(generateId(), input.businessId, input.customerId, fact, timestamp),
+    ),
+  );
+}
+
+/** Drops the oldest facts once a customer has accumulated more than `keep`. */
+export async function trimFacts(env: Env, customerId: string, keep: number): Promise<void> {
+  assertValidId(customerId, "customerId");
+  await env.DB.prepare(
+    `DELETE FROM customer_memory
+      WHERE customer_id = ?
+        AND id NOT IN (
+          SELECT id FROM customer_memory WHERE customer_id = ? ORDER BY created_at DESC LIMIT ?
+        )`,
+  )
+    .bind(customerId, customerId, keep)
+    .run();
+}
+
+export async function forgetFacts(env: Env, customerId: string): Promise<void> {
+  assertValidId(customerId, "customerId");
+  await env.DB.prepare("DELETE FROM customer_memory WHERE customer_id = ?")
+    .bind(customerId)
+    .run();
+}
+
+// Instructions ----------------------------------------------------------------
+
+/**
+ * Replaces the instruction document for a business, keeping the previous one.
+ *
+ * A prompt that breaks the assistant does so quietly, so the old text is
+ * retained and the console offers a rollback.
+ */
+export async function setBusinessPrompt(
+  env: Env,
+  businessId: string,
+  prompt: string,
+): Promise<void> {
+  assertValidId(businessId, "businessId");
+  const current = await getBusiness(env, businessId);
+  if (current.systemPrompt.length > 0) {
+    await env.DB.prepare(
+      "INSERT INTO prompt_version (id, business_id, prompt, created_at) VALUES (?, ?, ?, ?)",
+    )
+      .bind(generateId(), businessId, current.systemPrompt, now())
+      .run();
+  }
+  await env.DB.prepare("UPDATE business SET system_prompt = ?, updated_at = ? WHERE id = ?")
+    .bind(prompt, now(), businessId)
+    .run();
+}
+
+/** Returns the most recent superseded instruction document, if there is one. */
+export async function previousPrompt(env: Env, businessId: string): Promise<string | null> {
+  assertValidId(businessId, "businessId");
+  const row = await env.DB.prepare(
+    "SELECT prompt FROM prompt_version WHERE business_id = ? ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(businessId)
+    .first<{ prompt: string }>();
+  return row?.prompt ?? null;
 }
 
 // Usage ----------------------------------------------------------------------
