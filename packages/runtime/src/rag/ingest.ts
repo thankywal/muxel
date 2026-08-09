@@ -35,6 +35,62 @@ export interface IngestResult {
 }
 
 /**
+ * Shortest body accepted after the preamble is removed.
+ *
+ * A file that yields less than this has no usable content, whatever the
+ * converter reported.
+ */
+const MIN_CONTENT_CHARS = 80;
+
+/**
+ * Removes the heading and metadata block the converter prepends.
+ *
+ * Conversion output starts with the file name as a heading and a `## Metadata`
+ * list of properties like the PDF version and the author. None of that is
+ * business content. Indexing it is worse than useless: it occupies a chunk, it
+ * can match a customer question, and its presence makes an unreadable file look
+ * like a successful upload.
+ *
+ * Only a metadata section made entirely of `- key=value` lines is dropped, so a
+ * document that genuinely has a section by that name keeps it.
+ */
+export function stripConversionPreamble(markdown: string): string {
+  const lines = markdown.split("\n");
+  let index = 0;
+
+  const skipBlank = (): void => {
+    while (index < lines.length && (lines[index] as string).trim().length === 0) {
+      index += 1;
+    }
+  };
+
+  skipBlank();
+  if (index < lines.length && /^#\s+\S/.test(lines[index] as string)) {
+    index += 1;
+  }
+
+  skipBlank();
+  if (index < lines.length && /^##\s+Metadata\s*$/i.test(lines[index] as string)) {
+    const afterHeading = index + 1;
+    let cursor = afterHeading;
+    while (cursor < lines.length) {
+      const line = (lines[cursor] as string).trim();
+      if (line.length === 0 || /^-\s*[^=]+=/.test(line)) {
+        cursor += 1;
+        continue;
+      }
+      break;
+    }
+    // Only treat it as a preamble if it actually held property lines.
+    if (cursor > afterHeading) {
+      index = cursor;
+    }
+  }
+
+  return lines.slice(index).join("\n").trim();
+}
+
+/**
  * Unwraps a markdown conversion response.
  *
  * The platform returns either a single result or an array, and either shape may
@@ -55,7 +111,18 @@ function extractMarkdown(
       detail: first.error,
     });
   }
-  return first.data;
+
+  const body = stripConversionPreamble(first.data);
+  if (body.length < MIN_CONTENT_CHARS) {
+    // Scans and form templates convert to nothing but properties. Saying so is
+    // far more useful than storing the properties and reporting success.
+    throw new MuxelError(
+      "invalid_input",
+      "no readable text found in this file. If it is a scan or a form template, export it as text or send the content as a message instead",
+      { filename, extracted: body.length },
+    );
+  }
+  return body;
 }
 
 export async function ingestDocument(env: Env, input: IngestInput): Promise<IngestResult> {
