@@ -12,6 +12,15 @@ import { chunkText, generateId, MuxelError } from "@muxel/core";
 import { embedBatch } from "../ai/gateway.js";
 import { createDocument, insertChunks, setDocumentStatus } from "../db/queries.js";
 import type { Env } from "../env.js";
+import { extractPdfText } from "./pdf.js";
+
+/** Reports whether an upload is a PDF, by declared type or by extension. */
+function looksLikePdf(input: IngestInput): boolean {
+  return (
+    input.contentType.toLowerCase().includes("pdf") ||
+    input.filename.toLowerCase().endsWith(".pdf")
+  );
+}
 
 /** Largest upload accepted. Telegram itself caps bot downloads at 20 MB. */
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
@@ -112,17 +121,7 @@ function extractMarkdown(
     });
   }
 
-  const body = stripConversionPreamble(first.data);
-  if (body.length < MIN_CONTENT_CHARS) {
-    // Scans and form templates convert to nothing but properties. Saying so is
-    // far more useful than storing the properties and reporting success.
-    throw new MuxelError(
-      "invalid_input",
-      "no readable text found in this file. If it is a scan or a form template, export it as text or send the content as a message instead",
-      { filename, extracted: body.length },
-    );
-  }
-  return body;
+  return stripConversionPreamble(first.data);
 }
 
 export async function ingestDocument(env: Env, input: IngestInput): Promise<IngestResult> {
@@ -162,7 +161,33 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
       name: input.filename,
       blob: new Blob([input.body], { type: input.contentType }),
     });
-    const pieces = chunkText(extractMarkdown(converted, input.filename));
+    let text = extractMarkdown(converted, input.filename);
+
+    // The platform converter returns metadata and an empty body for some PDFs
+    // that do contain text, including anything exported from Excel. Since a
+    // price list is usually exactly that, an empty result is retried against
+    // the text layer directly rather than accepted.
+    if (text.length < MIN_CONTENT_CHARS && looksLikePdf(input)) {
+      const recovered = await extractPdfText(new Uint8Array(input.body));
+      if (recovered.length > text.length) {
+        console.warn("markdown conversion was empty, used the pdf text layer", {
+          filename: input.filename,
+          converted: text.length,
+          recovered: recovered.length,
+        });
+        text = recovered;
+      }
+    }
+
+    if (text.length < MIN_CONTENT_CHARS) {
+      throw new MuxelError(
+        "invalid_input",
+        "no readable text found in this file. A scanned page or a photograph has no text to read: send the content as a message, or upload the spreadsheet or document it came from",
+        { filename: input.filename, extracted: text.length },
+      );
+    }
+
+    const pieces = chunkText(text);
     if (pieces.length === 0) {
       throw new MuxelError("invalid_input", "no text could be extracted", {
         filename: input.filename,
