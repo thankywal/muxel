@@ -1,0 +1,59 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "muxel",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+
+  "placement": { "mode": "smart" },
+
+  // The identifiers below are placeholders. `muxel init` provisions each
+  // resource in the operator's own Cloudflare account and rewrites this file
+  // with the real values. They are all zeros rather than blank so that the
+  // configuration stays valid and the Worker still bundles before setup.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "muxel",
+      "database_id": "00000000000000000000000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "DOCUMENTS",
+      "bucket_name": "muxel-documents"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "STATE",
+      "id": "00000000000000000000000000000000"
+    }
+  ],
+
+  "vectorize": [
+    {
+      "binding": "KNOWLEDGE",
+      "index_name": "muxel-knowledge"
+    }
+  ],
+
+  "ai": {
+    "binding": "AI"
+  },
+
+  "vars": {
+    "MUXEL_ENV": "production",
+    "EMBEDDING_MODEL": "@cf/baai/bge-m3",
+    "DEFAULT_MODEL": "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "AI_GATEWAY_ID": "muxel"
+  }
+}
