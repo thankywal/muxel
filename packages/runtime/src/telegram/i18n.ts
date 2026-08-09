@@ -1,0 +1,425 @@
+/**
+ * Console translations.
+ *
+ * Every string an operator can see lives here, in each supported language. The
+ * console reads the operator's chosen language on every render, so switching it
+ * changes the whole interface rather than only the next screen.
+ *
+ * Placeholders are written as {name} and substituted by {@link t}. A missing
+ * translation falls back to English rather than showing a key, because a shop
+ * owner should never be shown an identifier.
+ */
+
+export const LOCALES = ["en", "th", "zh", "my"] as const;
+
+export type Locale = (typeof LOCALES)[number];
+
+/** Language names, each written in its own language. */
+export const LOCALE_NAMES: Record<Locale, string> = {
+  en: "English",
+  th: "ไทย",
+  zh: "中文",
+  my: "မြန်မာ",
+};
+
+export function isLocale(value: string): value is Locale {
+  return (LOCALES as readonly string[]).includes(value);
+}
+
+type Entry = Record<Locale, string>;
+
+const STRINGS = {
+  // Shared ------------------------------------------------------------------
+  back: { en: "Back", th: "ย้อนกลับ", zh: "返回", my: "နောက်သို့" },
+  cancel: { en: "Cancel", th: "ยกเลิก", zh: "取消", my: "မလုပ်တော့ပါ" },
+  yes: { en: "Yes", th: "ใช่", zh: "是", my: "ဟုတ်ကဲ့" },
+  no: { en: "No", th: "ไม่", zh: "否", my: "မဟုတ်ပါ" },
+  none: { en: "none", th: "ไม่มี", zh: "无", my: "မရှိပါ" },
+  saved: { en: "Saved.", th: "บันทึกแล้ว", zh: "已保存", my: "သိမ်းပြီးပါပြီ" },
+
+  private: {
+    en: "This console is private. Ask the owner to grant you access.",
+    th: "คอนโซลนี้เป็นส่วนตัว โปรดขอสิทธิ์จากเจ้าของ",
+    zh: "此控制台为私有。请向所有者申请访问权限。",
+    my: "ဤ console သည် သီးသန့်ဖြစ်သည်။ ပိုင်ရှင်ထံ ခွင့်ပြုချက် တောင်းပါ။",
+  },
+  failed: {
+    en: "That action could not complete.",
+    th: "ทำรายการไม่สำเร็จ",
+    zh: "该操作无法完成。",
+    my: "အဲဒီလုပ်ဆောင်ချက် မပြီးမြောက်ပါ။",
+  },
+  expired: {
+    en: "This menu expired.",
+    th: "เมนูนี้หมดอายุแล้ว",
+    zh: "此菜单已过期。",
+    my: "ဤ menu သက်တမ်းကုန်သွားပါပြီ။",
+  },
+
+  // Home --------------------------------------------------------------------
+  homeTitle: { en: "Muxel console", th: "คอนโซล Muxel", zh: "Muxel 控制台", my: "Muxel console" },
+  homeBody: {
+    en: "Manage the businesses and bots in this deployment.",
+    th: "จัดการธุรกิจและบอทในระบบนี้",
+    zh: "管理此部署中的商家与机器人。",
+    my: "ဤ deployment ရှိ လုပ်ငန်းများနှင့် bot များကို စီမံပါ။",
+  },
+  btnBusinesses: { en: "Businesses", th: "ธุรกิจ", zh: "商家", my: "လုပ်ငန်းများ" },
+  btnAddBusiness: { en: "Add business", th: "เพิ่มธุรกิจ", zh: "添加商家", my: "လုပ်ငန်း အသစ်ထည့်" },
+  btnHelp: { en: "Help", th: "ช่วยเหลือ", zh: "帮助", my: "အကူအညီ" },
+  btnLanguage: { en: "Language", th: "ภาษา", zh: "语言", my: "ဘာသာစကား" },
+
+  // Businesses --------------------------------------------------------------
+  bizListTitle: { en: "Businesses", th: "ธุรกิจ", zh: "商家", my: "လုပ်ငန်းများ" },
+  bizListEmpty: {
+    en: "No businesses yet. Add one to get started.",
+    th: "ยังไม่มีธุรกิจ เพิ่มหนึ่งรายการเพื่อเริ่มต้น",
+    zh: "还没有商家。添加一个即可开始。",
+    my: "လုပ်ငန်း မရှိသေးပါ။ တစ်ခု ထည့်ပြီး စတင်ပါ။",
+  },
+  bizListCount: {
+    en: "{count} configured.",
+    th: "ตั้งค่าแล้ว {count} รายการ",
+    zh: "已配置 {count} 个。",
+    my: "{count} ခု ရှိပါသည်။",
+  },
+  bizAddTitle: { en: "Add business", th: "เพิ่มธุรกิจ", zh: "添加商家", my: "လုပ်ငန်း အသစ်ထည့်" },
+  bizAddBody: {
+    en: "Send the business name as a message.",
+    th: "ส่งชื่อธุรกิจมาเป็นข้อความ",
+    zh: "请以消息形式发送商家名称。",
+    my: "လုပ်ငန်းအမည်ကို message အဖြစ် ပို့ပါ။",
+  },
+  bizAddInvalid: {
+    en: "Send a name between 1 and 80 characters.",
+    th: "กรุณาส่งชื่อความยาว 1 ถึง 80 ตัวอักษร",
+    zh: "请发送 1 至 80 个字符的名称。",
+    my: "စာလုံး ၁ လုံးမှ ၈၀ အတွင်း အမည် ပို့ပါ။",
+  },
+  bizModel: { en: "Model", th: "โมเดล", zh: "模型", my: "Model" },
+  bizLanguage: { en: "Reply language", th: "ภาษาที่ตอบ", zh: "回复语言", my: "ဖြေမည့် ဘာသာစကား" },
+  bizBots: { en: "Bots", th: "บอท", zh: "机器人", my: "Bot" },
+  bizDocuments: { en: "Data files", th: "ไฟล์ข้อมูล", zh: "数据文件", my: "ဒေတာ ဖိုင်" },
+  bizProducts: { en: "Products", th: "สินค้า", zh: "商品", my: "ကုန်ပစ္စည်း" },
+  bizCustomers: { en: "Customers", th: "ลูกค้า", zh: "客户", my: "customer" },
+  bizInstructions: { en: "Instructions", th: "คำสั่ง", zh: "指令", my: "ညွှန်ကြားချက်" },
+  bizDefault: { en: "default", th: "ค่าเริ่มต้น", zh: "默认", my: "မူလအတိုင်း" },
+  bizToday: {
+    en: "Today: {messages} messages, {tokens} tokens",
+    th: "วันนี้: {messages} ข้อความ, {tokens} โทเคน",
+    zh: "今日：{messages} 条消息，{tokens} 个 token",
+    my: "ဒီနေ့: message {messages} ခု, token {tokens}",
+  },
+  btnData: { en: "Data", th: "ข้อมูล", zh: "数据", my: "ဒေတာ" },
+  btnProducts: { en: "Products", th: "สินค้า", zh: "商品", my: "ကုန်ပစ္စည်း" },
+  btnCustomers: { en: "Customers", th: "ลูกค้า", zh: "客户", my: "customer" },
+  btnInstructions: { en: "Instructions", th: "คำสั่ง", zh: "指令", my: "ညွှန်ကြားချက်" },
+  btnBots: { en: "Bots", th: "บอท", zh: "机器人", my: "Bot" },
+  btnModel: { en: "Change model", th: "เปลี่ยนโมเดล", zh: "更换模型", my: "Model ပြောင်း" },
+  btnDeleteBusiness: { en: "Delete business", th: "ลบธุรกิจ", zh: "删除商家", my: "လုပ်ငန်း ဖျက်" },
+  bizDeleteConfirm: {
+    en: "Delete {name}?\n\nThis removes its data files, products, customers and bots. It cannot be undone.",
+    th: "ลบ {name} หรือไม่?\n\nการดำเนินการนี้จะลบไฟล์ข้อมูล สินค้า ลูกค้า และบอททั้งหมด และไม่สามารถย้อนกลับได้",
+    zh: "删除 {name}？\n\n这会移除其数据文件、商品、客户与机器人，且无法撤销。",
+    my: "{name} ကို ဖျက်မလား?\n\nဒေတာဖိုင်၊ ကုန်ပစ္စည်း၊ customer နှင့် bot အားလုံး ပျက်သွားပါမည်။ ပြန်ရလို့ မရပါ။",
+  },
+
+  // Data --------------------------------------------------------------------
+  dataTitle: { en: "Data for {name}", th: "ข้อมูลของ {name}", zh: "{name} 的数据", my: "{name} ၏ ဒေတာ" },
+  dataEmpty: { en: "Nothing yet.", th: "ยังไม่มี", zh: "暂无内容。", my: "ဘာမှ မရှိသေးပါ။" },
+  dataHint: {
+    en: "Accepted: PDF, Word, Excel, CSV, TXT, Markdown, JSON and JSONL.",
+    th: "รองรับ: PDF, Word, Excel, CSV, TXT, Markdown, JSON และ JSONL",
+    zh: "支持：PDF、Word、Excel、CSV、TXT、Markdown、JSON 和 JSONL。",
+    my: "လက်ခံသည်: PDF, Word, Excel, CSV, TXT, Markdown, JSON, JSONL",
+  },
+  btnAddData: { en: "Add data", th: "เพิ่มข้อมูล", zh: "添加数据", my: "ဒေတာ ထည့်" },
+  btnSeeData: { en: "See data", th: "ดูข้อมูล", zh: "查看数据", my: "ဒေတာ ကြည့်" },
+  dataAddTitle: { en: "Add data", th: "เพิ่มข้อมูล", zh: "添加数据", my: "ဒေတာ ထည့်" },
+  dataAddBody: {
+    en: "Send the file to this chat now.",
+    th: "ส่งไฟล์มาที่แชทนี้ได้เลย",
+    zh: "现在把文件发送到此聊天。",
+    my: "ဖိုင်ကို ဤ chat ထဲ ပို့လိုက်ပါ။",
+  },
+  dataReading: { en: "Reading the file...", th: "กำลังอ่านไฟล์...", zh: "正在读取文件…", my: "ဖိုင် ဖတ်နေသည်..." },
+  dataAdded: {
+    en: "Added {name} as {chunks} pieces.",
+    th: "เพิ่ม {name} แล้ว แบ่งเป็น {chunks} ส่วน",
+    zh: "已添加 {name}，共 {chunks} 段。",
+    my: "{name} ကို အပိုင်း {chunks} ခုအဖြစ် ထည့်ပြီးပါပြီ။",
+  },
+  dataFailed: { en: "Could not add that file: {reason}", th: "เพิ่มไฟล์ไม่สำเร็จ: {reason}", zh: "无法添加该文件：{reason}", my: "ဖိုင် မထည့်နိုင်ပါ: {reason}" },
+  dataNoBusiness: {
+    en: "Choose a business first, then send the file.",
+    th: "เลือกธุรกิจก่อน แล้วจึงส่งไฟล์",
+    zh: "请先选择商家，然后再发送文件。",
+    my: "လုပ်ငန်းတစ်ခု အရင်ရွေးပါ၊ ပြီးမှ ဖိုင်ပို့ပါ။",
+  },
+  dataDetail: {
+    en: "{name}\n\nStatus: {status}\nPieces: {chunks}\nSize: {size}\nAdded: {added}",
+    th: "{name}\n\nสถานะ: {status}\nส่วน: {chunks}\nขนาด: {size}\nเพิ่มเมื่อ: {added}",
+    zh: "{name}\n\n状态：{status}\n段数：{chunks}\n大小：{size}\n添加时间：{added}",
+    my: "{name}\n\nအခြေအနေ: {status}\nအပိုင်း: {chunks}\nအရွယ်: {size}\nထည့်သည့်ရက်: {added}",
+  },
+  btnDeleteData: { en: "Delete this file", th: "ลบไฟล์นี้", zh: "删除此文件", my: "ဤဖိုင် ဖျက်" },
+  dataDeleteConfirm: {
+    en: "Delete {name} from the knowledge?",
+    th: "ลบ {name} ออกจากคลังความรู้หรือไม่?",
+    zh: "从知识库中删除 {name}？",
+    my: "{name} ကို knowledge ထဲက ဖျက်မလား?",
+  },
+
+  // Products ----------------------------------------------------------------
+  prodTitle: { en: "Products of {name}", th: "สินค้าของ {name}", zh: "{name} 的商品", my: "{name} ၏ ကုန်ပစ္စည်း" },
+  prodEmpty: {
+    en: "No products yet. Add them one at a time, or upload a file.",
+    th: "ยังไม่มีสินค้า เพิ่มทีละรายการ หรืออัปโหลดไฟล์",
+    zh: "还没有商品。可逐个添加，或上传文件。",
+    my: "ကုန်ပစ္စည်း မရှိသေးပါ။ တစ်ခုချင်း ထည့်ပါ၊ သို့မဟုတ် ဖိုင် တင်ပါ။",
+  },
+  btnAddProduct: { en: "Add one product", th: "เพิ่มสินค้าทีละรายการ", zh: "添加单个商品", my: "တစ်ခုချင်း ထည့်" },
+  btnBulkProducts: { en: "Upload a product file", th: "อัปโหลดไฟล์สินค้า", zh: "上传商品文件", my: "ကုန်ပစ္စည်းဖိုင် တင်" },
+  prodAddTitle: { en: "Add a product", th: "เพิ่มสินค้า", zh: "添加商品", my: "ကုန်ပစ္စည်း ထည့်" },
+  prodAddBody: {
+    en: "Send one line:\n\nname | price | description\n\nThe price and description are optional.",
+    th: "ส่งหนึ่งบรรทัด:\n\nชื่อ | ราคา | รายละเอียด\n\nราคาและรายละเอียดใส่หรือไม่ก็ได้",
+    zh: "发送一行：\n\n名称 | 价格 | 描述\n\n价格与描述可省略。",
+    my: "တစ်ကြောင်း ပို့ပါ:\n\nအမည် | ဈေးနှုန်း | ဖော်ပြချက်\n\nဈေးနှုန်းနှင့် ဖော်ပြချက် မထည့်လည်း ရပါသည်။",
+  },
+  prodAddInvalid: {
+    en: "Send at least a product name.",
+    th: "กรุณาส่งอย่างน้อยชื่อสินค้า",
+    zh: "请至少提供商品名称。",
+    my: "အနည်းဆုံး ကုန်ပစ္စည်းအမည် ပို့ပါ။",
+  },
+  btnDeleteProduct: { en: "Delete this product", th: "ลบสินค้านี้", zh: "删除此商品", my: "ဤပစ္စည်း ဖျက်" },
+  prodDeleteConfirm: { en: "Delete {name}?", th: "ลบ {name} หรือไม่?", zh: "删除 {name}？", my: "{name} ကို ဖျက်မလား?" },
+  prodSynced: {
+    en: "The assistant now knows about {count} products.",
+    th: "ผู้ช่วยรู้จักสินค้า {count} รายการแล้ว",
+    zh: "助手现在了解 {count} 件商品。",
+    my: "အခု assistant က ကုန်ပစ္စည်း {count} မျိုး သိပါပြီ။",
+  },
+
+  // Instructions ------------------------------------------------------------
+  instTitle: { en: "Instructions for {name}", th: "คำสั่งสำหรับ {name}", zh: "{name} 的指令", my: "{name} အတွက် ညွှန်ကြားချက်" },
+  instBody: {
+    en: "Tone, rules and anything the assistant should always know. This is your own text and is trusted, unlike uploaded files.",
+    th: "น้ำเสียง กฎ และสิ่งที่ผู้ช่วยควรรู้เสมอ ข้อความนี้เป็นของคุณเองและเชื่อถือได้ ต่างจากไฟล์ที่อัปโหลด",
+    zh: "语气、规则，以及助手应始终知道的内容。这是你自己撰写的文本，与上传文件不同，会被信任。",
+    my: "လေသံ၊ စည်းမျဉ်းနှင့် assistant အမြဲသိထားရမည့် အရာများ။ ဤစာမှာ သင် ကိုယ်တိုင် ရေးသောကြောင့် ယုံကြည်ရသည် — တင်ထားသော ဖိုင်များနှင့် မတူပါ။",
+  },
+  instUsingDefault: { en: "Using the default instructions.", th: "กำลังใช้คำสั่งค่าเริ่มต้น", zh: "正在使用默认指令。", my: "မူလ ညွှန်ကြားချက် သုံးနေသည်။" },
+  btnEditInstructions: { en: "Replace", th: "แทนที่", zh: "替换", my: "အစားထိုး" },
+  btnUndoInstructions: { en: "Undo last change", th: "ย้อนการแก้ไขล่าสุด", zh: "撤销上次更改", my: "နောက်ဆုံးပြင်ဆင်မှု ပြန်ဖျက်" },
+  btnResetInstructions: { en: "Reset to default", th: "รีเซ็ตเป็นค่าเริ่มต้น", zh: "恢复默认", my: "မူလအတိုင်း ပြန်ထား" },
+  instEditBody: {
+    en: "Send the new instructions as a message, or send a .md or .txt file. Up to {limit} characters.",
+    th: "ส่งคำสั่งใหม่เป็นข้อความ หรือส่งไฟล์ .md หรือ .txt ได้สูงสุด {limit} ตัวอักษร",
+    zh: "以消息形式发送新指令，或发送 .md 或 .txt 文件。最多 {limit} 个字符。",
+    my: "ညွှန်ကြားချက်အသစ်ကို message အဖြစ် ပို့ပါ၊ သို့မဟုတ် .md / .txt ဖိုင် ပို့ပါ။ စာလုံး {limit} အထိ။",
+  },
+  instNothing: { en: "Nothing to save.", th: "ไม่มีข้อมูลให้บันทึก", zh: "没有可保存的内容。", my: "သိမ်းစရာ မရှိပါ။" },
+
+  // Customers ---------------------------------------------------------------
+  custTitle: { en: "Customers of {name}", th: "ลูกค้าของ {name}", zh: "{name} 的客户", my: "{name} ၏ customer များ" },
+  custEmpty: { en: "Nobody has written yet.", th: "ยังไม่มีใครทักมา", zh: "还没有人来消息。", my: "ဘယ်သူမှ မစာမပို့ရသေးပါ။" },
+  custRecent: { en: "{count} most recent.", th: "ล่าสุด {count} ราย", zh: "最近 {count} 位。", my: "နောက်ဆုံး {count} ဦး။" },
+  custStage: { en: "Stage", th: "สถานะ", zh: "阶段", my: "အဆင့်" },
+  custMessages: { en: "Messages", th: "ข้อความ", zh: "消息数", my: "message" },
+  custFirstSeen: { en: "First seen", th: "พบครั้งแรก", zh: "首次出现", my: "ပထမဆုံး တွေ့သည့်ရက်" },
+  custNote: { en: "Note", th: "บันทึก", zh: "备注", my: "မှတ်ချက်" },
+  custRemembered: { en: "Remembered", th: "สิ่งที่จำได้", zh: "已记住", my: "မှတ်ထားသည်များ" },
+  custNothingKnown: { en: "Nothing remembered yet.", th: "ยังไม่ได้จำอะไร", zh: "尚未记住任何内容。", my: "ဘာမှ မမှတ်ရသေးပါ။" },
+  btnAddNote: { en: "Add note", th: "เพิ่มบันทึก", zh: "添加备注", my: "မှတ်ချက် ထည့်" },
+  btnMarkAs: { en: "Mark as {stage}", th: "ตั้งเป็น {stage}", zh: "标记为 {stage}", my: "{stage} အဖြစ် သတ်မှတ်" },
+  btnForgetFacts: { en: "Forget what is remembered", th: "ลืมสิ่งที่จำไว้", zh: "忘记已记住的内容", my: "မှတ်ထားသည်များ မေ့ပစ်" },
+  btnDeleteCustomer: { en: "Delete customer", th: "ลบลูกค้า", zh: "删除客户", my: "customer ဖျက်" },
+  custNoteBody: {
+    en: "Send the note as a message. It replaces the current one.",
+    th: "ส่งบันทึกเป็นข้อความ ระบบจะแทนที่บันทึกเดิม",
+    zh: "以消息形式发送备注，将替换现有备注。",
+    my: "မှတ်ချက်ကို message အဖြစ် ပို့ပါ။ ရှိပြီးသားကို အစားထိုးပါမည်။",
+  },
+  stageNew: { en: "new", th: "ใหม่", zh: "新", my: "အသစ်" },
+  stageLead: { en: "lead", th: "ผู้สนใจ", zh: "潜在", my: "စိတ်ဝင်စား" },
+  stageCustomer: { en: "customer", th: "ลูกค้า", zh: "客户", my: "customer" },
+  stageBlocked: { en: "blocked", th: "ถูกบล็อก", zh: "已屏蔽", my: "ပိတ်ထား" },
+
+  // Bots --------------------------------------------------------------------
+  botsTitle: { en: "Bots for {name}", th: "บอทของ {name}", zh: "{name} 的机器人", my: "{name} ၏ bot များ" },
+  botsEmpty: { en: "No bots connected yet.", th: "ยังไม่ได้เชื่อมต่อบอท", zh: "尚未连接机器人。", my: "bot မချိတ်ရသေးပါ။" },
+  botConsole: { en: "Console", th: "คอนโซล", zh: "控制台", my: "Console" },
+  botCustomer: { en: "Customer", th: "ลูกค้า", zh: "客户", my: "Customer" },
+  btnConnectBot: { en: "Connect customer bot", th: "เชื่อมต่อบอทลูกค้า", zh: "连接客户机器人", my: "customer bot ချိတ်" },
+  btnReplaceConsole: { en: "Replace console bot", th: "เปลี่ยนบอทคอนโซล", zh: "更换控制台机器人", my: "console bot ပြောင်း" },
+  botAddBody: {
+    en: "Create a bot with @BotFather, then send its token here. The token is encrypted before storage and your message is deleted straight away.",
+    th: "สร้างบอทด้วย @BotFather แล้วส่งโทเคนมาที่นี่ โทเคนจะถูกเข้ารหัสก่อนจัดเก็บ และข้อความของคุณจะถูกลบทันที",
+    zh: "用 @BotFather 创建机器人，然后把 token 发到这里。token 会在存储前加密，你的消息会被立即删除。",
+    my: "@BotFather နှင့် bot ဆောက်ပြီး token ကို ဤနေရာ ပို့ပါ။ token ကို သိမ်းမီ encrypt လုပ်ပြီး သင့် message ကို ချက်ချင်း ဖျက်ပါမည်။",
+  },
+  botReplaceWarning: {
+    en: "The current console bot stops responding as soon as this succeeds, so continue in the new one.",
+    th: "บอทคอนโซลปัจจุบันจะหยุดตอบทันทีที่สำเร็จ กรุณาใช้งานต่อในบอทใหม่",
+    zh: "一旦成功，当前控制台机器人将停止响应，请在新机器人中继续。",
+    my: "အောင်မြင်သည်နှင့် လက်ရှိ console bot ရပ်သွားမည်ဖြစ်၍ bot အသစ်တွင် ဆက်လုပ်ပါ။",
+  },
+  botRejected: { en: "Telegram rejected that token.", th: "Telegram ปฏิเสธโทเคนนี้", zh: "Telegram 拒绝了该 token。", my: "Telegram က အဲဒီ token ကို ငြင်းပယ်ပါသည်။" },
+  botMoved: {
+    en: "Console moved to @{username}. Send /start here to continue.",
+    th: "ย้ายคอนโซลไปที่ @{username} แล้ว ส่ง /start ที่นี่เพื่อดำเนินการต่อ",
+    zh: "控制台已迁移到 @{username}。在此发送 /start 继续。",
+    my: "Console ကို @{username} သို့ ပြောင်းပြီးပါပြီ။ ဆက်လုပ်ရန် /start ပို့ပါ။",
+  },
+
+  // Model -------------------------------------------------------------------
+  modelTitle: { en: "Model for {name}", th: "โมเดลของ {name}", zh: "{name} 的模型", my: "{name} အတွက် model" },
+  modelBody: {
+    en: "Pick the model that answers customers. Models marked with a key need a provider key in your AI Gateway. Your Cloudflare login covers the unmarked ones.",
+    th: "เลือกโมเดลที่จะตอบลูกค้า โมเดลที่ระบุว่าต้องใช้คีย์ ต้องมีคีย์ผู้ให้บริการใน AI Gateway ของคุณ ส่วนที่ไม่ระบุใช้บัญชี Cloudflare ของคุณได้เลย",
+    zh: "选择用于回复客户的模型。标记需要密钥的模型必须在你的 AI Gateway 中配置提供商密钥；未标记的可直接使用你的 Cloudflare 账户。",
+    my: "customer ကို ဖြေမည့် model ရွေးပါ။ key လိုသည်ဟု မှတ်ထားသော model များအတွက် သင့် AI Gateway တွင် provider key လိုအပ်သည်။ မမှတ်ထားသူများကို သင့် Cloudflare account ဖြင့် ရပါသည်။",
+  },
+  modelCurrent: { en: "current", th: "ใช้อยู่", zh: "当前", my: "လက်ရှိ" },
+  modelNeedsKey: { en: "needs key", th: "ต้องใช้คีย์", zh: "需密钥", my: "key လိုသည်" },
+
+  // Language ----------------------------------------------------------------
+  langTitle: { en: "Language", th: "ภาษา", zh: "语言", my: "ဘာသာစကား" },
+  langBody: {
+    en: "This changes the console only. Each business answers customers in its own language.",
+    th: "การตั้งค่านี้เปลี่ยนเฉพาะคอนโซล แต่ละธุรกิจจะตอบลูกค้าด้วยภาษาของตนเอง",
+    zh: "此设置仅更改控制台。每个商家仍以各自的语言回复客户。",
+    my: "ဤအရာက console ကိုသာ ပြောင်းသည်။ လုပ်ငန်းတစ်ခုစီသည် သူ့ဘာသာစကားဖြင့် customer ကို ဖြေပါမည်။",
+  },
+
+  // Help --------------------------------------------------------------------
+  helpTitle: { en: "Help", th: "ช่วยเหลือ", zh: "帮助", my: "အကူအညီ" },
+  helpBody: {
+    en: [
+      "Everything runs inside your own Cloudflare account. No data leaves it.",
+      "",
+      "<b>Getting started</b>",
+      "1. Add business, and give it a name.",
+      "2. Open it, then Data, then Add data, and send a file.",
+      "3. Bots, then Connect customer bot, and send a token from @BotFather.",
+      "4. Write to that customer bot as if you were a customer.",
+      "",
+      "<b>Data and Products</b>",
+      "Data is files: PDF, Word, Excel, CSV, TXT, Markdown, JSON, JSONL.",
+      "Products are entered one at a time and can be corrected or removed",
+      "individually, which files cannot.",
+      "",
+      "<b>Instructions</b>",
+      "Your own rules for the assistant. Files are facts it may quote,",
+      "instructions are rules it follows. A sentence inside a file can never",
+      "change how the assistant behaves.",
+      "",
+      "<b>Customers</b>",
+      "Everyone who writes gets a record. The assistant remembers durable",
+      "facts about them so they need not repeat themselves. Blocking someone",
+      "stops the assistant answering them.",
+      "",
+      "If the assistant says it does not know, the answer is not in its data.",
+      "Add it under Data or Products.",
+    ].join("\n"),
+    th: [
+      "ทุกอย่างทำงานภายในบัญชี Cloudflare ของคุณเอง ไม่มีข้อมูลออกไปข้างนอก",
+      "",
+      "<b>เริ่มต้นใช้งาน</b>",
+      "1. เพิ่มธุรกิจ แล้วตั้งชื่อ",
+      "2. เปิดธุรกิจ ไปที่ ข้อมูล แล้ว เพิ่มข้อมูล และส่งไฟล์",
+      "3. ไปที่ บอท แล้ว เชื่อมต่อบอทลูกค้า และส่งโทเคนจาก @BotFather",
+      "4. ทักไปที่บอทลูกค้าเสมือนคุณเป็นลูกค้า",
+      "",
+      "<b>ข้อมูลและสินค้า</b>",
+      "ข้อมูลคือไฟล์: PDF, Word, Excel, CSV, TXT, Markdown, JSON, JSONL",
+      "สินค้าจะเพิ่มทีละรายการ และแก้ไขหรือลบเป็นรายการได้ ซึ่งไฟล์ทำไม่ได้",
+      "",
+      "<b>คำสั่ง</b>",
+      "คือกฎของคุณเองสำหรับผู้ช่วย ไฟล์คือข้อเท็จจริงที่อ้างอิงได้",
+      "ส่วนคำสั่งคือกฎที่ต้องปฏิบัติตาม ข้อความในไฟล์ไม่สามารถ",
+      "เปลี่ยนพฤติกรรมของผู้ช่วยได้",
+      "",
+      "<b>ลูกค้า</b>",
+      "ทุกคนที่ทักมาจะมีระเบียนของตนเอง ผู้ช่วยจะจำข้อเท็จจริงที่คงอยู่",
+      "เพื่อไม่ให้ลูกค้าต้องพูดซ้ำ การบล็อกจะทำให้ผู้ช่วยไม่ตอบคนนั้น",
+      "",
+      "หากผู้ช่วยบอกว่าไม่ทราบ แปลว่าคำตอบยังไม่อยู่ในข้อมูล",
+      "กรุณาเพิ่มที่ ข้อมูล หรือ สินค้า",
+    ].join("\n"),
+    zh: [
+      "一切都在你自己的 Cloudflare 账户中运行，数据不会外流。",
+      "",
+      "<b>开始使用</b>",
+      "1. 添加商家并命名。",
+      "2. 打开它，进入「数据」，点「添加数据」，然后发送文件。",
+      "3. 进入「机器人」，点「连接客户机器人」，发送 @BotFather 给的 token。",
+      "4. 以客户身份给该机器人发消息试试。",
+      "",
+      "<b>数据与商品</b>",
+      "数据是文件：PDF、Word、Excel、CSV、TXT、Markdown、JSON、JSONL。",
+      "商品是逐个录入的，可以单独修改或删除，文件则不行。",
+      "",
+      "<b>指令</b>",
+      "你为助手设定的规则。文件是它可以引用的事实，指令是它必须遵守的",
+      "规则。文件里的任何句子都无法改变助手的行为。",
+      "",
+      "<b>客户</b>",
+      "每个来消息的人都会有记录。助手会记住关于他们的长期事实，",
+      "免得他们重复说明。屏蔽某人后，助手将不再回复他。",
+      "",
+      "如果助手说不知道，说明答案不在它的数据里。请在「数据」或",
+      "「商品」中补充。",
+    ].join("\n"),
+    my: [
+      "အားလုံးသည် သင့်ကိုယ်ပိုင် Cloudflare account ထဲတွင်သာ အလုပ်လုပ်သည်။ ဒေတာ ပြင်ပသို့ မထွက်ပါ။",
+      "",
+      "<b>စတင်ရန်</b>",
+      "၁။ လုပ်ငန်း အသစ်ထည့် ပြီး အမည်ပေးပါ။",
+      "၂။ ဖွင့်ပြီး ဒေတာ → ဒေတာ ထည့် → ဖိုင် ပို့ပါ။",
+      "၃။ Bot → customer bot ချိတ် → @BotFather ကရသော token ပို့ပါ။",
+      "၄။ အဲဒီ customer bot ကို customer တစ်ယောက်လို စာပို့ကြည့်ပါ။",
+      "",
+      "<b>ဒေတာနှင့် ကုန်ပစ္စည်း</b>",
+      "ဒေတာ ဆိုသည်မှာ ဖိုင်များ: PDF, Word, Excel, CSV, TXT, Markdown, JSON, JSONL။",
+      "ကုန်ပစ္စည်းကို တစ်ခုချင်း ထည့်ပြီး တစ်ခုချင်း ပြင်နိုင် ဖျက်နိုင်သည် —",
+      "ဖိုင်များက အဲဒီလို မရပါ။",
+      "",
+      "<b>ညွှန်ကြားချက်</b>",
+      "assistant အတွက် သင့်ကိုယ်ပိုင် စည်းမျဉ်းများ။ ဖိုင်များသည် ကိုးကားနိုင်သော",
+      "အချက်အလက်ဖြစ်ပြီး ညွှန်ကြားချက်များသည် လိုက်နာရမည့် စည်းမျဉ်းဖြစ်သည်။",
+      "ဖိုင်ထဲက စာကြောင်းတစ်ကြောင်းက assistant ၏ အပြုအမူကို ဘယ်တော့မှ မပြောင်းနိုင်ပါ။",
+      "",
+      "<b>Customer များ</b>",
+      "စာပို့သူတိုင်း မှတ်တမ်း ရရှိသည်။ assistant က သူတို့အကြောင်း တည်မြဲသော",
+      "အချက်များကို မှတ်ထားသဖြင့် ထပ်ပြောစရာ မလိုပါ။ ပိတ်လိုက်လျှင်",
+      "assistant က အဲဒီသူကို မဖြေတော့ပါ။",
+      "",
+      "assistant က မသိဟု ဆိုလျှင် အဖြေသည် ဒေတာထဲတွင် မရှိသေးပါ။",
+      "ဒေတာ သို့မဟုတ် ကုန်ပစ္စည်း တွင် ထည့်ပါ။",
+    ].join("\n"),
+  },
+} satisfies Record<string, Entry>;
+
+export type MessageKey = keyof typeof STRINGS;
+
+/**
+ * Looks up a translated string and fills in any placeholders.
+ *
+ * English is used when a language has no entry, so a gap shows as untranslated
+ * text rather than as an identifier.
+ */
+export function t(
+  locale: Locale,
+  key: MessageKey,
+  vars: Record<string, string | number> = {},
+): string {
+  const entry = STRINGS[key] as Entry;
+  const template = entry[locale] || entry.en;
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) => {
+    const value = vars[name];
+    return value === undefined ? whole : String(value);
+  });
+}

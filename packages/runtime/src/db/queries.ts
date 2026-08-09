@@ -19,6 +19,7 @@ import {
   type CustomerFact,
   type CustomerStage,
   type DocumentStatus,
+  type Product,
 } from "@muxel/core";
 
 import type { Env } from "../env.js";
@@ -525,6 +526,154 @@ export async function recentTurns(
   return result.results
     .map((row) => ({ role: row.role as "user" | "assistant", content: row.content }))
     .reverse();
+}
+
+// Console language -------------------------------------------------------------
+
+/** Returns the console language an operator chose, or null for the default. */
+export async function getOperatorLocale(env: Env, telegramUserId: number): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT locale FROM operator_locale WHERE telegram_user_id = ?",
+  )
+    .bind(telegramUserId)
+    .first<{ locale: string }>();
+  return row?.locale ?? null;
+}
+
+export async function setOperatorLocale(
+  env: Env,
+  telegramUserId: number,
+  locale: string,
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO operator_locale (telegram_user_id, locale) VALUES (?, ?)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET locale = excluded.locale`,
+  )
+    .bind(telegramUserId, locale)
+    .run();
+}
+
+// Products ----------------------------------------------------------------------
+
+export async function createProduct(
+  env: Env,
+  input: { businessId: string; name: string; price: string; description: string },
+): Promise<string> {
+  assertValidId(input.businessId, "businessId");
+  const id = generateId();
+  await env.DB.prepare(
+    "INSERT INTO product (id, business_id, name, price, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  )
+    .bind(id, input.businessId, input.name, input.price, input.description, now())
+    .run();
+  return id;
+}
+
+export async function listProducts(env: Env, businessId: string): Promise<Product[]> {
+  assertValidId(businessId, "businessId");
+  const result = await env.DB.prepare(
+    "SELECT id, business_id, name, price, description, created_at FROM product WHERE business_id = ? ORDER BY name",
+  )
+    .bind(businessId)
+    .all<{
+      id: string;
+      business_id: string;
+      name: string;
+      price: string;
+      description: string;
+      created_at: string;
+    }>();
+  return result.results.map((row) => ({
+    id: row.id,
+    businessId: row.business_id,
+    name: row.name,
+    price: row.price,
+    description: row.description,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function getProduct(env: Env, productId: string): Promise<Product> {
+  assertValidId(productId, "productId");
+  const row = await env.DB.prepare("SELECT * FROM product WHERE id = ?")
+    .bind(productId)
+    .first<{
+      id: string;
+      business_id: string;
+      name: string;
+      price: string;
+      description: string;
+      created_at: string;
+    }>();
+  if (row === null) {
+    throw notFound("product not found", { productId });
+  }
+  return {
+    id: row.id,
+    businessId: row.business_id,
+    name: row.name,
+    price: row.price,
+    description: row.description,
+    createdAt: row.created_at,
+  };
+}
+
+export async function deleteProduct(env: Env, productId: string): Promise<void> {
+  assertValidId(productId, "productId");
+  await env.DB.prepare("DELETE FROM product WHERE id = ?").bind(productId).run();
+}
+
+// Deletion ----------------------------------------------------------------------
+
+/**
+ * Removes a document and returns the ids of the vectors it owned.
+ *
+ * The caller deletes those from the index. Doing it in this order means a
+ * failure leaves orphaned vectors, which retrieval already tolerates, rather
+ * than rows pointing at vectors that are gone.
+ */
+export async function deleteDocument(
+  env: Env,
+  businessId: string,
+  documentId: string,
+): Promise<string[]> {
+  assertValidId(businessId, "businessId");
+  assertValidId(documentId, "documentId");
+  const chunks = await env.DB.prepare(
+    "SELECT id FROM chunk WHERE business_id = ? AND document_id = ?",
+  )
+    .bind(businessId, documentId)
+    .all<{ id: string }>();
+  await env.DB.prepare("DELETE FROM document WHERE id = ? AND business_id = ?")
+    .bind(documentId, businessId)
+    .run();
+  return chunks.results.map((row) => row.id);
+}
+
+/** Removes a business and returns the ids of every vector it owned. */
+export async function deleteBusiness(env: Env, businessId: string): Promise<string[]> {
+  assertValidId(businessId, "businessId");
+  const chunks = await env.DB.prepare("SELECT id FROM chunk WHERE business_id = ?")
+    .bind(businessId)
+    .all<{ id: string }>();
+  // Every other table references business with ON DELETE CASCADE.
+  await env.DB.prepare("DELETE FROM business WHERE id = ?").bind(businessId).run();
+  return chunks.results.map((row) => row.id);
+}
+
+/** Finds the generated catalogue document for a business, if it exists. */
+export async function findDocumentByName(
+  env: Env,
+  businessId: string,
+  filename: string,
+): Promise<string | null> {
+  assertValidId(businessId, "businessId");
+  const row = await env.DB.prepare(
+    "SELECT id FROM document WHERE business_id = ? AND filename = ? ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(businessId, filename)
+    .first<{ id: string }>();
+  return row?.id ?? null;
 }
 
 // Customers ------------------------------------------------------------------

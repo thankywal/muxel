@@ -1,26 +1,29 @@
 /**
  * Document ingestion.
  *
- * The original file is kept in R2 so that a change to the chunking strategy can
- * be replayed without asking the operator to upload anything again. Extraction
- * uses the platform markdown conversion, which understands PDF, DOCX, XLSX,
- * HTML and CSV, rather than bundling a parser into the Worker.
+ * Uploads arrive in whatever the operator had to hand: a price list exported
+ * from Excel, a policy in Word, a plain text note, a product dump as JSONL.
+ * Each is turned into text, split and indexed by the same path, so retrieval
+ * does not care where a fact came from.
+ *
+ * Text formats are decoded directly rather than sent through the markdown
+ * converter. It is cheaper, it cannot fail, and it avoids a round trip for
+ * content that is already text.
  */
 
 import { chunkText, generateId, MuxelError } from "@muxel/core";
 
 import { embedBatch } from "../ai/gateway.js";
-import { createDocument, insertChunks, setDocumentStatus } from "../db/queries.js";
+import {
+  createDocument,
+  deleteDocument,
+  findDocumentByName,
+  insertChunks,
+  listProducts,
+  setDocumentStatus,
+} from "../db/queries.js";
 import type { Env } from "../env.js";
 import { extractPdfText } from "./pdf.js";
-
-/** Reports whether an upload is a PDF, by declared type or by extension. */
-function looksLikePdf(input: IngestInput): boolean {
-  return (
-    input.contentType.toLowerCase().includes("pdf") ||
-    input.filename.toLowerCase().endsWith(".pdf")
-  );
-}
 
 /** Largest upload accepted. Telegram itself caps bot downloads at 20 MB. */
 export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
@@ -30,6 +33,12 @@ const UPSERT_BATCH = 100;
 
 /** Embedding calls are batched to stay inside the per request subrequest budget. */
 const EMBED_BATCH = 25;
+
+/** Shortest body accepted. Less than this means nothing readable was found. */
+const MIN_CONTENT_CHARS = 40;
+
+/** Name of the document generated from hand entered products. */
+export const CATALOGUE_FILENAME = "Product catalogue";
 
 export interface IngestInput {
   readonly businessId: string;
@@ -43,13 +52,80 @@ export interface IngestResult {
   readonly chunkCount: number;
 }
 
+function extensionOf(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot === -1 ? "" : filename.slice(dot + 1).toLowerCase();
+}
+
+function isPdf(input: { filename: string; contentType: string }): boolean {
+  return input.contentType.toLowerCase().includes("pdf") || extensionOf(input.filename) === "pdf";
+}
+
+/** Formats one parsed JSON record as readable lines. */
+function renderRecord(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(renderRecord).join("\n");
+  }
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, item]) => `${key}: ${typeof item === "object" ? JSON.stringify(item) : String(item)}`)
+    .join("\n");
+}
+
 /**
- * Shortest body accepted after the preamble is removed.
+ * Turns JSON or JSONL into prose.
  *
- * A file that yields less than this has no usable content, whatever the
- * converter reported.
+ * Indexing raw JSON works poorly: braces and quotes dominate the text and a
+ * search for a product name has to compete with punctuation. Rendering each
+ * record as labelled lines retrieves far better.
  */
-const MIN_CONTENT_CHARS = 80;
+function renderJson(text: string, lineDelimited: boolean): string {
+  if (lineDelimited) {
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        try {
+          return renderRecord(JSON.parse(line));
+        } catch {
+          // A malformed line is still worth indexing as written.
+          return line;
+        }
+      })
+      .join("\n\n");
+  }
+  try {
+    return renderRecord(JSON.parse(text));
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Unwraps a markdown conversion response.
+ *
+ * The platform returns either a single result or an array, and either shape may
+ * carry an error variant in place of the converted text.
+ */
+function unwrapConversion(
+  response: ConversionResponse | ConversionResponse[],
+  filename: string,
+): string {
+  const first = Array.isArray(response) ? response[0] : response;
+  if (first === undefined) {
+    throw new MuxelError("upstream_failure", "conversion returned no result", { filename });
+  }
+  if (first.format === "error") {
+    throw new MuxelError("upstream_failure", "conversion failed", {
+      filename,
+      detail: first.error,
+    });
+  }
+  return first.data;
+}
 
 /**
  * Removes the heading and metadata block the converter prepends.
@@ -90,104 +166,81 @@ export function stripConversionPreamble(markdown: string): string {
       }
       break;
     }
-    // Only treat it as a preamble if it actually held property lines.
     if (cursor > afterHeading) {
       index = cursor;
     }
   }
 
-  return lines.slice(index).join("\n").trim();
+  return lines
+    .slice(index)
+    .join("\n")
+    .replace(/^#+\s*Contents\s*$/gim, "")
+    .replace(/^#+\s*Page \d+\s*$/gim, "")
+    .trim();
+}
+
+/** Produces the text of an upload, whatever format it arrived in. */
+export async function readUpload(env: Env, input: IngestInput): Promise<string> {
+  const extension = extensionOf(input.filename);
+
+  // Already text. Decoding is exact and costs nothing.
+  if (["txt", "md", "markdown", "log", "text"].includes(extension)) {
+    return new TextDecoder().decode(input.body).trim();
+  }
+  if (extension === "jsonl" || extension === "ndjson") {
+    return renderJson(new TextDecoder().decode(input.body), true);
+  }
+  if (extension === "json") {
+    return renderJson(new TextDecoder().decode(input.body), false);
+  }
+
+  const converted = await env.AI.toMarkdown({
+    name: input.filename,
+    blob: new Blob([input.body], { type: input.contentType }),
+  });
+  let text = stripConversionPreamble(unwrapConversion(converted, input.filename));
+
+  // The platform converter returns metadata and an empty body for some PDFs
+  // that do contain text, including anything exported from Excel. Since a price
+  // list is usually exactly that, an empty result is retried against the text
+  // layer directly rather than accepted.
+  if (text.length < MIN_CONTENT_CHARS && isPdf(input)) {
+    const recovered = await extractPdfText(new Uint8Array(input.body));
+    if (recovered.length > text.length) {
+      console.warn("markdown conversion was empty, used the pdf text layer", {
+        filename: input.filename,
+        converted: text.length,
+        recovered: recovered.length,
+      });
+      text = recovered;
+    }
+  }
+
+  return text;
 }
 
 /**
- * Unwraps a markdown conversion response.
+ * Splits text, embeds it and records it as a document.
  *
- * The platform returns either a single result or an array, and either shape may
- * carry an error variant in place of the converted text. Both are normalised
- * here so the caller sees a string or a typed failure.
+ * Shared by uploads and by the generated product catalogue, so both are
+ * retrieved identically.
  */
-function extractMarkdown(
-  response: ConversionResponse | ConversionResponse[],
-  filename: string,
-): string {
-  const first = Array.isArray(response) ? response[0] : response;
-  if (first === undefined) {
-    throw new MuxelError("upstream_failure", "conversion returned no result", { filename });
-  }
-  if (first.format === "error") {
-    throw new MuxelError("upstream_failure", "conversion failed", {
-      filename,
-      detail: first.error,
-    });
-  }
-
-  return stripConversionPreamble(first.data);
-}
-
-export async function ingestDocument(env: Env, input: IngestInput): Promise<IngestResult> {
-  if (input.body.byteLength === 0) {
-    throw new MuxelError("invalid_input", "document is empty", { filename: input.filename });
-  }
-  if (input.body.byteLength > MAX_DOCUMENT_BYTES) {
-    throw new MuxelError("invalid_input", "document exceeds the size limit", {
-      bytes: input.body.byteLength,
-      limit: MAX_DOCUMENT_BYTES,
-    });
-  }
-
-  // Archiving the original is optional. Nothing reads it back, and requiring
-  // it would put an R2 billing prompt in front of someone setting up their
-  // first shop for a convenience they may never use.
-  let objectKey = "";
-  if (env.DOCUMENTS !== undefined) {
-    objectKey = `${input.businessId}/${generateId()}/${input.filename}`;
-    await env.DOCUMENTS.put(objectKey, input.body, {
-      httpMetadata: { contentType: input.contentType },
-    });
-  }
-
+async function indexText(
+  env: Env,
+  input: { businessId: string; filename: string; contentType: string; byteSize: number; text: string },
+): Promise<IngestResult> {
   const document = await createDocument(env, {
     businessId: input.businessId,
     filename: input.filename,
     contentType: input.contentType,
-    byteSize: input.body.byteLength,
-    objectKey,
+    byteSize: input.byteSize,
+    objectKey: "",
   });
 
   try {
     await setDocumentStatus(env, { documentId: document.id, status: "processing" });
 
-    const converted = await env.AI.toMarkdown({
-      name: input.filename,
-      blob: new Blob([input.body], { type: input.contentType }),
-    });
-    let text = extractMarkdown(converted, input.filename);
-
-    // The platform converter returns metadata and an empty body for some PDFs
-    // that do contain text, including anything exported from Excel. Since a
-    // price list is usually exactly that, an empty result is retried against
-    // the text layer directly rather than accepted.
-    if (text.length < MIN_CONTENT_CHARS && looksLikePdf(input)) {
-      const recovered = await extractPdfText(new Uint8Array(input.body));
-      if (recovered.length > text.length) {
-        console.warn("markdown conversion was empty, used the pdf text layer", {
-          filename: input.filename,
-          converted: text.length,
-          recovered: recovered.length,
-        });
-        text = recovered;
-      }
-    }
-
-    if (text.length < MIN_CONTENT_CHARS) {
-      throw new MuxelError(
-        "invalid_input",
-        "no readable text found in this file. A scanned page or a photograph has no text to read: send the content as a message, or upload the spreadsheet or document it came from",
-        { filename: input.filename, extracted: text.length },
-      );
-    }
-
-    const pieces = chunkText(text);
+    const pieces = chunkText(input.text);
     if (pieces.length === 0) {
       throw new MuxelError("invalid_input", "no text could be extracted", {
         filename: input.filename,
@@ -196,8 +249,8 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
 
     const records = pieces.map((text, ordinal) => ({ id: generateId(), ordinal, text }));
 
-    // Embed in batches, then index. Chunk rows are written first so that a
-    // vector can never point at a row that does not exist.
+    // Chunk rows are written first so that a vector can never point at a row
+    // that does not exist.
     await insertChunks(env, input.businessId, document.id, records);
 
     for (let offset = 0; offset < records.length; offset += EMBED_BATCH) {
@@ -231,4 +284,87 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
     });
     throw error;
   }
+}
+
+export async function ingestDocument(env: Env, input: IngestInput): Promise<IngestResult> {
+  if (input.body.byteLength === 0) {
+    throw new MuxelError("invalid_input", "document is empty", { filename: input.filename });
+  }
+  if (input.body.byteLength > MAX_DOCUMENT_BYTES) {
+    throw new MuxelError("invalid_input", "document exceeds the size limit", {
+      bytes: input.body.byteLength,
+      limit: MAX_DOCUMENT_BYTES,
+    });
+  }
+
+  // Optional archive of the original. Nothing reads it back.
+  if (env.DOCUMENTS !== undefined) {
+    await env.DOCUMENTS.put(`${input.businessId}/${generateId()}/${input.filename}`, input.body, {
+      httpMetadata: { contentType: input.contentType },
+    });
+  }
+
+  const text = await readUpload(env, input);
+  if (text.length < MIN_CONTENT_CHARS) {
+    throw new MuxelError(
+      "invalid_input",
+      "no readable text found in this file. A scanned page or a photograph has no text to read: send the content as a message, or upload the spreadsheet or document it came from",
+      { filename: input.filename, extracted: text.length },
+    );
+  }
+
+  return indexText(env, {
+    businessId: input.businessId,
+    filename: input.filename,
+    contentType: input.contentType,
+    byteSize: input.body.byteLength,
+    text,
+  });
+}
+
+/** Deletes a document and the vectors it owned. */
+export async function removeDocument(
+  env: Env,
+  businessId: string,
+  documentId: string,
+): Promise<void> {
+  const ids = await deleteDocument(env, businessId, documentId);
+  if (ids.length > 0) {
+    await env.KNOWLEDGE.deleteByIds(ids);
+  }
+}
+
+/**
+ * Rebuilds the knowledge entry for hand entered products.
+ *
+ * Products are stored structurally so a single price can be corrected, but
+ * retrieval only understands documents. Regenerating the whole catalogue on
+ * every change keeps the two in step without tracking which vector belongs to
+ * which row, and a shop has tens of products rather than thousands.
+ */
+export async function syncProductCatalogue(env: Env, businessId: string): Promise<number> {
+  const existing = await findDocumentByName(env, businessId, CATALOGUE_FILENAME);
+  if (existing !== null) {
+    await removeDocument(env, businessId, existing);
+  }
+
+  const products = await listProducts(env, businessId);
+  if (products.length === 0) {
+    return 0;
+  }
+
+  const text = products
+    .map((product) =>
+      [product.name, product.price, product.description].filter((part) => part.length > 0).join(" - "),
+    )
+    .join("\n");
+
+  await indexText(env, {
+    businessId,
+    filename: CATALOGUE_FILENAME,
+    contentType: "text/plain",
+    byteSize: text.length,
+    text,
+  });
+  return products.length;
 }

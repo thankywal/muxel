@@ -156,6 +156,31 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS prompt_version_idx ON prompt_version (business_id, created_at DESC)`,
     ],
   },
+  {
+    version: 3,
+    statements: [
+      // Console language per operator. Held in its own table rather than as a
+      // column on operator so the migration stays a CREATE, which is safe to
+      // run twice. ALTER TABLE is not.
+      `CREATE TABLE IF NOT EXISTS operator_locale (
+         telegram_user_id INTEGER PRIMARY KEY,
+         locale           TEXT NOT NULL
+       )`,
+
+      // Items an operator enters by hand, one at a time or in bulk. Kept
+      // structured so a single item can be corrected or removed, rather than
+      // living inside an uploaded file that has to be replaced wholesale.
+      `CREATE TABLE IF NOT EXISTS product (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         name        TEXT NOT NULL,
+         price       TEXT NOT NULL DEFAULT '',
+         description TEXT NOT NULL DEFAULT '',
+         created_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS product_business_idx ON product (business_id, name)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

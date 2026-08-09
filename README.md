@@ -163,6 +163,40 @@ a US cent per thousand answers, and roughly 330 replies a day fall inside the
 free daily allowance. Embeddings always run on `bge-m3`, which is multilingual
 and effectively free.
 
+## The console
+
+Everything after setup happens in the console bot, in buttons.
+
+| Screen | What it holds |
+| --- | --- |
+| Data | Uploaded files, one row each, with a delete on every one |
+| Products | Items typed in one at a time or uploaded in bulk |
+| Customers | Everyone who has written, with stages, notes and memory |
+| Instructions | Your own rules for the assistant, with an undo |
+| Bots | Connect a customer bot, or replace the console bot |
+
+Data accepts PDF, Word, Excel, CSV, TXT, Markdown, JSON and JSONL. Text formats
+are read directly. Spreadsheets and documents go through the platform
+converter, and a PDF it cannot read is retried against the text layer, which is
+what makes a price list exported from Excel work.
+
+A file has to belong to a business, so the console asks you to open one before
+it will accept an upload rather than guessing.
+
+Products exist alongside files because a file can only be replaced whole. A
+price that changes should not mean re-uploading a catalogue. Products are
+entered as `name | price | description`, one per line, typed in or uploaded, and
+each can be removed on its own. Every change rebuilds what the assistant knows.
+
+Deleting a business asks for confirmation and then removes its files, products,
+customers, bots and vectors together.
+
+### Languages
+
+The console speaks English, ไทย, 中文 and မြန်မာ. Language is per operator and
+changes every button, not only the next screen. It is separate from the language
+a business replies to customers in.
+
 ## Instructions and documents are different things
 
 The console keeps them apart because the assistant has to trust them

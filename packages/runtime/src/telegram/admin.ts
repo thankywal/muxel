@@ -1,15 +1,14 @@
 /**
  * Operator console.
  *
- * The console is button driven. Every screen is rendered by editing the message
- * in place rather than sending a new one, so a long session leaves a single
- * message in the chat instead of a wall of menus.
+ * The console is button driven and rendered in the operator's own language.
+ * Every screen edits the message in place rather than sending a new one, so a
+ * long session leaves a single message in the chat instead of a wall of menus.
  *
- * Free text and file uploads are only read when a screen has explicitly armed a
- * prompt, except for knowledge documents, which can be sent at any time and
- * land in whichever business was last opened. That pending state and the
- * current business both live in KV keyed by operator, which keeps the handler
- * stateless and lets an abandoned prompt expire on its own.
+ * Free text and files are only read when a screen has armed a prompt, or when a
+ * business is open and a file arrives. Both the pending prompt and the open
+ * business live in KV keyed by operator, which keeps the handler stateless and
+ * lets an abandoned prompt expire on its own.
  */
 
 import {
@@ -19,11 +18,11 @@ import {
   generateShortId,
   isCallbackRef,
   isMuxelError,
-  type Bot,
   type Business,
   type Customer,
   type CustomerFact,
   type CustomerStage,
+  type Product,
 } from "@muxel/core";
 
 import { seal, sha256Hex } from "../crypto.js";
@@ -31,28 +30,42 @@ import {
   canAccessBusiness,
   createBot,
   createBusiness,
+  createProduct,
+  deleteBusiness,
+  deleteProduct,
   findOperator,
   forgetCustomer,
   forgetFacts,
   getAdminBot,
   getBusiness,
   getCustomer,
+  getOperatorLocale,
+  getProduct,
   listBots,
   listBusinesses,
   listCustomers,
   listDocuments,
   listFacts,
+  listProducts,
   previousPrompt,
   replaceBotIdentity,
   setBusinessPrompt,
   setCustomerNote,
   setCustomerStage,
+  setOperatorLocale,
   todayUsage,
   updateBusinessModel,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
-import { ingestDocument, MAX_DOCUMENT_BYTES } from "../rag/ingest.js";
+import {
+  ingestDocument,
+  MAX_DOCUMENT_BYTES,
+  readUpload,
+  removeDocument,
+  syncProductCatalogue,
+} from "../rag/ingest.js";
 import { resolveMasterKey } from "../secrets.js";
+import { isLocale, LOCALE_NAMES, LOCALES, t, type Locale, type MessageKey } from "./i18n.js";
 import { TelegramClient, type TelegramMessage, type TelegramUpdate } from "./api.js";
 import { buildKeyboard, resolveSpilled, row, type ButtonSpec } from "./keyboard.js";
 
@@ -64,29 +77,19 @@ export interface ModelPreset {
    *
    * A Cloudflare token reaches Workers AI models and nothing else. For any
    * other provider the gateway forwards that token upstream, where it is
-   * rejected. Those models need a key stored in the gateway or unified billing
-   * credit, so the console marks them rather than letting an operator select a
-   * model that will fail on the first customer message.
+   * rejected, so the console marks those rather than letting an operator select
+   * a model that will fail on the first customer message.
    */
   readonly requiresProviderKey: boolean;
 }
 
-/**
- * Selectable models, addressed by index so callback payloads stay short.
- *
- * Ordered cheapest first. Costs below are measured against a retrieval reply of
- * roughly 2,000 input tokens, using the completion lengths these models
- * actually produced rather than the length of the visible answer.
- */
+/** Selectable models, cheapest first, addressed by index to keep payloads short. */
 export const MODEL_PRESETS: readonly ModelPreset[] = [
-  // About 0.33 US cents per thousand replies, and roughly 330 replies a day sit
-  // inside the free daily allowance.
   {
     label: "Gemma 4 26B",
     id: "workers-ai/@cf/google/gemma-4-26b-a4b-it",
     requiresProviderKey: false,
   },
-  // Terser and a little faster, about 2.6 times the cost of Gemma 4.
   {
     label: "Llama 3.3 70B",
     id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -97,6 +100,12 @@ export const MODEL_PRESETS: readonly ModelPreset[] = [
 ];
 
 const STAGES: readonly CustomerStage[] = ["new", "lead", "customer", "blocked"];
+const STAGE_KEYS: Record<CustomerStage, MessageKey> = {
+  new: "stageNew",
+  lead: "stageLead",
+  customer: "stageCustomer",
+  blocked: "stageBlocked",
+};
 
 const PENDING_PREFIX = "pending:";
 const CONTEXT_PREFIX = "context:";
@@ -106,12 +115,23 @@ const CONTEXT_TTL_SECONDS = 86_400;
 /** Largest instruction document accepted, so it cannot dominate every prompt. */
 const MAX_PROMPT_CHARS = 8000;
 
+/** Screens list at most this many rows, keeping a keyboard usable on a phone. */
+const LIST_LIMIT = 12;
+
+type PendingKind =
+  | "business_name"
+  | "bot_token"
+  | "instructions"
+  | "customer_note"
+  | "product_line"
+  | "product_file"
+  | "data_file";
+
 interface Pending {
-  readonly kind: "business_name" | "bot_token" | "instructions" | "customer_note";
+  readonly kind: PendingKind;
   readonly businessId?: string;
   readonly customerId?: string;
   readonly role?: "admin" | "reply";
-  /** Set when replacing the console bot rather than adding a new one. */
   readonly replace?: boolean;
 }
 
@@ -131,7 +151,6 @@ async function takePending(env: Env, userId: number): Promise<Pending | null> {
   return JSON.parse(raw) as Pending;
 }
 
-/** Remembers which business the operator is working on, for bare file uploads. */
 async function setContext(env: Env, userId: number, businessId: string): Promise<void> {
   await env.STATE.put(`${CONTEXT_PREFIX}${userId}`, businessId, {
     expirationTtl: CONTEXT_TTL_SECONDS,
@@ -142,7 +161,12 @@ function getContext(env: Env, userId: number): Promise<string | null> {
   return env.STATE.get(`${CONTEXT_PREFIX}${userId}`);
 }
 
-// Screens ---------------------------------------------------------------------
+async function localeFor(env: Env, userId: number): Promise<Locale> {
+  const stored = await getOperatorLocale(env, userId);
+  return stored !== null && isLocale(stored) ? stored : "en";
+}
+
+// Rendering helpers -------------------------------------------------------------
 
 interface Screen {
   readonly text: string;
@@ -157,44 +181,95 @@ function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}...`;
 }
 
-function homeScreen(): Screen {
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function backTo(locale: Locale, action: string, args: string[] = []): readonly ButtonSpec[] {
+  return row({ text: t(locale, "back"), action, args });
+}
+
+/** Builds a two option confirmation screen. */
+function confirmScreen(
+  locale: Locale,
+  question: string,
+  confirm: { action: string; args: string[] },
+  cancel: { action: string; args: string[] },
+): Screen {
   return {
-    text: ["<b>Muxel console</b>", "", "Manage the businesses and bots in this deployment."].join(
-      "\n",
-    ),
+    text: question,
     rows: [
-      row({ text: "Businesses", action: "bizls" }),
-      row({ text: "Add business", action: "bizadd" }),
-      row({ text: "Help", action: "help" }),
+      row({ text: t(locale, "yes"), action: confirm.action, args: confirm.args }),
+      row({ text: t(locale, "no"), action: cancel.action, args: cancel.args }),
     ],
   };
 }
 
-function businessListScreen(businesses: readonly Business[]): Screen {
+// Screens -----------------------------------------------------------------------
+
+function homeScreen(locale: Locale): Screen {
+  return {
+    text: `<b>${t(locale, "homeTitle")}</b>\n\n${t(locale, "homeBody")}`,
+    rows: [
+      row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
+      row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+      row(
+        { text: t(locale, "btnLanguage"), action: "lang" },
+        { text: t(locale, "btnHelp"), action: "help" },
+      ),
+    ],
+  };
+}
+
+function languageScreen(locale: Locale): Screen {
+  return {
+    text: `<b>${t(locale, "langTitle")}</b>\n\n${t(locale, "langBody")}`,
+    rows: [
+      ...LOCALES.map((code) =>
+        row({
+          text: code === locale ? `${LOCALE_NAMES[code]} ✓` : LOCALE_NAMES[code],
+          action: "setlang",
+          args: [code],
+        }),
+      ),
+      backTo(locale, "home"),
+    ],
+  };
+}
+
+function businessListScreen(locale: Locale, businesses: readonly Business[]): Screen {
   if (businesses.length === 0) {
     return {
-      text: "<b>Businesses</b>\n\nNo businesses yet. Add one to get started.",
-      rows: [row({ text: "Add business", action: "bizadd" }), row({ text: "Back", action: "home" })],
+      text: `<b>${t(locale, "bizListTitle")}</b>\n\n${t(locale, "bizListEmpty")}`,
+      rows: [
+        row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+        backTo(locale, "home"),
+      ],
     };
   }
   return {
-    text: `<b>Businesses</b>\n\n${businesses.length} configured.`,
+    text: `<b>${t(locale, "bizListTitle")}</b>\n\n${t(locale, "bizListCount", { count: businesses.length })}`,
     rows: [
-      ...businesses.map((business) =>
-        row({ text: business.name, action: "biz", args: [business.id] }),
-      ),
-      row({ text: "Add business", action: "bizadd" }),
-      row({ text: "Back", action: "home" }),
+      ...businesses
+        .slice(0, LIST_LIMIT)
+        .map((business) => row({ text: business.name, action: "biz", args: [business.id] })),
+      row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+      backTo(locale, "home"),
     ],
   };
 }
 
 function businessScreen(
+  locale: Locale,
   business: Business,
-  bots: readonly Bot[],
+  counts: { bots: number; documents: number; products: number; customers: number },
   usage: { messages: number; inputTokens: number; outputTokens: number },
-  documentCount: number,
-  customerCount: number,
 ): Screen {
   const modelLabel =
     MODEL_PRESETS.find((preset) => preset.id === business.model)?.label ?? business.model;
@@ -202,43 +277,259 @@ function businessScreen(
     text: [
       `<b>${escapeHtml(business.name)}</b>`,
       "",
-      `Model: ${escapeHtml(modelLabel)}`,
-      `Language: ${escapeHtml(business.locale)}`,
-      `Bots: ${bots.length}   Documents: ${documentCount}   Customers: ${customerCount}`,
-      `Instructions: ${business.systemPrompt.length > 0 ? `${business.systemPrompt.length} characters` : "default"}`,
+      `${t(locale, "bizModel")}: ${escapeHtml(modelLabel)}`,
+      `${t(locale, "bizLanguage")}: ${escapeHtml(business.locale)}`,
+      `${t(locale, "bizDocuments")}: ${counts.documents}   ${t(locale, "bizProducts")}: ${counts.products}`,
+      `${t(locale, "bizBots")}: ${counts.bots}   ${t(locale, "bizCustomers")}: ${counts.customers}`,
+      `${t(locale, "bizInstructions")}: ${
+        business.systemPrompt.length > 0
+          ? `${business.systemPrompt.length}`
+          : t(locale, "bizDefault")
+      }`,
       "",
-      `Today: ${usage.messages} messages, ${usage.inputTokens + usage.outputTokens} tokens`,
+      t(locale, "bizToday", {
+        messages: usage.messages,
+        tokens: usage.inputTokens + usage.outputTokens,
+      }),
     ].join("\n"),
     rows: [
       row(
-        { text: "Documents", action: "docs", args: [business.id] },
-        { text: "Customers", action: "cust", args: [business.id] },
+        { text: t(locale, "btnData"), action: "data", args: [business.id] },
+        { text: t(locale, "btnProducts"), action: "prod", args: [business.id] },
       ),
       row(
-        { text: "Instructions", action: "inst", args: [business.id] },
-        { text: "Bots", action: "bots", args: [business.id] },
+        { text: t(locale, "btnCustomers"), action: "cust", args: [business.id] },
+        { text: t(locale, "btnInstructions"), action: "inst", args: [business.id] },
       ),
-      row({ text: "Change model", action: "mdl", args: [business.id] }),
-      row({ text: "Back", action: "bizls" }),
+      row(
+        { text: t(locale, "btnBots"), action: "bots", args: [business.id] },
+        { text: t(locale, "btnModel"), action: "mdl", args: [business.id] },
+      ),
+      row({ text: t(locale, "btnDeleteBusiness"), action: "bizdel", args: [business.id] }),
+      backTo(locale, "bizls"),
     ],
   };
 }
 
-function modelScreen(business: Business): Screen {
+function dataScreen(
+  locale: Locale,
+  business: Business,
+  documents: readonly { id: string; filename: string; status: string; chunkCount: number }[],
+): Screen {
   return {
     text: [
-      `<b>Model for ${escapeHtml(business.name)}</b>`,
+      `<b>${t(locale, "dataTitle", { name: escapeHtml(business.name) })}</b>`,
       "",
-      "Pick the model that answers customers.",
+      documents.length === 0 ? t(locale, "dataEmpty") : "",
+      t(locale, "dataHint"),
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
+    rows: [
+      ...documents
+        .slice(0, LIST_LIMIT)
+        .map((document) =>
+          row({
+            text: `${document.filename} (${document.chunkCount})`,
+            action: "doc",
+            args: [business.id, document.id],
+          }),
+        ),
+      row({ text: t(locale, "btnAddData"), action: "dataadd", args: [business.id] }),
+      backTo(locale, "biz", [business.id]),
+    ],
+  };
+}
+
+function documentScreen(
+  locale: Locale,
+  businessId: string,
+  document: { id: string; filename: string; status: string; chunkCount: number; byteSize: number; createdAt: string },
+): Screen {
+  return {
+    text: t(locale, "dataDetail", {
+      name: escapeHtml(document.filename),
+      status: document.status,
+      chunks: document.chunkCount,
+      size: formatBytes(document.byteSize),
+      added: document.createdAt.slice(0, 10),
+    }),
+    rows: [
+      row({ text: t(locale, "btnDeleteData"), action: "docdel", args: [businessId, document.id] }),
+      backTo(locale, "data", [businessId]),
+    ],
+  };
+}
+
+function productsScreen(locale: Locale, business: Business, products: readonly Product[]): Screen {
+  return {
+    text: [
+      `<b>${t(locale, "prodTitle", { name: escapeHtml(business.name) })}</b>`,
       "",
-      "Models marked with a key need a provider key stored in your AI Gateway.",
-      "Your Cloudflare login on its own covers the unmarked ones.",
+      products.length === 0 ? t(locale, "prodEmpty") : `${products.length}`,
+    ].join("\n"),
+    rows: [
+      ...products
+        .slice(0, LIST_LIMIT)
+        .map((product) =>
+          row({
+            text: product.price.length > 0 ? `${product.name} - ${product.price}` : product.name,
+            action: "p",
+            args: [product.id],
+          }),
+        ),
+      row({ text: t(locale, "btnAddProduct"), action: "prodadd", args: [business.id] }),
+      row({ text: t(locale, "btnBulkProducts"), action: "prodbulk", args: [business.id] }),
+      backTo(locale, "biz", [business.id]),
+    ],
+  };
+}
+
+function productScreen(locale: Locale, product: Product): Screen {
+  return {
+    text: [
+      `<b>${escapeHtml(product.name)}</b>`,
+      product.price.length > 0 ? escapeHtml(product.price) : "",
+      product.description.length > 0 ? escapeHtml(product.description) : "",
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
+    rows: [
+      row({ text: t(locale, "btnDeleteProduct"), action: "pdel", args: [product.id] }),
+      backTo(locale, "prod", [product.businessId]),
+    ],
+  };
+}
+
+function instructionsScreen(locale: Locale, business: Business, hasPrevious: boolean): Screen {
+  return {
+    text: [
+      `<b>${t(locale, "instTitle", { name: escapeHtml(business.name) })}</b>`,
+      "",
+      t(locale, "instBody"),
+      "",
+      business.systemPrompt.length > 0
+        ? escapeHtml(truncate(business.systemPrompt, 600))
+        : `<i>${t(locale, "instUsingDefault")}</i>`,
+    ].join("\n"),
+    rows: [
+      row({ text: t(locale, "btnEditInstructions"), action: "instset", args: [business.id] }),
+      ...(hasPrevious
+        ? [row({ text: t(locale, "btnUndoInstructions"), action: "instundo", args: [business.id] })]
+        : []),
+      ...(business.systemPrompt.length > 0
+        ? [row({ text: t(locale, "btnResetInstructions"), action: "instclr", args: [business.id] })]
+        : []),
+      backTo(locale, "biz", [business.id]),
+    ],
+  };
+}
+
+function customersScreen(
+  locale: Locale,
+  business: Business,
+  customers: readonly Customer[],
+): Screen {
+  if (customers.length === 0) {
+    return {
+      text: `<b>${t(locale, "custTitle", { name: escapeHtml(business.name) })}</b>\n\n${t(locale, "custEmpty")}`,
+      rows: [backTo(locale, "biz", [business.id])],
+    };
+  }
+  return {
+    text: [
+      `<b>${t(locale, "custTitle", { name: escapeHtml(business.name) })}</b>`,
+      "",
+      t(locale, "custRecent", { count: customers.length }),
+    ].join("\n"),
+    rows: [
+      ...customers.slice(0, LIST_LIMIT).map((customer) =>
+        row({
+          text: `${customer.displayName || customer.username || String(customer.telegramUserId)} · ${t(locale, STAGE_KEYS[customer.stage])}`,
+          action: "cst",
+          args: [customer.id],
+        }),
+      ),
+      backTo(locale, "biz", [business.id]),
+    ],
+  };
+}
+
+function customerScreen(
+  locale: Locale,
+  customer: Customer,
+  facts: readonly CustomerFact[],
+): Screen {
+  const name = customer.displayName || customer.username || String(customer.telegramUserId);
+  return {
+    text: [
+      `<b>${escapeHtml(name)}</b>`,
+      customer.username.length > 0 ? `@${escapeHtml(customer.username)}` : "",
+      "",
+      `${t(locale, "custStage")}: ${t(locale, STAGE_KEYS[customer.stage])}`,
+      `${t(locale, "custMessages")}: ${customer.messageCount}`,
+      `${t(locale, "custFirstSeen")}: ${customer.firstSeen.slice(0, 10)}`,
+      customer.note.length > 0
+        ? `\n${t(locale, "custNote")}: ${escapeHtml(truncate(customer.note, 300))}`
+        : "",
+      "",
+      facts.length > 0 ? `<b>${t(locale, "custRemembered")}</b>` : `<i>${t(locale, "custNothingKnown")}</i>`,
+      ...facts.slice(0, 12).map((fact) => `- ${escapeHtml(fact.fact)}`),
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
+    rows: [
+      row({ text: t(locale, "btnAddNote"), action: "cnote", args: [customer.id] }),
+      ...STAGES.filter((stage) => stage !== customer.stage).map((stage) =>
+        row({
+          text: t(locale, "btnMarkAs", { stage: t(locale, STAGE_KEYS[stage]) }),
+          action: "cstage",
+          args: [customer.id, stage],
+        }),
+      ),
+      row({ text: t(locale, "btnForgetFacts"), action: "cwipe", args: [customer.id] }),
+      row({ text: t(locale, "btnDeleteCustomer"), action: "cdel", args: [customer.id] }),
+      backTo(locale, "cust", [customer.businessId]),
+    ],
+  };
+}
+
+function botsScreen(
+  locale: Locale,
+  business: Business,
+  bots: readonly { role: string; username: string }[],
+): Screen {
+  const lines =
+    bots.length === 0
+      ? [t(locale, "botsEmpty")]
+      : bots.map(
+          (bot) =>
+            `${bot.role === "admin" ? t(locale, "botConsole") : t(locale, "botCustomer")}: @${escapeHtml(bot.username)}`,
+        );
+  return {
+    text: [`<b>${t(locale, "botsTitle", { name: escapeHtml(business.name) })}</b>`, "", ...lines].join(
+      "\n",
+    ),
+    rows: [
+      row({ text: t(locale, "btnConnectBot"), action: "botadd", args: [business.id] }),
+      row({ text: t(locale, "btnReplaceConsole"), action: "botrep", args: [business.id] }),
+      backTo(locale, "biz", [business.id]),
+    ],
+  };
+}
+
+function modelScreen(locale: Locale, business: Business): Screen {
+  return {
+    text: [
+      `<b>${t(locale, "modelTitle", { name: escapeHtml(business.name) })}</b>`,
+      "",
+      t(locale, "modelBody"),
     ].join("\n"),
     rows: [
       ...MODEL_PRESETS.map((preset, index) => {
         const marks = [
-          preset.id === business.model ? "current" : null,
-          preset.requiresProviderKey ? "needs key" : null,
+          preset.id === business.model ? t(locale, "modelCurrent") : null,
+          preset.requiresProviderKey ? t(locale, "modelNeedsKey") : null,
         ].filter((mark) => mark !== null);
         return row({
           text: marks.length > 0 ? `${preset.label} (${marks.join(", ")})` : preset.label,
@@ -246,148 +537,19 @@ function modelScreen(business: Business): Screen {
           args: [business.id, String(index)],
         });
       }),
-      row({ text: "Back", action: "biz", args: [business.id] }),
+      backTo(locale, "biz", [business.id]),
     ],
   };
 }
 
-function botsScreen(business: Business, bots: readonly Bot[]): Screen {
-  const lines =
-    bots.length === 0
-      ? ["No bots connected yet."]
-      : bots.map(
-          (bot) => `${bot.role === "admin" ? "Console" : "Customer"}: @${escapeHtml(bot.username)}`,
-        );
+function helpScreen(locale: Locale): Screen {
   return {
-    text: [`<b>Bots for ${escapeHtml(business.name)}</b>`, "", ...lines].join("\n"),
-    rows: [
-      row({ text: "Connect customer bot", action: "botadd", args: [business.id] }),
-      row({ text: "Replace console bot", action: "botrep", args: [business.id] }),
-      row({ text: "Back", action: "biz", args: [business.id] }),
-    ],
+    text: `<b>${t(locale, "helpTitle")}</b>\n\n${t(locale, "helpBody")}`,
+    rows: [backTo(locale, "home")],
   };
 }
 
-function documentsScreen(
-  business: Business,
-  documents: readonly { filename: string; status: string; chunkCount: number }[],
-): Screen {
-  const lines =
-    documents.length === 0
-      ? ["Nothing yet."]
-      : documents.map(
-          (document) =>
-            `${escapeHtml(document.filename)} (${document.status}, ${document.chunkCount} chunks)`,
-        );
-  return {
-    text: [
-      `<b>Knowledge for ${escapeHtml(business.name)}</b>`,
-      "",
-      ...lines,
-      "",
-      "Send a PDF, DOCX, XLSX or text file to this chat to add it.",
-    ].join("\n"),
-    rows: [row({ text: "Back", action: "biz", args: [business.id] })],
-  };
-}
-
-function instructionsScreen(business: Business, hasPrevious: boolean): Screen {
-  const current =
-    business.systemPrompt.length > 0
-      ? escapeHtml(truncate(business.systemPrompt, 700))
-      : "<i>Using the default instructions.</i>";
-  return {
-    text: [
-      `<b>Instructions for ${escapeHtml(business.name)}</b>`,
-      "",
-      "Tone, rules and anything the assistant should always know. This is your",
-      "own text and is trusted, unlike uploaded documents.",
-      "",
-      current,
-    ].join("\n"),
-    rows: [
-      row({ text: "Replace", action: "instset", args: [business.id] }),
-      ...(hasPrevious ? [row({ text: "Undo last change", action: "instundo", args: [business.id] })] : []),
-      ...(business.systemPrompt.length > 0
-        ? [row({ text: "Reset to default", action: "instclr", args: [business.id] })]
-        : []),
-      row({ text: "Back", action: "biz", args: [business.id] }),
-    ],
-  };
-}
-
-function customersScreen(business: Business, customers: readonly Customer[]): Screen {
-  if (customers.length === 0) {
-    return {
-      text: `<b>Customers of ${escapeHtml(business.name)}</b>\n\nNobody has written yet.`,
-      rows: [row({ text: "Back", action: "biz", args: [business.id] })],
-    };
-  }
-  return {
-    text: [
-      `<b>Customers of ${escapeHtml(business.name)}</b>`,
-      "",
-      `${customers.length} most recent.`,
-    ].join("\n"),
-    rows: [
-      ...customers.map((customer) =>
-        row({
-          text: `${customer.displayName || customer.username || String(customer.telegramUserId)} · ${customer.stage}`,
-          action: "cst",
-          args: [customer.id],
-        }),
-      ),
-      row({ text: "Back", action: "biz", args: [business.id] }),
-    ],
-  };
-}
-
-function customerScreen(customer: Customer, facts: readonly CustomerFact[]): Screen {
-  const name = customer.displayName || customer.username || String(customer.telegramUserId);
-  return {
-    text: [
-      `<b>${escapeHtml(name)}</b>`,
-      customer.username.length > 0 ? `@${escapeHtml(customer.username)}` : "",
-      "",
-      `Stage: ${customer.stage}   Messages: ${customer.messageCount}`,
-      `First seen: ${customer.firstSeen.slice(0, 10)}`,
-      customer.note.length > 0 ? `\nNote: ${escapeHtml(truncate(customer.note, 300))}` : "",
-      "",
-      facts.length > 0 ? "<b>Remembered</b>" : "<i>Nothing remembered yet.</i>",
-      ...facts.slice(0, 15).map((fact) => `- ${escapeHtml(fact.fact)}`),
-    ]
-      .filter((line) => line !== "")
-      .join("\n"),
-    rows: [
-      row({ text: "Add note", action: "cnote", args: [customer.id] }),
-      ...STAGES.filter((stage) => stage !== customer.stage).map((stage) =>
-        row({ text: `Mark as ${stage}`, action: "cstage", args: [customer.id, stage] }),
-      ),
-      row({ text: "Forget what is remembered", action: "cwipe", args: [customer.id] }),
-      row({ text: "Delete customer", action: "cdel", args: [customer.id] }),
-      row({ text: "Back", action: "cust", args: [customer.businessId] }),
-    ],
-  };
-}
-
-function helpScreen(): Screen {
-  return {
-    text: [
-      "<b>Help</b>",
-      "",
-      "Everything runs inside your own Cloudflare account.",
-      "",
-      "Open a business, then send a document to this chat to add it to that",
-      "business's knowledge.",
-      "",
-      "Instructions are your own rules for the assistant. Documents are facts it",
-      "quotes from. The assistant never treats a document as an instruction.",
-    ].join("\n"),
-    rows: [row({ text: "Back", action: "home" })],
-  };
-}
-
-// Dispatch --------------------------------------------------------------------
+// Dispatch ----------------------------------------------------------------------
 
 async function render(
   env: Env,
@@ -422,67 +584,312 @@ async function requireAccess(env: Env, userId: number, businessId: string): Prom
   }
 }
 
-/** Loads a customer after checking the operator may see their business. */
 async function customerFor(env: Env, userId: number, customerId: string): Promise<Customer> {
   const customer = await getCustomer(env, customerId);
   await requireAccess(env, userId, customer.businessId);
   return customer;
 }
 
-async function businessDetail(env: Env, userId: number, businessId: string): Promise<Screen> {
+async function productFor(env: Env, userId: number, productId: string): Promise<Product> {
+  const product = await getProduct(env, productId);
+  await requireAccess(env, userId, product.businessId);
+  return product;
+}
+
+async function businessDetail(env: Env, locale: Locale, userId: number, businessId: string): Promise<Screen> {
   await requireAccess(env, userId, businessId);
   await setContext(env, userId, businessId);
   const business = await getBusiness(env, businessId);
-  const [bots, usage, documents, customers] = await Promise.all([
+  const [bots, usage, documents, customers, products] = await Promise.all([
     listBots(env, businessId),
     todayUsage(env, businessId),
     listDocuments(env, businessId, 100),
     listCustomers(env, businessId, 100),
+    listProducts(env, businessId),
   ]);
-  return businessScreen(business, bots, usage, documents.length, customers.length);
+  return businessScreen(
+    locale,
+    business,
+    {
+      bots: bots.length,
+      documents: documents.length,
+      products: products.length,
+      customers: customers.length,
+    },
+    usage,
+  );
 }
 
 async function screenFor(
   env: Env,
+  locale: Locale,
   userId: number,
   action: string,
   args: readonly string[],
 ): Promise<Screen> {
   switch (action) {
     case "home":
-      return homeScreen();
+      return homeScreen(locale);
 
     case "help":
-      return helpScreen();
+      return helpScreen(locale);
+
+    case "lang":
+      return languageScreen(locale);
+
+    case "setlang": {
+      const choice = requireArg(args, 0);
+      if (isLocale(choice)) {
+        await setOperatorLocale(env, userId, choice);
+        return homeScreen(choice);
+      }
+      return languageScreen(locale);
+    }
 
     case "bizls":
-      return businessListScreen(await listBusinesses(env, userId));
+      return businessListScreen(locale, await listBusinesses(env, userId));
 
     case "bizadd":
       await setPending(env, userId, { kind: "business_name" });
       return {
-        text: "<b>Add business</b>\n\nSend the business name as a message.",
-        rows: [row({ text: "Cancel", action: "home" })],
+        text: `<b>${t(locale, "bizAddTitle")}</b>\n\n${t(locale, "bizAddBody")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "home" })],
       };
 
     case "biz":
-      return businessDetail(env, userId, requireArg(args, 0));
+      return businessDetail(env, locale, userId, requireArg(args, 0));
 
-    case "mdl": {
+    case "bizdel": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      return modelScreen(await getBusiness(env, businessId));
+      const business = await getBusiness(env, businessId);
+      return confirmScreen(
+        locale,
+        t(locale, "bizDeleteConfirm", { name: escapeHtml(business.name) }),
+        { action: "bizdelyes", args: [businessId] },
+        { action: "biz", args: [businessId] },
+      );
     }
 
-    case "setmdl": {
+    case "bizdelyes": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      const preset = MODEL_PRESETS[Number(requireArg(args, 1))];
-      if (preset !== undefined) {
-        await updateBusinessModel(env, businessId, preset.id);
+      const orphaned = await deleteBusiness(env, businessId);
+      if (orphaned.length > 0) {
+        await env.KNOWLEDGE.deleteByIds(orphaned);
       }
-      return modelScreen(await getBusiness(env, businessId));
+      return businessListScreen(locale, await listBusinesses(env, userId));
     }
+
+    // Data --------------------------------------------------------------------
+
+    case "data": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setContext(env, userId, businessId);
+      const [business, documents] = await Promise.all([
+        getBusiness(env, businessId),
+        listDocuments(env, businessId),
+      ]);
+      return dataScreen(locale, business, documents);
+    }
+
+    case "dataadd": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setContext(env, userId, businessId);
+      await setPending(env, userId, { kind: "data_file", businessId });
+      return {
+        text: [
+          `<b>${t(locale, "dataAddTitle")}</b>`,
+          "",
+          t(locale, "dataAddBody"),
+          "",
+          t(locale, "dataHint"),
+        ].join("\n"),
+        rows: [row({ text: t(locale, "cancel"), action: "data", args: [businessId] })],
+      };
+    }
+
+    case "doc": {
+      const businessId = requireArg(args, 0);
+      const documentId = requireArg(args, 1);
+      await requireAccess(env, userId, businessId);
+      const documents = await listDocuments(env, businessId, 100);
+      const document = documents.find((item) => item.id === documentId);
+      if (document === undefined) {
+        return screenFor(env, locale, userId, "data", [businessId]);
+      }
+      return documentScreen(locale, businessId, document);
+    }
+
+    case "docdel": {
+      const businessId = requireArg(args, 0);
+      const documentId = requireArg(args, 1);
+      await requireAccess(env, userId, businessId);
+      const documents = await listDocuments(env, businessId, 100);
+      const document = documents.find((item) => item.id === documentId);
+      return confirmScreen(
+        locale,
+        t(locale, "dataDeleteConfirm", { name: escapeHtml(document?.filename ?? "") }),
+        { action: "docdely", args: [businessId, documentId] },
+        { action: "doc", args: [businessId, documentId] },
+      );
+    }
+
+    case "docdely": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await removeDocument(env, businessId, requireArg(args, 1));
+      return screenFor(env, locale, userId, "data", [businessId]);
+    }
+
+    // Products ----------------------------------------------------------------
+
+    case "prod": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setContext(env, userId, businessId);
+      const [business, products] = await Promise.all([
+        getBusiness(env, businessId),
+        listProducts(env, businessId),
+      ]);
+      return productsScreen(locale, business, products);
+    }
+
+    case "prodadd": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setPending(env, userId, { kind: "product_line", businessId });
+      return {
+        text: `<b>${t(locale, "prodAddTitle")}</b>\n\n${t(locale, "prodAddBody")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "prod", args: [businessId] })],
+      };
+    }
+
+    case "prodbulk": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setPending(env, userId, { kind: "product_file", businessId });
+      return {
+        text: [
+          `<b>${t(locale, "btnBulkProducts")}</b>`,
+          "",
+          t(locale, "dataAddBody"),
+          "",
+          t(locale, "prodAddBody"),
+        ].join("\n"),
+        rows: [row({ text: t(locale, "cancel"), action: "prod", args: [businessId] })],
+      };
+    }
+
+    case "p":
+      return productScreen(locale, await productFor(env, userId, requireArg(args, 0)));
+
+    case "pdel": {
+      const product = await productFor(env, userId, requireArg(args, 0));
+      return confirmScreen(
+        locale,
+        t(locale, "prodDeleteConfirm", { name: escapeHtml(product.name) }),
+        { action: "pdely", args: [product.id] },
+        { action: "p", args: [product.id] },
+      );
+    }
+
+    case "pdely": {
+      const product = await productFor(env, userId, requireArg(args, 0));
+      await deleteProduct(env, product.id);
+      await syncProductCatalogue(env, product.businessId);
+      return screenFor(env, locale, userId, "prod", [product.businessId]);
+    }
+
+    // Instructions ------------------------------------------------------------
+
+    case "inst": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const [business, previous] = await Promise.all([
+        getBusiness(env, businessId),
+        previousPrompt(env, businessId),
+      ]);
+      return instructionsScreen(locale, business, previous !== null);
+    }
+
+    case "instset": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setPending(env, userId, { kind: "instructions", businessId });
+      return {
+        text: `<b>${t(locale, "btnEditInstructions")}</b>\n\n${t(locale, "instEditBody", { limit: MAX_PROMPT_CHARS })}`,
+        rows: [row({ text: t(locale, "cancel"), action: "inst", args: [businessId] })],
+      };
+    }
+
+    case "instundo": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const previous = await previousPrompt(env, businessId);
+      if (previous !== null) {
+        await setBusinessPrompt(env, businessId, previous);
+      }
+      return screenFor(env, locale, userId, "inst", [businessId]);
+    }
+
+    case "instclr": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setBusinessPrompt(env, businessId, "");
+      return screenFor(env, locale, userId, "inst", [businessId]);
+    }
+
+    // Customers ---------------------------------------------------------------
+
+    case "cust": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const [business, customers] = await Promise.all([
+        getBusiness(env, businessId),
+        listCustomers(env, businessId),
+      ]);
+      return customersScreen(locale, business, customers);
+    }
+
+    case "cst": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      return customerScreen(locale, customer, await listFacts(env, customer.id));
+    }
+
+    case "cnote": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      await setPending(env, userId, { kind: "customer_note", customerId: customer.id });
+      return {
+        text: `<b>${t(locale, "btnAddNote")}</b>\n\n${t(locale, "custNoteBody")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "cst", args: [customer.id] })],
+      };
+    }
+
+    case "cstage": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      const stage = requireArg(args, 1) as CustomerStage;
+      if (STAGES.includes(stage)) {
+        await setCustomerStage(env, customer.id, stage);
+      }
+      return screenFor(env, locale, userId, "cst", [customer.id]);
+    }
+
+    case "cwipe": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      await forgetFacts(env, customer.id);
+      return screenFor(env, locale, userId, "cst", [customer.id]);
+    }
+
+    case "cdel": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      await forgetCustomer(env, customer.id);
+      return screenFor(env, locale, userId, "cust", [customer.businessId]);
+    }
+
+    // Bots and model ----------------------------------------------------------
 
     case "bots": {
       const businessId = requireArg(args, 0);
@@ -491,7 +898,7 @@ async function screenFor(
         getBusiness(env, businessId),
         listBots(env, businessId),
       ]);
-      return botsScreen(business, bots);
+      return botsScreen(locale, business, bots);
     }
 
     case "botadd":
@@ -507,125 +914,39 @@ async function screenFor(
       });
       return {
         text: [
-          replace ? "<b>Replace console bot</b>" : "<b>Connect a customer bot</b>",
+          `<b>${replace ? t(locale, "btnReplaceConsole") : t(locale, "btnConnectBot")}</b>`,
           "",
-          "Create a bot with @BotFather, then send its token here.",
-          "The token is encrypted before storage and the message you send is",
-          "deleted straight away.",
-          replace
-            ? "\nThe current console bot stops responding as soon as this succeeds,\nso continue in the new bot."
-            : "",
+          t(locale, "botAddBody"),
+          replace ? `\n${t(locale, "botReplaceWarning")}` : "",
         ]
           .filter((line) => line !== "")
           .join("\n"),
-        rows: [row({ text: "Cancel", action: "bots", args: [businessId] })],
+        rows: [row({ text: t(locale, "cancel"), action: "bots", args: [businessId] })],
       };
     }
 
-    case "docs": {
+    case "mdl": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      await setContext(env, userId, businessId);
-      const [business, documents] = await Promise.all([
-        getBusiness(env, businessId),
-        listDocuments(env, businessId),
-      ]);
-      return documentsScreen(business, documents);
+      return modelScreen(locale, await getBusiness(env, businessId));
     }
 
-    case "inst": {
+    case "setmdl": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      const [business, previous] = await Promise.all([
-        getBusiness(env, businessId),
-        previousPrompt(env, businessId),
-      ]);
-      return instructionsScreen(business, previous !== null);
-    }
-
-    case "instset": {
-      const businessId = requireArg(args, 0);
-      await requireAccess(env, userId, businessId);
-      await setPending(env, userId, { kind: "instructions", businessId });
-      return {
-        text: [
-          "<b>Replace instructions</b>",
-          "",
-          "Send the new instructions as a message, or send a .md or .txt file.",
-          `Up to ${MAX_PROMPT_CHARS} characters.`,
-        ].join("\n"),
-        rows: [row({ text: "Cancel", action: "inst", args: [businessId] })],
-      };
-    }
-
-    case "instundo": {
-      const businessId = requireArg(args, 0);
-      await requireAccess(env, userId, businessId);
-      const previous = await previousPrompt(env, businessId);
-      if (previous !== null) {
-        await setBusinessPrompt(env, businessId, previous);
+      const preset = MODEL_PRESETS[Number(requireArg(args, 1))];
+      if (preset !== undefined) {
+        await updateBusinessModel(env, businessId, preset.id);
       }
-      return screenFor(env, userId, "inst", [businessId]);
-    }
-
-    case "instclr": {
-      const businessId = requireArg(args, 0);
-      await requireAccess(env, userId, businessId);
-      await setBusinessPrompt(env, businessId, "");
-      return screenFor(env, userId, "inst", [businessId]);
-    }
-
-    case "cust": {
-      const businessId = requireArg(args, 0);
-      await requireAccess(env, userId, businessId);
-      const [business, customers] = await Promise.all([
-        getBusiness(env, businessId),
-        listCustomers(env, businessId),
-      ]);
-      return customersScreen(business, customers);
-    }
-
-    case "cst": {
-      const customer = await customerFor(env, userId, requireArg(args, 0));
-      return customerScreen(customer, await listFacts(env, customer.id));
-    }
-
-    case "cnote": {
-      const customer = await customerFor(env, userId, requireArg(args, 0));
-      await setPending(env, userId, { kind: "customer_note", customerId: customer.id });
-      return {
-        text: "<b>Add note</b>\n\nSend the note as a message. It replaces the current one.",
-        rows: [row({ text: "Cancel", action: "cst", args: [customer.id] })],
-      };
-    }
-
-    case "cstage": {
-      const customer = await customerFor(env, userId, requireArg(args, 0));
-      const stage = requireArg(args, 1) as CustomerStage;
-      if (STAGES.includes(stage)) {
-        await setCustomerStage(env, customer.id, stage);
-      }
-      return screenFor(env, userId, "cst", [customer.id]);
-    }
-
-    case "cwipe": {
-      const customer = await customerFor(env, userId, requireArg(args, 0));
-      await forgetFacts(env, customer.id);
-      return screenFor(env, userId, "cst", [customer.id]);
-    }
-
-    case "cdel": {
-      const customer = await customerFor(env, userId, requireArg(args, 0));
-      await forgetCustomer(env, customer.id);
-      return screenFor(env, userId, "cust", [customer.businessId]);
+      return modelScreen(locale, await getBusiness(env, businessId));
     }
 
     default:
-      return homeScreen();
+      return homeScreen(locale);
   }
 }
 
-// Entry point -----------------------------------------------------------------
+// Entry point ---------------------------------------------------------------------
 
 export async function handleAdminUpdate(
   env: Env,
@@ -646,31 +967,33 @@ export async function handleAdminUpdate(
   const userId = message.from.id;
   const chatId = message.chat.id;
 
-  // Ownership is installed during setup from OWNER_TELEGRAM_ID, so by the time
-  // a message can reach this handler the operator table is already populated.
   const operator = await findOperator(env, userId);
+  const locale = await localeFor(env, userId);
   if (operator === null) {
-    await client.sendMessage({
-      chatId,
-      text: "This console is private. Ask the owner to grant you access.",
-    });
+    await client.sendMessage({ chatId, text: t(locale, "private") });
     return;
   }
 
   const pending = await takePending(env, userId);
   if (pending !== null) {
-    await handlePendingInput(env, client, { chatId, userId, message, pending, origin });
+    await handlePendingInput(env, client, { chatId, userId, locale, message, pending, origin });
     return;
   }
 
-  // A document sent with no prompt armed is knowledge for the business the
-  // operator last opened.
+  // A file sent with no prompt armed belongs to the business that is open. If
+  // none is, say so rather than guessing.
   if (message.document !== undefined) {
-    await handleKnowledgeUpload(env, client, { chatId, userId, message });
+    const businessId = await getContext(env, userId);
+    if (businessId === null) {
+      await client.sendMessage({ chatId, text: t(locale, "dataNoBusiness") });
+      await render(env, client, { chatId }, await screenFor(env, locale, userId, "bizls", []));
+      return;
+    }
+    await handleDataUpload(env, client, { chatId, userId, locale, message, businessId });
     return;
   }
 
-  await render(env, client, { chatId }, homeScreen());
+  await render(env, client, { chatId }, homeScreen(locale));
 }
 
 /** Downloads a file the operator sent, refusing anything oversized. */
@@ -697,29 +1020,23 @@ async function download(
   };
 }
 
-async function handleKnowledgeUpload(
+async function handleDataUpload(
   env: Env,
   client: TelegramClient,
-  input: { chatId: number; userId: number; message: TelegramMessage },
+  input: {
+    chatId: number;
+    userId: number;
+    locale: Locale;
+    message: TelegramMessage;
+    businessId: string;
+  },
 ): Promise<void> {
-  const businessId = await getContext(env, input.userId);
-  if (businessId === null) {
-    await client.sendMessage({
-      chatId: input.chatId,
-      text: "Open a business first, then send the file again.",
-    });
-    await render(env, client, { chatId: input.chatId }, homeScreen());
-    return;
-  }
+  const { locale, chatId, businessId } = input;
   if (!(await canAccessBusiness(env, input.userId, businessId))) {
     return;
   }
 
-  const notice = await client.sendMessage({
-    chatId: input.chatId,
-    text: "Reading the file...",
-  });
-
+  const notice = await client.sendMessage({ chatId, text: t(locale, "dataReading") });
   try {
     const file = await download(client, input.message);
     const result = await ingestDocument(env, {
@@ -729,25 +1046,49 @@ async function handleKnowledgeUpload(
       body: file.body,
     });
     await client.editMessageText({
-      chatId: input.chatId,
+      chatId,
       messageId: notice.message_id,
-      text: `Added <b>${escapeHtml(file.filename)}</b> as ${result.chunkCount} chunks.`,
+      text: t(locale, "dataAdded", {
+        name: escapeHtml(file.filename),
+        chunks: result.chunkCount,
+      }),
     });
   } catch (error) {
-    console.error("knowledge upload failed", {
+    console.error("data upload failed", {
       businessId,
       error: error instanceof Error ? error.message : String(error),
     });
     await client.editMessageText({
-      chatId: input.chatId,
+      chatId,
       messageId: notice.message_id,
-      text: `Could not add that file: ${escapeHtml(
-        error instanceof Error ? error.message : "unknown error",
-      )}`,
+      text: t(locale, "dataFailed", {
+        reason: escapeHtml(error instanceof Error ? error.message : "unknown error"),
+      }),
     });
   }
 
-  await render(env, client, { chatId: input.chatId }, await screenFor(env, input.userId, "docs", [businessId]));
+  await render(env, client, { chatId }, await screenFor(env, locale, input.userId, "data", [businessId]));
+}
+
+/**
+ * Reads product lines out of free text.
+ *
+ * Accepts the pipe separated form the console asks for, and falls back to
+ * commas so a spreadsheet exported as CSV also works.
+ */
+export function parseProductLines(text: string): { name: string; price: string; description: string }[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => (line.includes("|") ? line.split("|") : line.split(",")))
+    .map((parts) => parts.map((part) => part.trim()))
+    .filter((parts) => (parts[0] ?? "").length > 0)
+    .map((parts) => ({
+      name: (parts[0] as string).slice(0, 120),
+      price: (parts[1] ?? "").slice(0, 60),
+      description: parts.slice(2).join(", ").slice(0, 400),
+    }));
 }
 
 async function handlePendingInput(
@@ -756,17 +1097,28 @@ async function handlePendingInput(
   input: {
     chatId: number;
     userId: number;
+    locale: Locale;
     message: TelegramMessage;
     pending: Pending;
     origin: string;
   },
 ): Promise<void> {
-  const { pending, userId, chatId } = input;
+  const { pending, userId, chatId, locale } = input;
   const text = (input.message.text ?? "").trim();
+
+  if (pending.kind === "data_file") {
+    const businessId = pending.businessId;
+    if (businessId === undefined || input.message.document === undefined) {
+      await client.sendMessage({ chatId, text: t(locale, "dataAddBody") });
+      return;
+    }
+    await handleDataUpload(env, client, { chatId, userId, locale, message: input.message, businessId });
+    return;
+  }
 
   if (pending.kind === "business_name") {
     if (text.length === 0 || text.length > 80) {
-      await client.sendMessage({ chatId, text: "Send a name between 1 and 80 characters." });
+      await client.sendMessage({ chatId, text: t(locale, "bizAddInvalid") });
       return;
     }
     const business = await createBusiness(env, {
@@ -774,7 +1126,7 @@ async function handlePendingInput(
       locale: env.BUSINESS_LOCALE?.trim() || "en",
       model: env.DEFAULT_MODEL,
     });
-    await render(env, client, { chatId }, await businessDetail(env, userId, business.id));
+    await render(env, client, { chatId }, await businessDetail(env, locale, userId, business.id));
     return;
   }
 
@@ -785,7 +1137,49 @@ async function handlePendingInput(
     }
     await customerFor(env, userId, customerId);
     await setCustomerNote(env, customerId, text.slice(0, 1000));
-    await render(env, client, { chatId }, await screenFor(env, userId, "cst", [customerId]));
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "cst", [customerId]));
+    return;
+  }
+
+  if (pending.kind === "product_line" || pending.kind === "product_file") {
+    const businessId = pending.businessId;
+    if (businessId === undefined) {
+      return;
+    }
+    await requireAccess(env, userId, businessId);
+
+    let source = text;
+    if (input.message.document !== undefined) {
+      try {
+        const file = await download(client, input.message);
+        source = await readUpload(env, {
+          businessId,
+          filename: file.filename,
+          contentType: file.contentType,
+          body: file.body,
+        });
+      } catch (error) {
+        await client.sendMessage({
+          chatId,
+          text: t(locale, "dataFailed", {
+            reason: escapeHtml(error instanceof Error ? error.message : "unknown error"),
+          }),
+        });
+        return;
+      }
+    }
+
+    const parsed = parseProductLines(source);
+    if (parsed.length === 0) {
+      await client.sendMessage({ chatId, text: t(locale, "prodAddInvalid") });
+      return;
+    }
+    for (const item of parsed) {
+      await createProduct(env, { businessId, ...item });
+    }
+    const total = await syncProductCatalogue(env, businessId);
+    await client.sendMessage({ chatId, text: t(locale, "prodSynced", { count: total }) });
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "prod", [businessId]));
     return;
   }
 
@@ -804,17 +1198,19 @@ async function handlePendingInput(
       } catch (error) {
         await client.sendMessage({
           chatId,
-          text: `Could not read that file: ${error instanceof Error ? error.message : "unknown error"}`,
+          text: t(locale, "dataFailed", {
+            reason: escapeHtml(error instanceof Error ? error.message : "unknown error"),
+          }),
         });
         return;
       }
     }
     if (prompt.length === 0) {
-      await client.sendMessage({ chatId, text: "Nothing to save." });
+      await client.sendMessage({ chatId, text: t(locale, "instNothing") });
       return;
     }
     await setBusinessPrompt(env, businessId, prompt.slice(0, MAX_PROMPT_CHARS));
-    await render(env, client, { chatId }, await screenFor(env, userId, "inst", [businessId]));
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "inst", [businessId]));
     return;
   }
 
@@ -833,7 +1229,7 @@ async function handlePendingInput(
     try {
       username = (await incoming.getMe()).username ?? "unknown";
     } catch {
-      await client.sendMessage({ chatId, text: "Telegram rejected that token." });
+      await client.sendMessage({ chatId, text: t(locale, "botRejected") });
       return;
     }
 
@@ -845,7 +1241,6 @@ async function handlePendingInput(
     if (pending.replace === true) {
       const existing = await getAdminBot(env);
       if (existing === null) {
-        await client.sendMessage({ chatId, text: "There is no console bot to replace." });
         return;
       }
       // Stop the old bot first so the two never answer the same operator.
@@ -875,14 +1270,11 @@ async function handlePendingInput(
 
     if (pending.replace === true) {
       // The old bot is already detached, so this goes out through the new one.
-      await incoming.sendMessage({
-        chatId,
-        text: `Console moved to @${username}. Send /start here to continue.`,
-      });
+      await incoming.sendMessage({ chatId, text: t(locale, "botMoved", { username }) });
       return;
     }
 
-    await render(env, client, { chatId }, await screenFor(env, userId, "bots", [businessId]));
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "bots", [businessId]));
   }
 }
 
@@ -903,19 +1295,21 @@ async function handleCallback(
     return;
   }
 
+  const locale = await localeFor(env, callback.from.id);
+
   try {
     let decoded = decodeCallback(callback.data);
     if (isCallbackRef(decoded)) {
       const resolved = await resolveSpilled(env, callbackRefKey(decoded));
       if (resolved === null) {
-        await client.answerCallbackQuery({ id: callback.id, text: "This menu expired." });
-        await render(env, client, { chatId: callback.message.chat.id }, homeScreen());
+        await client.answerCallbackQuery({ id: callback.id, text: t(locale, "expired") });
+        await render(env, client, { chatId: callback.message.chat.id }, homeScreen(locale));
         return;
       }
       decoded = resolved;
     }
 
-    const screen = await screenFor(env, callback.from.id, decoded.action, decoded.args);
+    const screen = await screenFor(env, locale, callback.from.id, decoded.action, decoded.args);
     await render(
       env,
       client,
@@ -928,6 +1322,6 @@ async function handleCallback(
       code: isMuxelError(error) ? error.code : "unknown",
       error: error instanceof Error ? error.message : String(error),
     });
-    await client.answerCallbackQuery({ id: callback.id, text: "That action could not complete." });
+    await client.answerCallbackQuery({ id: callback.id, text: t(locale, "failed") });
   }
 }

@@ -86,6 +86,21 @@ export interface InferenceResult {
   readonly outputTokens: number | null;
 }
 
+/**
+ * An item entered by hand rather than uploaded.
+ *
+ * Products exist alongside files because a file can only be replaced whole. A
+ * price that changes should not require re-uploading a catalogue.
+ */
+export interface Product {
+  readonly id: string;
+  readonly businessId: string;
+  readonly name: string;
+  readonly price: string;
+  readonly description: string;
+  readonly createdAt: string;
+}
+
 export type CustomerStage = "new" | "lead" | "customer" | "blocked";
 
 export interface Customer {
