@@ -28,8 +28,6 @@ export interface InitOptions {
   readonly adminBotToken: string;
   /** Telegram account permitted to administer the deployment. */
   readonly ownerTelegramId: string;
-  /** Name of the business created during setup. */
-  readonly businessName?: string;
   /** Only needed for models outside the Workers AI catalogue. */
   readonly gatewayToken?: string;
   readonly accountId?: string;

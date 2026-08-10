@@ -136,12 +136,12 @@ node packages/cli/dist/index.js doctor
 
 node packages/cli/dist/index.js init \
   --admin-bot-token "<from BotFather>" \
-  --owner-telegram-id "<from @userinfobot>" \
-  --business "My Shop"
+  --owner-telegram-id "<from @userinfobot>"
 ```
 
 `init` provisions the resources, uploads the secrets, deploys and calls the
-setup endpoint for you.
+setup endpoint for you. Businesses are added afterwards from the console, each
+with its own bot.
 
 ## Choosing a model
 

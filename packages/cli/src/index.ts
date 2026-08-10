@@ -41,7 +41,6 @@ Global options
 init options
   --admin-bot-token <token>   Console bot token from @BotFather (required)
   --owner-telegram-id <id>    Your Telegram account id, digits only (required)
-  --business <name>           Name of the first business
   --prefix <name>             Resource name prefix (default: muxel)
   --account-id <id>           Cloudflare account id (default: from wrangler)
   --gateway-token <token>     Only for models outside Workers AI
@@ -75,7 +74,6 @@ async function dispatch(args: ParsedArgs): Promise<ExitCode> {
         prefix: flagString(args, "prefix") ?? "muxel",
         adminBotToken: requireFlag(args, "admin-bot-token"),
         ownerTelegramId: requireFlag(args, "owner-telegram-id"),
-        ...optional(args, "business", "businessName"),
         ...optional(args, "gateway-token", "gatewayToken"),
         ...optional(args, "account-id", "accountId"),
         skipDeploy: flagBoolean(args, "skip-deploy"),
