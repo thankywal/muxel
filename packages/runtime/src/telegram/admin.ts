@@ -1373,7 +1373,10 @@ async function handleDataUpload(
     await client.editMessageText({
       chatId,
       messageId: notice.message_id,
-      text: t(locale, "dataAdded", {
+      // The index lags the write by around half a minute. Saying "added" while
+      // the assistant still cannot find it is what makes a working upload look
+      // like a broken one.
+      text: t(locale, result.searchable ? "dataAdded" : "dataIndexing", {
         name: escapeHtml(file.filename),
         chunks: result.chunkCount,
       }),

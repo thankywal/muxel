@@ -373,6 +373,12 @@ const STRINGS = {
     zh: "已添加 {name}，共 {chunks} 段。",
     my: "{name} ကို အပိုင်း {chunks} ခုအဖြစ် ထည့်ပြီးပါပြီ။",
   },
+  dataIndexing: {
+    en: "Added {name} as {chunks} pieces. The search index needs about a minute to catch up, so the assistant will say it does not know until then. Wait a moment before you test it.",
+    th: "เพิ่ม {name} แล้ว แบ่งเป็น {chunks} ส่วน ดัชนีค้นหาต้องใช้เวลาราวหนึ่งนาทีจึงจะพร้อม ระหว่างนี้ผู้ช่วยจะตอบว่าไม่ทราบ กรุณารอสักครู่ก่อนทดสอบ",
+    zh: "已添加 {name}，共 {chunks} 段。搜索索引大约需要一分钟才能同步，在那之前助手会回答不知道。请稍等片刻再测试。",
+    my: "{name} ကို အပိုင်း {chunks} ခုအဖြစ် ထည့်ပြီးပါပြီ။ ရှာဖွေရေး index က တစ်မိနစ်ခန့် အချိန်ယူပါသေးတယ် — အဲဒီအထိ assistant က \"မသိပါ\" လို့ ဖြေပါလိမ့်မယ်။ ခဏစောင့်ပြီးမှ စမ်းပါ။",
+  },
   dataFailed: { en: "Could not add that file: {reason}", th: "เพิ่มไฟล์ไม่สำเร็จ: {reason}", zh: "无法添加该文件：{reason}", my: "ဖိုင် မထည့်နိုင်ပါ: {reason}" },
   dataNoBusiness: {
     en: "Choose a business first, then send the file.",

@@ -50,7 +50,29 @@ export interface IngestInput {
 export interface IngestResult {
   readonly documentId: string;
   readonly chunkCount: number;
+  /**
+   * Whether the assistant can already find this document.
+   *
+   * The index accepts a write and makes it searchable a little later, so for
+   * the first half minute a document is stored and unfindable at the same
+   * time. That gap lands exactly where an operator tests: they upload a price
+   * list, ask the bot about it straight away, and are told nobody knows. The
+   * upload is fine and the answer is honest, but together they look like a
+   * broken product, so the console has to say which of the two it is.
+   */
+  readonly searchable: boolean;
 }
+
+/**
+ * How long ingestion waits for the index to catch up before giving up.
+ *
+ * Measured against a live index, a newly written vector became queryable after
+ * about twenty seconds. Waiting the whole time would spend the budget the
+ * runtime allows for work after a response, so this waits a little and reports
+ * honestly when the index is still behind.
+ */
+const INDEX_VISIBLE_TIMEOUT_MS = 8_000;
+const INDEX_POLL_MS = 1_500;
 
 function extensionOf(filename: string): string {
   const dot = filename.lastIndexOf(".");
@@ -225,6 +247,38 @@ export async function readUpload(env: Env, input: IngestInput): Promise<string> 
  * Shared by uploads and by the generated product catalogue, so both are
  * retrieved identically.
  */
+/**
+ * Waits for a just written vector to become findable.
+ *
+ * Asked with the vector's own embedding, which is the only query guaranteed to
+ * match it, and looks for its id rather than a score. A false here is not a
+ * failure: the write succeeded and the index will catch up on its own. It only
+ * decides which of two true things the console tells the operator.
+ */
+export async function waitUntilSearchable(
+  env: Env,
+  namespace: string,
+  probe: { id: string; values: number[] },
+  timeoutMs: number = INDEX_VISIBLE_TIMEOUT_MS,
+  pollMs: number = INDEX_POLL_MS,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const found = await env.KNOWLEDGE.query(probe.values, { topK: 5, namespace });
+      if (found.matches.some((match) => match.id === probe.id)) {
+        return true;
+      }
+    } catch {
+      // An index that cannot be queried yet is the case being waited on.
+    }
+    if (Date.now() + pollMs >= deadline) {
+      return false;
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 async function indexText(
   env: Env,
   input: { businessId: string; filename: string; contentType: string; byteSize: number; text: string },
@@ -248,6 +302,7 @@ async function indexText(
     }
 
     const records = pieces.map((text, ordinal) => ({ id: generateId(), ordinal, text }));
+    let probe: { id: string; values: number[] } | null = null;
 
     // Chunk rows are written first so that a vector can never point at a row
     // that does not exist.
@@ -264,10 +319,17 @@ async function indexText(
         values: vectors[index] as number[],
         namespace: input.businessId,
       }));
+      const first = payload[0];
+      if (probe === null && first !== undefined) {
+        probe = { id: first.id, values: first.values };
+      }
       for (let start = 0; start < payload.length; start += UPSERT_BATCH) {
         await env.KNOWLEDGE.upsert(payload.slice(start, start + UPSERT_BATCH));
       }
     }
+
+    const searchable =
+      probe === null ? false : await waitUntilSearchable(env, input.businessId, probe);
 
     await setDocumentStatus(env, {
       documentId: document.id,
@@ -275,7 +337,7 @@ async function indexText(
       chunkCount: records.length,
     });
 
-    return { documentId: document.id, chunkCount: records.length };
+    return { documentId: document.id, chunkCount: records.length, searchable };
   } catch (error) {
     await setDocumentStatus(env, {
       documentId: document.id,

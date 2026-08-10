@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { stripConversionPreamble } from "../src/rag/ingest.js";
+import { stripConversionPreamble, waitUntilSearchable } from "../src/rag/ingest.js";
 
 /**
  * Taken from a real upload. A food inventory template converted to nothing but
@@ -75,5 +75,68 @@ Our metadata policy is to record the supplier for every item.
 လက်ဖက်ရည် တစ်ခွက် ၁,၀၀၀ ကျပ်ဖြစ်ပါသည်။
 `;
     expect(stripConversionPreamble(converted)).toBe("လက်ဖက်ရည် တစ်ခွက် ၁,၀၀၀ ကျပ်ဖြစ်ပါသည်။");
+  });
+});
+
+/**
+ * The index accepts a write and answers queries about it a little later.
+ * Measured against a live Vectorize index, a new vector became findable after
+ * about twenty seconds. For that window a document is stored and unfindable at
+ * once, which is exactly when an operator uploads a price list and tests it, so
+ * the console has to know which of the two states it is in.
+ */
+describe("waiting for the index", () => {
+  it("reports searchable once the written vector comes back", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ matches: [] })
+      .mockResolvedValueOnce({ matches: [{ id: "chunk-1", score: 1 }] });
+
+    const result = await waitUntilSearchable(
+      { KNOWLEDGE: { query } } as never,
+      "biz",
+      { id: "chunk-1", values: [0.1] },
+      60,
+      10,
+    );
+
+    expect(result).toBe(true);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up rather than spending the whole invocation waiting", async () => {
+    const query = vi.fn().mockResolvedValue({ matches: [] });
+
+    const result = await waitUntilSearchable(
+      { KNOWLEDGE: { query } } as never,
+      "biz",
+      { id: "chunk-1", values: [0.1] },
+      60,
+      10,
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it("treats an index that refuses the query as not ready yet", async () => {
+    const query = vi.fn().mockRejectedValue(new Error("index not ready"));
+
+    await expect(
+      waitUntilSearchable({ KNOWLEDGE: { query } } as never, "biz", {
+        id: "chunk-1",
+        values: [0.1],
+      }, 60, 10),
+    ).resolves.toBe(false);
+  });
+
+  it("does not mistake another chunk of the same document for the one written", async () => {
+    const query = vi.fn().mockResolvedValue({ matches: [{ id: "chunk-2", score: 1 }] });
+
+    await expect(
+      waitUntilSearchable({ KNOWLEDGE: { query } } as never, "biz", {
+        id: "chunk-1",
+        values: [0.1],
+      }, 60, 10),
+    ).resolves.toBe(false);
   });
 });
