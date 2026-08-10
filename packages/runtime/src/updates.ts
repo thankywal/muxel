@@ -11,6 +11,10 @@
  * and tells its owner, once per version, in the console they already use.
  * Applying the update is still a human action, but nobody has to remember to
  * look for one.
+ *
+ * The check is a poll rather than a push. Pushing would require this project to
+ * keep a registry of every deployment's address, which is the one thing Muxel
+ * promises not to do, so the deployment asks instead of being told.
  */
 
 import { open } from "./crypto.js";
@@ -22,6 +26,50 @@ import { MUXEL_VERSION, UPSTREAM_REPO, UPSTREAM_VERSION_URL } from "./version.js
 
 /** Remembers which version the owner has already been told about. */
 const NOTIFIED_KEY = "system:update_notified";
+
+/** Shape of a published version, used to reject an error page or a stray file. */
+const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
+export interface VersionStatus {
+  readonly running: string;
+  /** Null when upstream could not be reached, which is not the same as current. */
+  readonly latest: string | null;
+  readonly behind: boolean;
+}
+
+/**
+ * Reads the version published upstream.
+ *
+ * No cache override is set here. An earlier version pinned the response for an
+ * hour to be kind to the origin, which meant a deployment kept reading a
+ * version that had already been superseded and stayed silent through several
+ * releases. The origin sends its own short lived cache headers, which is both
+ * gentler than a request per check and fresher than an hour.
+ */
+export async function latestVersion(): Promise<string | null> {
+  try {
+    const response = await fetch(UPSTREAM_VERSION_URL, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const published = (await response.text()).trim();
+    return VERSION_PATTERN.test(published) ? published : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Compares this deployment against upstream. Used by the console on demand. */
+export async function versionStatus(): Promise<VersionStatus> {
+  const latest = await latestVersion();
+  return {
+    running: MUXEL_VERSION,
+    latest,
+    behind: latest !== null && latest !== MUXEL_VERSION,
+  };
+}
 
 function message(latest: string): string {
   return [
@@ -36,27 +84,26 @@ function message(latest: string): string {
   ].join("\n");
 }
 
-export type UpdateCheck = "current" | "notified" | "already-notified" | "skipped";
+/**
+ * Outcome of one check.
+ *
+ * `unreachable` and `not-ready` were a single `skipped` value, which made a
+ * broken check indistinguishable from a quiet one in the logs. They are
+ * separate so the reason a notice never arrived is answerable.
+ */
+export type UpdateCheck =
+  | "current"
+  | "notified"
+  | "already-notified"
+  | "unreachable"
+  | "not-ready";
 
 export async function checkForUpdate(env: Env): Promise<UpdateCheck> {
-  let latest: string;
-  try {
-    const response = await fetch(UPSTREAM_VERSION_URL, {
-      signal: AbortSignal.timeout(10_000),
-      // Upstream sits behind a CDN, so a short cache keeps this to roughly one
-      // real request per version rather than one per deployment per run.
-      cf: { cacheTtl: 3600, cacheEverything: true },
-    });
-    if (!response.ok) {
-      return "skipped";
-    }
-    latest = (await response.text()).trim();
-  } catch {
-    // A check that cannot run is not worth reporting. It runs again shortly.
-    return "skipped";
+  const latest = await latestVersion();
+  if (latest === null) {
+    return "unreachable";
   }
-
-  if (latest.length === 0 || latest === MUXEL_VERSION) {
+  if (latest === MUXEL_VERSION) {
     return "current";
   }
   if ((await env.STATE.get(NOTIFIED_KEY)) === latest) {
@@ -69,7 +116,7 @@ export async function checkForUpdate(env: Env): Promise<UpdateCheck> {
     findOwner(env),
   ]);
   if (bot === null || masterKey === null || owner === null) {
-    return "skipped";
+    return "not-ready";
   }
 
   const client = new TelegramClient(await open(masterKey, bot.tokenCiphertext));

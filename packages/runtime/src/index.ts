@@ -103,8 +103,11 @@ export default {
         }
         if (update.status === "rejected") {
           console.error("scheduled update check failed", { reason: String(update.reason) });
-        } else if (update.value === "notified") {
-          console.log("told the owner an update is available");
+        } else {
+          // Every outcome is logged, including the quiet ones. A check that
+          // silently declines to run looks exactly like one that found nothing,
+          // and that ambiguity already cost a release worth of notices.
+          console.log("scheduled update check", { outcome: update.value });
         }
       }),
     );

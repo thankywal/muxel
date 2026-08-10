@@ -66,6 +66,8 @@ import {
   syncProductCatalogue,
 } from "../rag/ingest.js";
 import { resolveMasterKey } from "../secrets.js";
+import { versionStatus } from "../updates.js";
+import { UPSTREAM_REPO } from "../version.js";
 import { isLocale, LOCALE_NAMES, LOCALES, t, type Locale, type MessageKey } from "./i18n.js";
 import { TelegramClient, type TelegramMessage, type TelegramUpdate } from "./api.js";
 import { buildKeyboard, resolveSpilled, row, type ButtonSpec } from "./keyboard.js";
@@ -223,6 +225,7 @@ function homeScreen(locale: Locale): Screen {
       row(
         { text: t(locale, "btnConsoleBot"), action: "console" },
         { text: t(locale, "btnDiagnostics"), action: "diag" },
+        { text: t(locale, "btnUpdates"), action: "upd" },
       ),
       row(
         { text: t(locale, "btnLanguage"), action: "lang" },
@@ -678,6 +681,28 @@ async function screenFor(
               )),
         ].join("\n"),
         rows: [backTo(locale, "home")],
+      };
+    }
+
+    case "upd": {
+      // Checked when the owner asks rather than read from a cache, so the
+      // answer is the truth at the moment they looked. The scheduled check
+      // still runs, but nobody has to wait for it to find out where they are.
+      const status = await versionStatus();
+      const headline =
+        status.latest === null
+          ? t(locale, "updUnknown", { running: status.running })
+          : status.behind
+            ? t(locale, "updBehind", { running: status.running, latest: status.latest })
+            : t(locale, "updCurrent", { running: status.running });
+      return {
+        text: [
+          `<b>${t(locale, "updTitle")}</b>`,
+          "",
+          headline,
+          ...(status.behind ? ["", t(locale, "updHow", { repo: UPSTREAM_REPO })] : []),
+        ].join("\n"),
+        rows: [row({ text: t(locale, "btnCheckAgain"), action: "upd" }), backTo(locale, "home")],
       };
     }
 

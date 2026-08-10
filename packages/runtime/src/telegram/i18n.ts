@@ -165,6 +165,40 @@ const STRINGS = {
     my: "assistant မဖြေနိုင်တဲ့အခါ အကြောင်းရင်းကို ဤနေရာမှာ မှတ်ထားပါသည် — dashboard ဖွင့်စရာ မလိုပါ။",
   },
 
+  // Updates -------------------------------------------------------------------
+  btnUpdates: { en: "Updates", th: "อัปเดต", zh: "更新", my: "အပ်ဒိတ်" },
+  updTitle: { en: "Updates", th: "อัปเดต", zh: "更新", my: "အပ်ဒိတ်" },
+  updCurrent: {
+    en: "This deployment is up to date, running {running}.",
+    th: "ระบบนี้เป็นเวอร์ชันล่าสุดแล้ว กำลังใช้ {running}",
+    zh: "此部署已是最新版本，正在运行 {running}。",
+    my: "ဤ deployment သည် နောက်ဆုံးဗားရှင်း ဖြစ်ပါသည် — {running} ကို သုံးနေပါသည်။",
+  },
+  updBehind: {
+    en: "Muxel {latest} is available. This deployment is running {running}.",
+    th: "มี Muxel {latest} แล้ว ระบบนี้กำลังใช้ {running}",
+    zh: "Muxel {latest} 已发布。此部署正在运行 {running}。",
+    my: "Muxel {latest} ထွက်ပါပြီ။ ဤ deployment က {running} ကို သုံးနေပါသည်။",
+  },
+  updUnknown: {
+    en: "GitHub could not be reached, so the latest version is unknown. This deployment is running {running}.",
+    th: "ติดต่อ GitHub ไม่ได้ จึงไม่ทราบเวอร์ชันล่าสุด ระบบนี้กำลังใช้ {running}",
+    zh: "无法连接 GitHub，暂时无法得知最新版本。此部署正在运行 {running}。",
+    my: "GitHub ကို ဆက်သွယ်လို့ မရလို့ နောက်ဆုံးဗားရှင်း မသိရပါ။ ဤ deployment က {running} ကို သုံးနေပါသည်။",
+  },
+  updHow: {
+    en: "Updating is a manual step, because the one click deploy copies this project without a link back to it. Open {repo} and follow \"Staying up to date\". Your businesses, data and bots are not touched.",
+    th: "การอัปเดตต้องทำเอง เพราะการติดตั้งแบบคลิกเดียวจะคัดลอกโปรเจกต์โดยไม่มีลิงก์กลับ เปิด {repo} แล้วทำตามหัวข้อ \"Staying up to date\" ธุรกิจ ข้อมูล และบอทของคุณจะไม่ถูกแตะต้อง",
+    zh: "更新需要手动进行，因为一键部署复制的副本没有指回本项目的链接。请打开 {repo} 并按照 \"Staying up to date\" 操作。你的商家、数据和机器人不会受到影响。",
+    my: "One click deploy က ဤ project ကို ပြန်ချိတ်ဆက်မှု မပါဘဲ ကူးယူတာဖြစ်လို့ update ကို ကိုယ်တိုင် လုပ်ရပါမည်။ {repo} ကို ဖွင့်ပြီး \"Staying up to date\" အတိုင်း လုပ်ပါ။ သင့် business, data နှင့် bot များကို မထိပါ။",
+  },
+  btnCheckAgain: {
+    en: "Check again",
+    th: "ตรวจสอบอีกครั้ง",
+    zh: "重新检查",
+    my: "ထပ်စစ်မည်",
+  },
+
   // Console bot -------------------------------------------------------------
   btnConsoleBot: { en: "Console bot", th: "บอทคอนโซล", zh: "控制台机器人", my: "Console bot" },
   consoleBotTitle: { en: "Console bot", th: "บอทคอนโซล", zh: "控制台机器人", my: "Console bot" },
