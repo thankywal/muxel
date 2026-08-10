@@ -363,9 +363,17 @@ Instructions can be written three ways, and they all end in the same place:
   writes it in as ordinary instructions, so it can be edited or undone like
   anything typed by hand.
 
+**Current agent skill** shows what is in force right now, in full rather than
+as a preview, along with which starting point it came from. Edit and delete sit
+on that screen too, so seeing and changing are the same visit.
+
+The label names a style only while the text still matches it exactly. Change a
+word and it reads as your own wording instead, because calling it "Friendly
+shop" after you have edited it would describe behaviour you already changed.
+
 The previous version is kept, so **Undo** puts it back if a change makes the
 assistant worse. That happens more often than it sounds, which is why the undo
-is there.
+is there, and why deleting asks first.
 
 ## Instructions and documents are different things
 

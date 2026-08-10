@@ -118,3 +118,16 @@ export const SKILLS: readonly Skill[] = [
 export function findSkill(id: string): Skill | undefined {
   return SKILLS.find((skill) => skill.id === id);
 }
+
+/**
+ * Reports which starting point the current instructions came from, if any.
+ *
+ * Compared by exact text rather than remembered in a column. An operator who
+ * edits a style has written something of their own, and calling that "Friendly
+ * shop" afterwards would describe behaviour they had already changed. Matching
+ * on the text means the label disappears the moment it stops being true.
+ */
+export function matchSkill(prompt: string): Skill | undefined {
+  const trimmed = prompt.trim();
+  return SKILLS.find((skill) => skill.body === trimmed);
+}

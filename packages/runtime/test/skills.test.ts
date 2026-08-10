@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { LOCALES } from "../src/telegram/i18n.js";
 import { CONSOLE_COMMANDS, parseCommand } from "../src/telegram/admin.js";
-import { findSkill, SKILLS } from "../src/telegram/skills.js";
+import { findSkill, matchSkill, SKILLS } from "../src/telegram/skills.js";
 
 /**
  * A starting point an operator picks and then edits. What matters is that every
@@ -68,5 +68,37 @@ describe("console commands", () => {
       expect(entry.command).toMatch(/^[a-z]{1,32}$/);
     }
     expect(CONSOLE_COMMANDS.map((c) => c.command)).toContain("instruction");
+  });
+});
+
+/**
+ * The console labels the current instructions with the style they came from.
+ * That label has to stop being shown the moment it stops being true, or it
+ * describes behaviour the operator has already changed.
+ */
+describe("recognising the style in use", () => {
+  it("names a style that is still exactly as it was applied", () => {
+    const friendly = findSkill("friendly");
+    expect(friendly).toBeDefined();
+    expect(matchSkill(friendly!.body)?.id).toBe("friendly");
+  });
+
+  it("ignores surrounding whitespace, which an edit box adds on its own", () => {
+    const friendly = findSkill("friendly")!;
+    expect(matchSkill(`\n${friendly.body}\n `)?.id).toBe("friendly");
+  });
+
+  it("stops naming a style once a word has been changed", () => {
+    const friendly = findSkill("friendly")!;
+    expect(matchSkill(`${friendly.body} Always mention delivery.`)).toBeUndefined();
+  });
+
+  it("names nothing for instructions written from scratch", () => {
+    expect(matchSkill("Always answer in Burmese and never quote a price.")).toBeUndefined();
+  });
+
+  it("names nothing when there are no instructions", () => {
+    expect(matchSkill("")).toBeUndefined();
+    expect(matchSkill("   ")).toBeUndefined();
   });
 });

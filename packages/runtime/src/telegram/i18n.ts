@@ -175,6 +175,33 @@ const STRINGS = {
   },
   cmdBusiness: { en: "Your businesses", th: "ธุรกิจของคุณ", zh: "你的商家", my: "သင့် business များ" },
   cmdHelp: { en: "Help", th: "ช่วยเหลือ", zh: "帮助", my: "အကူအညီ" },
+  btnViewInstructions: {
+    en: "Current agent skill",
+    th: "สกิลที่ใช้อยู่",
+    zh: "当前使用的技能",
+    my: "လက်ရှိ agent skill",
+  },
+  instViewTitle: {
+    en: "Current agent skill for {name}",
+    th: "สกิลที่ {name} ใช้อยู่",
+    zh: "{name} 当前使用的技能",
+    my: "{name} ရဲ့ လက်ရှိ agent skill",
+  },
+  instActive: { en: "In use", th: "กำลังใช้", zh: "正在使用", my: "အသုံးပြုနေသည်" },
+  instCustom: { en: "Your own wording", th: "ข้อความของคุณเอง", zh: "你自己写的内容", my: "သင်ကိုယ်တိုင် ရေးထားသည်" },
+  instLength: { en: "{count} characters", th: "{count} ตัวอักษร", zh: "{count} 个字符", my: "စာလုံး {count} လုံး" },
+  instTruncated: {
+    en: "Shown up to the message limit. The assistant reads all of it.",
+    th: "แสดงได้เท่าที่ข้อความรองรับ ผู้ช่วยอ่านทั้งหมด",
+    zh: "此处只显示到消息长度上限，助手读取的是全文。",
+    my: "message ကန့်သတ်ချက်အထိပဲ ပြထားပါသည်။ assistant ကတော့ အားလုံး ဖတ်ပါသည်။",
+  },
+  instClearConfirm: {
+    en: "Delete the agent skill for {name}? The assistant goes back to its default behaviour. You can still undo this afterwards, and your documents and products are not touched.",
+    th: "ลบสกิลของ {name} หรือไม่? ผู้ช่วยจะกลับไปใช้พฤติกรรมเริ่มต้น คุณยังย้อนกลับได้ภายหลัง และเอกสารกับสินค้าของคุณจะไม่ถูกแตะต้อง",
+    zh: "要删除 {name} 的技能吗？助手会恢复默认行为。之后仍可撤销，你的文档和商品不受影响。",
+    my: "{name} ရဲ့ agent skill ကို ဖျက်မလား? assistant က မူလအပြုအမူကို ပြန်သုံးပါမယ်။ နောက်မှ Undo လုပ်လို့ ရပါသေးတယ်၊ သင့် document နဲ့ ကုန်ပစ္စည်းတွေကို မထိပါ။",
+  },
   btnChooseStyle: {
     en: "Choose a style",
     th: "เลือกสไตล์",

@@ -82,7 +82,7 @@ import {
   syncProductCatalogue,
 } from "../rag/ingest.js";
 import { resolveMasterKey } from "../secrets.js";
-import { findSkill, SKILLS } from "./skills.js";
+import { findSkill, matchSkill, SKILLS } from "./skills.js";
 import { versionStatus } from "../updates.js";
 import { UPSTREAM_REPO } from "../version.js";
 import { isLocale, LOCALE_NAMES, LOCALES, t, type Locale, type MessageKey } from "./i18n.js";
@@ -467,29 +467,47 @@ function productScreen(locale: Locale, product: Product): Screen {
 }
 
 function instructionsScreen(locale: Locale, business: Business, hasPrevious: boolean): Screen {
+  const set = business.systemPrompt.trim().length > 0;
+  const style = set ? matchSkill(business.systemPrompt) : undefined;
+
   return {
     text: [
       `<b>${t(locale, "instTitle", { name: escapeHtml(business.name) })}</b>`,
       "",
       t(locale, "instBody"),
       "",
-      business.systemPrompt.length > 0
-        ? escapeHtml(truncate(business.systemPrompt, 600))
-        : `<i>${t(locale, "instUsingDefault")}</i>`,
+      !set
+        ? `<i>${t(locale, "instUsingDefault")}</i>`
+        : [
+            // Named when the text still matches a starting point exactly, so an
+            // operator can tell at a glance whether they are looking at
+            // something they wrote or something they picked.
+            `<b>${t(locale, "instActive")}:</b> ${
+              style === undefined ? t(locale, "instCustom") : escapeHtml(style.label[locale])
+            }   <i>${t(locale, "instLength", { count: business.systemPrompt.length })}</i>`,
+            "",
+            escapeHtml(truncate(business.systemPrompt, 400)),
+          ].join("\n"),
     ].join("\n"),
     rows: [
+      ...(set
+        ? [row({ text: t(locale, "btnViewInstructions"), action: "instview", args: [business.id] })]
+        : []),
       row({ text: t(locale, "btnEditInstructions"), action: "instset", args: [business.id] }),
       row({ text: t(locale, "btnChooseStyle"), action: "skills", args: [business.id] }),
       ...(hasPrevious
         ? [row({ text: t(locale, "btnUndoInstructions"), action: "instundo", args: [business.id] })]
         : []),
-      ...(business.systemPrompt.length > 0
+      ...(set
         ? [row({ text: t(locale, "btnResetInstructions"), action: "instclr", args: [business.id] })]
         : []),
       backTo(locale, "biz", [business.id]),
     ],
   };
 }
+
+/** Longest instruction text a screen can carry, under Telegram's message cap. */
+const INSTRUCTION_VIEW_CHARS = 3400;
 
 function customersScreen(
   locale: Locale,
@@ -1199,6 +1217,34 @@ async function screenFor(
       };
     }
 
+    case "instview": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const business = await getBusiness(env, businessId);
+      const prompt = business.systemPrompt;
+      const style = matchSkill(prompt);
+      const overflow = prompt.length > INSTRUCTION_VIEW_CHARS;
+
+      return {
+        text: [
+          `<b>${t(locale, "instViewTitle", { name: escapeHtml(business.name) })}</b>`,
+          `<i>${
+            style === undefined ? t(locale, "instCustom") : escapeHtml(style.label[locale])
+          } · ${t(locale, "instLength", { count: prompt.length })}</i>`,
+          "",
+          escapeHtml(overflow ? prompt.slice(0, INSTRUCTION_VIEW_CHARS) : prompt),
+          // A message cannot hold everything the field can, so say so rather
+          // than showing a cut off paragraph as if it were the whole thing.
+          ...(overflow ? ["", `<i>${t(locale, "instTruncated")}</i>`] : []),
+        ].join("\n"),
+        rows: [
+          row({ text: t(locale, "btnEditInstructions"), action: "instset", args: [businessId] }),
+          row({ text: t(locale, "btnResetInstructions"), action: "instclr", args: [businessId] }),
+          backTo(locale, "inst", [businessId]),
+        ],
+      };
+    }
+
     case "instundo": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
@@ -1210,8 +1256,23 @@ async function screenFor(
     }
 
     case "instclr": {
+      // Asked first, like every other delete in the console. Instructions are
+      // the slowest thing here to write again from memory.
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
+      const business = await getBusiness(env, businessId);
+      return confirmScreen(
+        locale,
+        t(locale, "instClearConfirm", { name: escapeHtml(business.name) }),
+        { action: "instclry", args: [businessId] },
+        { action: "inst", args: [businessId] },
+      );
+    }
+
+    case "instclry": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      // Recorded as a change rather than a wipe, so Undo can bring it back.
       await setBusinessPrompt(env, businessId, "");
       return screenFor(env, locale, userId, "inst", [businessId]);
     }
