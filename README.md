@@ -5,6 +5,9 @@ price list and policies, running entirely inside your own Cloudflare account.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+New here? Read [Before you start](#before-you-start) first. It is four free
+accounts and about ten minutes, and the deploy form asks for two of them.
+
 There is no Muxel server, no Muxel database and no Muxel account. Your
 documents, your conversations and your credentials never leave infrastructure
 you control.
@@ -26,21 +29,69 @@ you control.
 
 ## Before you start
 
-Three things, all free, about six minutes.
+Four things, all free, about ten minutes. None of them asks for a payment card,
+and you do not have to write any code at any point.
 
-1. **Two Telegram bots.** Open [@BotFather](https://t.me/BotFather), send
-   `/newbot` twice. One is your private console, the other talks to customers.
-   Keep both tokens.
-2. **Your Telegram account id.** Send `/start` to
-   [@userinfobot](https://t.me/userinfobot). It replies with a number.
-3. **A Cloudflare account.** The free plan is enough. No payment method is
-   needed, and Muxel does not use any resource that asks for one.
+### 1. A Cloudflare account
+
+This is where Muxel will run, and it is the account that will hold your
+documents and conversations. Sign up at
+[dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up), then confirm
+the email it sends you. Stay on the free plan. Muxel deliberately uses nothing
+that asks for a card, so you will not be prompted for one.
+
+Already have an account? Just sign in and move on.
+
+### 2. A GitHub account
+
+Cloudflare keeps a copy of this code under your own name, so it can rebuild your
+assistant whenever you update it. Sign up at
+[github.com/signup](https://github.com/signup).
+
+You will not need to write anything there. After setup you can close it and
+forget about it, apart from the one setting described further down.
+
+### 3. Two Telegram bots
+
+Open [@BotFather](https://t.me/BotFather) in Telegram and send `/newbot`. Do it
+twice, because the two bots have different jobs and must never be the same one.
+
+| Bot          | Who writes to it | Name it something like |
+| ------------ | ---------------- | ---------------------- |
+| Console bot  | only you         | My Muxel Console       |
+| Business bot | your customers   | your shop's name       |
+
+Your customers see the business bot's name, so give that one the name of the
+shop. BotFather answers each `/newbot` with a long token that looks like
+`8012345678:AAH...`. Keep both somewhere you can copy from.
+
+You only need the console bot token to deploy. The business bot token is asked
+for later, inside the console.
+
+### 4. Your Telegram account id
+
+Send `/start` to [@userinfobot](https://t.me/userinfobot). It replies with a
+number, which is how the console tells you apart from anyone else who finds your
+bot. Nobody else can drive it.
 
 ## Deploy from the browser
 
-Click the button above. Cloudflare will ask you to connect GitHub, then walk you
-through a setup page. Accept the suggested names for the KV namespace and the
-D1 database, then fill in four fields.
+Click the button, or copy this link into your browser:
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
+
+```
+https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
+```
+
+Cloudflare then takes you through three things before the form appears. It asks
+you to sign in if you are not already, it asks to connect your GitHub account,
+and it asks to install the **Cloudflare Workers and Pages** app on it. Approve
+that: it is how Cloudflare creates your copy of the code and rebuilds it when
+you update.
+
+On the form, accept the suggested names for the KV namespace and the D1
+database, then fill in four fields.
 
 **The Vectorize index asks for two values that cannot be filled in for you.**
 They are fixed when the index is created and the Worker configuration has no
