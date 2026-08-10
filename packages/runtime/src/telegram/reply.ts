@@ -26,6 +26,32 @@ import type { TelegramClient, TelegramUpdate } from "./api.js";
 /** Longest customer message accepted. Longer input is truncated, not rejected. */
 const MAX_INPUT_CHARS = 2000;
 
+/**
+ * How long the answer may take before the customer is told to try again.
+ *
+ * The reply is produced after the webhook has been acknowledged, and the
+ * runtime cancels that work at thirty seconds. A generation that ran past the
+ * limit used to take the apology down with it, so the customer heard nothing at
+ * all. Giving up first means they always hear something.
+ */
+const ANSWER_DEADLINE_MS = 20_000;
+
+class DeadlineExceeded extends Error {
+  constructor(seconds: number) {
+    super(`no answer within ${seconds} seconds`);
+    this.name = "DeadlineExceeded";
+  }
+}
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_resolve, reject) =>
+      setTimeout(() => reject(new DeadlineExceeded(Math.round(ms / 1000))), ms),
+    ),
+  ]);
+}
+
 const NO_ANSWER_NOTE =
   "If the reference material does not answer the question, say so plainly and offer to pass the question to a person. Never invent prices, stock levels, delivery times or policies.";
 
@@ -135,6 +161,9 @@ export async function handleReplyUpdate(
     chatId,
   });
 
+  // Answers take several seconds. Without this the chat looks dead.
+  await client.sendChatAction(chatId).catch(() => undefined);
+
   let history: ChatTurn[] = [];
   let facts: CustomerFact[] = [];
   let answer: string;
@@ -147,13 +176,16 @@ export async function handleReplyUpdate(
       customer === null ? Promise.resolve([]) : recall(env, customer.id),
     ]);
     const chunks = await retrieve(env, business.id, question);
-    const result = await generate(env, {
-      model: business.model,
-      system: buildSystemPrompt(business, formatContext(chunks), facts),
-      history,
-      userMessage: question,
-      businessId: business.id,
-    });
+    const result = await withDeadline(
+      generate(env, {
+        model: business.model,
+        system: buildSystemPrompt(business, formatContext(chunks), facts),
+        history,
+        userMessage: question,
+        businessId: business.id,
+      }),
+      ANSWER_DEADLINE_MS,
+    );
     answer = result.text;
     inputTokens = result.inputTokens ?? 0;
     outputTokens = result.outputTokens ?? 0;

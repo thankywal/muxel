@@ -33,12 +33,12 @@ interface CompletionResponse {
  *
  * Reasoning models spend most of their completion budget before emitting a
  * single visible character. Measured against Gemma 4, a reply of 133 characters
- * consumed between 366 and 566 completion tokens, and the hidden portion varied
- * from nothing to about 1,400 characters on identical input. A budget sized for
- * the visible answer alone truncates the model mid thought and yields an empty
- * reply, so the default is set well above what the answer itself needs.
+ * consumed between 366 and 566 completion tokens. The budget is set well above
+ * what the answer needs so the model is not cut off mid thought, but not so
+ * high that a stubborn generation runs long: the whole reply has to finish
+ * inside the time the runtime allows for work after a response.
  */
-const DEFAULT_OUTPUT_TOKENS = 2000;
+const DEFAULT_OUTPUT_TOKENS = 1200;
 
 export interface GenerateInput {
   readonly model: string;
@@ -81,7 +81,10 @@ export async function generate(env: Env, input: GenerateInput): Promise<Inferenc
     outputTokens: first.outputTokens,
   });
 
-  const second = await attempt(env, input, budget * 2);
+  // Retried at the same size, not a larger one. The empty reply is
+  // intermittent rather than a budget shortfall, and doubling it once pushed a
+  // reply past the runtime's limit and lost it entirely.
+  const second = await attempt(env, input, budget);
   if (second.text.length === 0) {
     throw new MuxelError("upstream_failure", "inference returned no content", {
       model: input.model,

@@ -135,6 +135,16 @@ export class TelegramClient {
     });
   }
 
+  /**
+   * Shows the typing indicator for a few seconds.
+   *
+   * A grounded answer takes several seconds to produce. Without this the chat
+   * sits silent and the customer assumes nothing happened.
+   */
+  async sendChatAction(chatId: number): Promise<void> {
+    await this.#call<boolean>("sendChatAction", { chat_id: chatId, action: "typing" });
+  }
+
   getMe(): Promise<TelegramUser> {
     return this.#call<TelegramUser>("getMe", {});
   }
