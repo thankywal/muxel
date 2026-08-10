@@ -117,6 +117,7 @@ Check these before starting from first principles. Each one presented as
 | Reply rejected outright | Model wrote a bare `<`, so Telegram refused to parse the HTML | escape before tagging, plus a plain text retry |
 | A PDF became hundreds of junk products | PDF text arrives one fragment per line, nothing like a list | importer refuses input whose lines lack separators |
 | Update notice never arrived | The version check cached the upstream file for an hour | no cache override |
+| Build red, `/setup` answered 404 on every attempt | A brand new workers.dev address is not routable for a minute or two, and the edge answers 404. The Worker was fine. | `deploy.mjs` records the origin in KV first, waits ~3 min, exits 0 on unreachable; `finishSetup` completes it from cron |
 
 ## Verifying a change
 

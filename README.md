@@ -131,6 +131,11 @@ your customers write to.
 If the bot stays silent, open the Worker address Cloudflare showed you. That
 page runs setup again and says what is wrong.
 
+A brand new `workers.dev` address is not reachable for the first minute or two,
+so the deploy log may end with **the address is not serving yet**. Nothing is
+broken: the Worker is live, it has recorded where it lives, and it finishes
+connecting itself within fifteen minutes. Opening the address does it at once.
+
 <details>
 <summary>After deploying, make your copy private</summary>
 

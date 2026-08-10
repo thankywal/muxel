@@ -14,7 +14,7 @@ import { ensureSchema } from "./db/migrate.js";
 import { getBusiness, getBotByWebhookPath, getConsoleBot } from "./db/queries.js";
 import { missingConfiguration, type Env } from "./env.js";
 import { peekMasterKey, requireMasterKey } from "./secrets.js";
-import { renderSetupPage, repairWebhook, runSetup } from "./setup.js";
+import { finishSetup, renderSetupPage, runSetup } from "./setup.js";
 import { checkForUpdate } from "./updates.js";
 import { TelegramClient, type TelegramUpdate } from "./telegram/api.js";
 import { handleAdminUpdate } from "./telegram/admin.js";
@@ -95,11 +95,11 @@ export default {
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      Promise.allSettled([repairWebhook(env), checkForUpdate(env)]).then(([webhook, update]) => {
+      Promise.allSettled([finishSetup(env), checkForUpdate(env)]).then(([webhook, update]) => {
         if (webhook.status === "rejected") {
-          console.error("scheduled webhook check failed", { reason: String(webhook.reason) });
+          console.error("scheduled setup check failed", { reason: String(webhook.reason) });
         } else if (webhook.value !== "healthy") {
-          console.log("scheduled webhook check", { outcome: webhook.value });
+          console.log("scheduled setup check", { outcome: webhook.value });
         }
         if (update.status === "rejected") {
           console.error("scheduled update check failed", { reason: String(update.reason) });

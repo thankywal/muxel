@@ -196,6 +196,43 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
  * old address registered. Both leave a bot that looks configured and answers
  * nothing, so they are repaired rather than waited on.
  */
+/**
+ * Completes or repairs setup on a schedule.
+ *
+ * Setup is normally finished by the deploy script, which makes the first
+ * request itself. That request can fail for a reason that has nothing to do
+ * with the deployment: a workers.dev address on a brand new account is not
+ * routable for a minute or two after the Worker is uploaded, and every attempt
+ * inside that window is answered by the edge with a 404. A deployment could
+ * therefore be perfectly good and still have no Telegram webhook, waiting on a
+ * person to open a URL nobody told them mattered.
+ *
+ * So the address is written into KV by the deploy script before any request is
+ * made, and this finishes the job unattended once the address starts serving.
+ */
+export async function finishSetup(
+  env: Env,
+): Promise<"skipped" | "healthy" | "repaired" | "completed"> {
+  const origin = await env.STATE.get(ORIGIN_KEY);
+  if (origin === null) {
+    // Nothing has ever reached this deployment and the deploy script did not
+    // record an address, so it still does not know where it lives.
+    return "skipped";
+  }
+
+  if ((await getConsoleBot(env)) === null) {
+    // Deployed but never set up. Everything runSetup needs is configuration,
+    // and the address is now known, so it can be run from here.
+    if (missingConfiguration(env).length > 0) {
+      return "skipped";
+    }
+    await runSetup(env, origin);
+    return "completed";
+  }
+
+  return repairWebhook(env);
+}
+
 export async function repairWebhook(env: Env): Promise<"skipped" | "healthy" | "repaired"> {
   const origin = await env.STATE.get(ORIGIN_KEY);
   if (origin === null) {

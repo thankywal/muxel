@@ -12,15 +12,23 @@
  * Workers Builds runs it as the deploy command, so a one click deploy finishes
  * fully configured.
  *
- * A setup failure is reported but does not fail the deploy. The code is live at
- * that point, and /setup can be opened by hand to see the reason.
+ * It also writes the address into KV before trying, which matters more than the
+ * request does. A workers.dev address on a brand new account is not routable
+ * for a minute or two after the upload, and the edge answers 404 in the
+ * meantime. With the address recorded, the Worker's own scheduled run finishes
+ * setup as soon as it starts serving, so a slow address costs a quarter of an
+ * hour rather than a bot that never answers.
+ *
+ * Only a fault the operator has to fix, such as a missing setting, fails the
+ * build. An address that is not serving yet does not: the deployment is good,
+ * and reporting it red teaches people to distrust a red build.
  */
 
 import { spawn } from "node:child_process";
 
-function runWrangler() {
+function run(args) {
   return new Promise((resolve, reject) => {
-    const child = spawn("npx", ["--yes", "wrangler", "deploy"], {
+    const child = spawn("npx", ["--yes", "wrangler", ...args], {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
     });
@@ -40,7 +48,7 @@ function runWrangler() {
   });
 }
 
-const { code, combined } = await runWrangler();
+const { code, combined } = await run(["deploy"]);
 if (code !== 0) {
   process.exit(code);
 }
@@ -52,6 +60,33 @@ if (url === undefined) {
   );
   process.exit(0);
 }
+
+/**
+ * Records the address so the Worker can finish setting itself up.
+ *
+ * Written before the first request rather than after a failure, because the
+ * case this exists for is the one where no request ever succeeds.
+ */
+async function recordOrigin(target) {
+  const { code: kvCode } = await run([
+    "kv",
+    "key",
+    "put",
+    "system:origin",
+    target,
+    "--binding",
+    "STATE",
+    "--remote",
+  ]);
+  return kvCode === 0;
+}
+
+const recorded = await recordOrigin(url);
+console.log(
+  recorded
+    ? `\nRecorded ${url} so the Worker can finish setup on its own if it has to.`
+    : `\nCould not record the address. Setup will need the request below to succeed.`,
+);
 
 /**
  * Attempts setup, reporting whether it is worth trying again.
@@ -80,6 +115,13 @@ async function attemptSetup(target) {
     };
   }
 
+  // A 404 is the edge saying the address is not routable yet, not the Worker
+  // saying anything: every path the Worker serves is answered, and setup is one
+  // of them. It is the normal first minute of a brand new workers.dev address.
+  if (response.status === 404) {
+    return { done: false, note: "the address is not serving yet", unreachable: true };
+  }
+
   // The page explains what is wrong in prose; surface just that line.
   const note = body.match(/<p>([^<]{10,300})<\/p>/)?.[1] ?? `the Worker answered ${response.status}`;
   // A missing setting will not fix itself, so there is no point waiting.
@@ -87,7 +129,11 @@ async function attemptSetup(target) {
   return { done: permanent, note, failed: true };
 }
 
-const DELAYS_MS = [0, 2000, 3000, 5000, 8000, 10_000, 10_000, 15_000];
+// Roughly three minutes in total. A new address usually starts serving inside
+// one, and waiting is cheaper than a deployment that needs a person.
+const DELAYS_MS = [
+  0, 2000, 3000, 5000, 8000, 10_000, 10_000, 15_000, 15_000, 20_000, 20_000, 30_000, 30_000,
+];
 
 console.log(`\nFinishing setup at ${url}/setup`);
 let outcome = { done: false, note: "not attempted" };
@@ -107,10 +153,20 @@ if (outcome.done && outcome.failed !== true) {
   process.exit(0);
 }
 
-// Failing here is deliberate. The Worker is already live, so exiting quietly
-// would report a green deploy with a bot that never answers, which is how this
-// went unnoticed twice. A red build with the reason on it is worth more than a
-// green one that lies.
+// An address that has not started serving is not a broken deployment, and
+// calling it one trains people to ignore a red build. The Worker finishes
+// setting itself up on its next scheduled run, within fifteen minutes, because
+// the address was recorded above.
+if (outcome.unreachable === true && recorded) {
+  console.log(`\nThe address is not serving yet, which is normal for a new one.`);
+  console.log(`Setup will finish by itself within fifteen minutes.`);
+  console.log(`To have it now, open ${url}/setup in a browser.`);
+  process.exit(0);
+}
+
+// Anything else is a fault a person has to clear, and a red build carrying the
+// reason is worth more than a green one that lies. Both were learned the hard
+// way, in that order.
 console.error(`\nSetup did not finish: ${outcome.note}`);
 console.error(`The Worker is deployed but not connected to Telegram yet.`);
 console.error(`Open ${url}/setup in a browser to finish it and see the full message.`);
