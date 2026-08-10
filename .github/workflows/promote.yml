@@ -1,0 +1,59 @@
+name: Promote to main
+
+# Advances main to a dev commit whose full pipeline passed, including the real
+# deploy in the smoke job. main is what every user gets: the deploy button
+# clones it, updaters sync it, the version check reads it. Nothing reaches it
+# without having actually deployed somewhere first.
+#
+# The push authenticates with a deploy key rather than the workflow token,
+# because a promotion can carry workflow file changes and GitHub rejects those
+# from the built in token outright. SSH deploy keys are not subject to that
+# check.
+#
+# The push is a fast forward with no force flag. If main has moved on its own,
+# the push fails loudly, which is the correct answer to a hand edit landing on
+# main: reconcile it into dev first.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-to-main
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Fast forward main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'dev' &&
+      github.repository == 'thankywal/muxel'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Push the verified commit to main
+        env:
+          PROMOTE_KEY: ${{ secrets.PROMOTE_KEY }}
+        run: |
+          if [ -z "$PROMOTE_KEY" ]; then
+            echo "PROMOTE_KEY is not set; main was not advanced."
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$PROMOTE_KEY" > ~/.ssh/promote
+          chmod 600 ~/.ssh/promote
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/promote -o IdentitiesOnly=yes"
+          git push git@github.com:thankywal/muxel.git HEAD:main
+          echo "main is now $(git rev-parse --short HEAD)"

@@ -121,8 +121,19 @@ Check these before starting from first principles. Each one presented as
 
 ## Verifying a change
 
+**Commit to `dev`, never to `main`.** main is the release line every user
+consumes: the deploy button clones it, updaters sync it, the version check
+reads it. It advances only through the Promote workflow, which fast forwards
+it to a dev commit after the full pipeline passed, including a real deploy
+into a scratch Cloudflare account (the `smoke` job, `scripts/smoke.mjs`).
+A direct push to main skips the one test that has caught every failure that
+reached a user, and will also make the next promotion fail its fast forward.
+
 `pnpm typecheck && pnpm test`, then `npx wrangler deploy --dry-run --outdir /tmp/x`
-to confirm it still bundles.
+to confirm it still bundles. The smoke test can be run from anywhere with a
+Cloudflare token: `CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node
+scripts/smoke.mjs`. It creates uniquely named scratch resources and removes
+them when it is done.
 
 Bump `VERSION` and `packages/runtime/src/version.ts` together, in the same
 commit as anything worth telling operators about. A test enforces that they

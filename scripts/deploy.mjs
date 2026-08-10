@@ -117,8 +117,14 @@ async function attemptSetup(target) {
 
   // A 404 is the edge saying the address is not routable yet, not the Worker
   // saying anything: every path the Worker serves is answered, and setup is one
-  // of them. It is the normal first minute of a brand new workers.dev address.
-  if (response.status === 404) {
+  // of them. A brand new address can also flap through generic Cloudflare
+  // error pages while it propagates; those pages are not ours, so any 5xx that
+  // did not come from Muxel's own page gets the same treatment. The one 5xx
+  // that is real is a crash, and Cloudflare's page names it.
+  if (body.includes("Worker threw exception")) {
+    return { done: true, note: "the Worker crashed while serving setup", failed: true };
+  }
+  if (response.status === 404 || (response.status >= 500 && !body.includes("Muxel"))) {
     return { done: false, note: "the address is not serving yet", unreachable: true };
   }
 

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -48,3 +48,35 @@ jobs:
       # change that breaks it fails in review rather than in someone's account.
       - name: Verify the Worker bundles
         run: pnpm run build:worker
+
+  # A real deploy into a scratch Cloudflare account, because three releases in
+  # a row broke something only a real deploy exercises: the config, the
+  # bindings, the first request, the setup path. Every resource is created
+  # under a unique name and deleted before the job ends.
+  #
+  # Requires the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets, which
+  # a fork does not have; the script skips cleanly when they are absent, so
+  # outside contributions still get a green Verify without them.
+  smoke:
+    name: Deploy for real
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verify
+    if: github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Deploy, exercise and tear down
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SMOKE_BOT_TOKEN: ${{ secrets.SMOKE_BOT_TOKEN }}
+          SMOKE_OWNER_ID: ${{ secrets.SMOKE_OWNER_ID }}
+        run: node scripts/smoke.mjs
