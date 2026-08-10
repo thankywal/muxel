@@ -27,11 +27,16 @@ import { ensureSchema } from "./db/migrate.js";
 import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
 import { dimensionAdvice } from "./rag/dimensions.js";
 import {
+  enableUpdatesUrl,
+  isRepoSlug,
   repositorySettingsUrl,
   repositoryVisibility,
   SOURCE_REPO,
+  updateWorkflowUrl,
+  workflowPermissionsUrl,
   type RepoVisibility,
 } from "./repo.js";
+import { UPDATE_STUB } from "./updateStub.js";
 import { peekMasterKey, resolveMasterKey } from "./secrets.js";
 import { TelegramClient } from "./telegram/api.js";
 import { CONSOLE_COMMANDS } from "./telegram/admin.js";
@@ -252,6 +257,42 @@ function renderRepoCard(outcome: SetupOutcome): string {
       </div>`;
 }
 
+/**
+ * Renders the three step enable flow for automatic updates.
+ *
+ * The first link opens GitHub's new file editor with the workflow already
+ * filled in, so the operator commits a file they never typed. It cannot go
+ * further than that: the file has to be committed by a person because the
+ * deploy flow's GitHub App cannot create workflow files, and the permission
+ * toggle in step two is a repository setting GitHub lets nobody set from a
+ * link. Whether the workflow already exists cannot be checked from here once
+ * the repository is private, so the card stays and says so.
+ */
+function renderUpdatesCard(outcome: SetupOutcome): string {
+  const repo = outcome.repo ?? "";
+  if (!isRepoSlug(repo)) {
+    return "";
+  }
+  const addFile = escapeHtml(enableUpdatesUrl(repo, UPDATE_STUB));
+  const permissions = escapeHtml(workflowPermissionsUrl(repo));
+  const run = escapeHtml(updateWorkflowUrl(repo));
+  return `
+      <div class="card">
+        <p><strong>Automatic updates</strong></p>
+        <p>Three steps, once. Afterwards fixes arrive on their own, daily. If
+        you have already done this, there is nothing to do here.</p>
+        <ol>
+          <li><a href="${addFile}" rel="noreferrer">Add the update workflow</a>.
+          The file is already filled in; press <strong>Commit changes</strong>.</li>
+          <li><a href="${permissions}" rel="noreferrer">Allow it to write</a>:
+          under <strong>Workflow permissions</strong> choose
+          <strong>Read and write permissions</strong> and save.</li>
+          <li><a href="${run}" rel="noreferrer">Run it once</a> with
+          <strong>Run workflow</strong> to update right now.</li>
+        </ol>
+      </div>`;
+}
+
 /** Renders the outcome as a page a non technical owner can act on. */
 export function renderSetupPage(outcome: SetupOutcome): string {
   const body = outcome.ok
@@ -269,7 +310,8 @@ export function renderSetupPage(outcome: SetupOutcome): string {
           ? `<p class="warn">${escapeHtml(outcome.note)}</p>`
           : ""
       }
-      ${renderRepoCard(outcome)}`
+      ${renderRepoCard(outcome)}
+      ${renderUpdatesCard(outcome)}`
     : `
       <p class="bad">Not ready yet.</p>
       <p>${escapeHtml(outcome.note)}</p>

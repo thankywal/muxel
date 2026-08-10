@@ -64,9 +64,14 @@ function isEntityParseFailure(error: unknown): boolean {
   );
 }
 
+/**
+ * One button. Telegram requires exactly one of the optional fields: a
+ * callback button answers back into the bot, a url button opens a page.
+ */
 export interface InlineKeyboardButton {
   readonly text: string;
-  readonly callback_data: string;
+  readonly callback_data?: string;
+  readonly url?: string;
 }
 
 export interface InlineKeyboardMarkup {

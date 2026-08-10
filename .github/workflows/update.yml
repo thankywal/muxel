@@ -2,18 +2,18 @@ name: Update from upstream
 
 # Keeps a deployed copy of Muxel current.
 #
-# The one click deploy makes an independent copy of this repository rather than
-# a GitHub fork, so there is no Sync fork button and no link back here. Without
-# something like this, a deployment stays on whatever version it was created
-# with and never receives a fix.
+# This file is pasted into the operator's repository by hand, once, because
+# the Cloudflare GitHub App cannot create workflow files when it makes the
+# copy. It is deliberately a stub: the update logic lives in scripts/update.sh,
+# which arrives with every sync, is committed and reviewable in this
+# repository's own history, and can be fixed upstream without anyone having to
+# paste this file again.
 #
-# This runs inside the operator's own GitHub account against a public upstream,
-# so Muxel needs no access to anything. Pushing to the operator's own repository
-# is what triggers their Workers Build, which redeploys and finishes setup.
+# One repository setting is required before this can push:
+# Settings -> Actions -> General -> Workflow permissions -> Read and write.
 
 on:
   schedule:
-    # Daily, at a quiet hour. Cron in GitHub Actions is best effort.
     - cron: "17 3 * * *"
   workflow_dispatch:
 
@@ -29,87 +29,23 @@ jobs:
     name: Pull upstream changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Upstream itself has nothing to pull from.
     if: github.repository != 'thankywal/muxel'
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Identify upstream
-        id: upstream
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "repo=thankywal/muxel" >> "$GITHUB_OUTPUT"
-
-      - name: Check upstream is green
-        id: green
-        env:
-          GH_TOKEN: ${{ github.token }}
-          UPSTREAM: ${{ steps.upstream.outputs.repo }}
-        run: |
-          set -euo pipefail
-          sha=$(gh api "repos/$UPSTREAM/commits/main" --jq '.sha')
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-
-          # Only adopt a commit whose own tests passed. An update that reaches a
-          # live shop unattended has to clear at least that bar.
-          state=$(gh api "repos/$UPSTREAM/commits/$sha/check-runs" \
-            --jq '[.check_runs[].conclusion] | if length == 0 then "none" elif all(. == "success" or . == "skipped" or . == "neutral") then "success" else "failed" end')
-          echo "Upstream $sha checks: $state"
-          echo "state=$state" >> "$GITHUB_OUTPUT"
 
       - name: Apply upstream
-        if: steps.green.outputs.state == 'success'
         env:
-          UPSTREAM: ${{ steps.upstream.outputs.repo }}
-          SHA: ${{ steps.green.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-
-          # wrangler.jsonc carries the identifiers of resources in this account.
-          # Upstream ships placeholders, so the local copy is always kept.
-          cp wrangler.jsonc /tmp/wrangler.jsonc
-
-          git remote add upstream "https://github.com/$UPSTREAM.git"
-          git fetch --depth=1 upstream main
-
-          if git diff --quiet "upstream/main" -- ':!wrangler.jsonc'; then
-            echo "Already current."
-            exit 0
+          # A copy made before the script existed fetches it once to
+          # bootstrap; every later run uses the committed one. It runs from
+          # /tmp because the sync replaces the tree it was read from.
+          if [ ! -f scripts/update.sh ]; then
+            mkdir -p scripts
+            curl -fsSL --retry 3 \
+              https://raw.githubusercontent.com/thankywal/muxel/main/scripts/update.sh \
+              -o scripts/update.sh
           fi
-
-          # Upstream's files are copied onto this branch rather than its history
-          # being adopted. An earlier version reset onto upstream/main and force
-          # pushed, which cannot work: the fetch is shallow, so the branch ended
-          # at a graft point and the remote rejected the push for an object it
-          # never received. Taking the tree alone keeps the push complete and
-          # leaves this repository's own history intact, so no force is needed.
-          #
-          # Tracked files are cleared first, because checking a tree out over
-          # the top updates and adds but never deletes, and a file dropped
-          # upstream would otherwise stay here forever.
-          git ls-files -z | xargs -0 rm -f
-          git checkout upstream/main -- .
-          cp /tmp/wrangler.jsonc wrangler.jsonc
-
-          git config user.name "muxel-update"
-          git config user.email "muxel-update@users.noreply.github.com"
-          git add -A
-          git commit -m "Update from upstream $SHA
-
-          Applied automatically by .github/workflows/update.yml. The Worker
-          configuration in wrangler.jsonc is preserved because it holds the
-          identifiers of resources in this account."
-
-          # Local code changes to tracked files do not survive an update.
-          # Disable this workflow if you intend to make any.
-          git push
-
-      - name: Report
-        if: steps.green.outputs.state != 'success'
-        run: |
-          echo "Upstream checks are ${{ steps.green.outputs.state }}, so nothing was applied."
-          echo "This job will try again on its next run."
+          cp scripts/update.sh /tmp/muxel-update.sh
+          bash /tmp/muxel-update.sh

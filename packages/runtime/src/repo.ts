@@ -20,9 +20,43 @@
  */
 export const SOURCE_REPO = "";
 
+/**
+ * Reports whether a stamp looks like an owner/name pair.
+ *
+ * The slug ends up inside URLs the operator is asked to click, so a stamp that
+ * is not shaped like a repository must never be interpolated into one.
+ */
+export function isRepoSlug(slug: string): boolean {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(slug);
+}
+
 /** Link to the page holding the visibility setting. */
 export function repositorySettingsUrl(slug: string): string {
   return `https://github.com/${slug}/settings`;
+}
+
+/** The page with the workflow permission toggle automatic updates need. */
+export function workflowPermissionsUrl(slug: string): string {
+  return `https://github.com/${slug}/settings/actions`;
+}
+
+/** The update workflow's page, where a run can be started by hand. */
+export function updateWorkflowUrl(slug: string): string {
+  return `https://github.com/${slug}/actions/workflows/update.yml`;
+}
+
+/**
+ * A link that opens GitHub's new file editor with the update workflow already
+ * filled in, so enabling automatic updates is one click and one commit.
+ *
+ * The whole nested path goes into `filename` and the URL path stays a bare
+ * `/new/main`: GitHub drops the last directory segment of the URL path when a
+ * filename parameter is present, so carrying the directories in the path
+ * would put the file one level up from where workflows are read.
+ */
+export function enableUpdatesUrl(slug: string, stub: string): string {
+  const filename = encodeURIComponent(".github/workflows/update.yml");
+  return `https://github.com/${slug}/new/main?filename=${filename}&value=${encodeURIComponent(stub)}`;
 }
 
 export type RepoVisibility = "public" | "private" | "unknown";

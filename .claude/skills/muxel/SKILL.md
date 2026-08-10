@@ -44,6 +44,14 @@ updates their own copy.
 - **Never commit a value into `packages/runtime/src/repo.ts`.** The build
   stamps it per deployment; a committed value points every copy at whoever
   built it last. A test guards this.
+- **The update sync must never touch `.github/`.** GitHub rejects any push
+  from the default GITHUB_TOKEN that creates or updates a workflow file
+  ("refusing to allow a GitHub App ... without `workflows` permission"),
+  verified against a live repository. `scripts/update.sh` excludes the
+  directory from both the removal and the checkout; widening that breaks every
+  operator's updates on their next run. The stub workflow is frozen in
+  operator repos for the same reason, so changeable logic belongs only in
+  `scripts/update.sh`.
 
 ## Reading a live deployment
 

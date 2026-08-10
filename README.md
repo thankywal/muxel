@@ -197,22 +197,33 @@ data, settings and bots are untouched.
 
 ### Making it automatic
 
-One manual step buys you daily automatic updates from then on. In your copy on
-GitHub, choose **Add file**, then **Create new file**, name it
-`.github/workflows/update.yml`, and paste
-[the workflow from this repository](.github/workflows/update.yml). You can
-create workflow files by hand even though the import could not.
+Three clicks, once, on your Worker's setup page. Open the page and find
+**Automatic updates**:
 
-Then check **Settings**, **Actions**, **General**, **Workflow permissions** is
-set to *Read and write*, or the job cannot push to your own repository.
+1. **Add the update workflow.** The link opens GitHub with the file already
+   filled in; you only press **Commit changes**. Nothing can commit it for
+   you: GitHub does not let the deploy flow's app create workflow files, which
+   is also why the import arrived without any.
+2. **Allow it to write.** Under **Workflow permissions** choose *Read and
+   write*. This is a repository setting, and GitHub lets nobody set it from a
+   link.
+3. **Run it once** with **Run workflow**.
 
-An update is only applied if the upstream commit's own tests passed, so a broken
-commit does not reach a live shop unattended. Run it on demand from the Actions
-tab with **Run workflow**.
+From then on updates arrive daily on their own, and the update notice in your
+console carries a **Run the update now** button for the days you do not want
+to wait.
 
-Your copy tracks upstream, so its history is replaced rather than merged and
-local code edits do not survive. Configure through the console instead. If you
-intend to change the code, do not add the workflow.
+The pasted file is a stub that never changes. The logic it runs lives in
+`scripts/update.sh`, which travels with every update like any other code, so a
+fix to the updater itself reaches you without anyone pasting anything again.
+
+An update is applied only when the upstream commit's own tests passed, only
+after the fetched tree has been checked for the files Muxel cannot exist
+without, and never touches your `wrangler.jsonc` or your `.github` folder.
+
+Your copy tracks upstream, so local code edits do not survive an update.
+Configure through the console instead. If you intend to change the code, do
+not add the workflow.
 
 ## Deploy from a terminal
 

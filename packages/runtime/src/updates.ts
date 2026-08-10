@@ -20,8 +20,10 @@
 import { open } from "./crypto.js";
 import { findOwner, getConsoleBot } from "./db/queries.js";
 import type { Env } from "./env.js";
+import { isRepoSlug, SOURCE_REPO, updateWorkflowUrl } from "./repo.js";
 import { peekMasterKey } from "./secrets.js";
-import { TelegramClient } from "./telegram/api.js";
+import { ORIGIN_KEY } from "./setup.js";
+import { TelegramClient, type InlineKeyboardMarkup } from "./telegram/api.js";
 import { MUXEL_VERSION, UPSTREAM_REPO, UPSTREAM_VERSION_URL } from "./version.js";
 
 /** Remembers which version the owner has already been told about. */
@@ -76,12 +78,36 @@ function message(latest: string): string {
     `<b>Muxel ${latest} is available</b>`,
     `This deployment is running ${MUXEL_VERSION}.`,
     "",
-    "Updating is a manual step, because the one click deploy copies this",
-    "project without a link back to it.",
+    "If automatic updates are on, this arrives by itself within a day.",
+    "The button below runs it now instead of waiting.",
     "",
-    `Open ${UPSTREAM_REPO} and follow "Staying up to date" in the README.`,
     "Your settings, data and bots are not touched by an update.",
   ].join("\n");
+}
+
+/**
+ * Buttons under the update notice.
+ *
+ * Built from the build time stamp of this deployment's own repository, never
+ * from anything a message could influence: these open pages that can commit
+ * code, so the destination has to be decided entirely server side.
+ *
+ * Null when the build could not name the repository, in which case the notice
+ * falls back to describing the manual route.
+ */
+function updateButtons(origin: string | null): InlineKeyboardMarkup | null {
+  if (!isRepoSlug(SOURCE_REPO)) {
+    return null;
+  }
+  const rows: { text: string; url: string }[][] = [
+    [{ text: "Run the update now", url: updateWorkflowUrl(SOURCE_REPO) }],
+  ];
+  if (origin !== null) {
+    // The setup page hosts the one time enable flow, with the pre-filled
+    // GitHub link that is too long to put in a button comfortably.
+    rows.push([{ text: "Turn on automatic updates", url: `${origin}/setup` }]);
+  }
+  return { inline_keyboard: rows };
 }
 
 /**
@@ -120,8 +146,18 @@ export async function checkForUpdate(env: Env): Promise<UpdateCheck> {
   }
 
   const client = new TelegramClient(await open(masterKey, bot.tokenCiphertext));
+  const origin = await env.STATE.get(ORIGIN_KEY);
+  const buttons = updateButtons(origin);
+  const fallback =
+    buttons === null
+      ? `\nOpen ${UPSTREAM_REPO} and follow "Staying up to date" in the README.`
+      : "";
   // A private chat with a bot uses the person's own account id as the chat id.
-  await client.sendMessage({ chatId: owner, text: message(latest) });
+  await client.sendMessage({
+    chatId: owner,
+    text: message(latest) + fallback,
+    ...(buttons === null ? {} : { replyMarkup: buttons }),
+  });
 
   // Recorded only after the notice is sent, so a failure repeats rather than
   // silently swallowing the one message that mattered.
