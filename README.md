@@ -10,6 +10,10 @@ price list and policies, running entirely inside your own Cloudflare account.
 New here? Read [Before you start](#before-you-start) first. It is four free
 accounts and about ten minutes, and the deploy form asks for two of them.
 
+Helping someone else set this up over chat? The same steps are written as a
+single sendable message, in five languages, in
+[docs/TELEGRAM-SETUP.md](docs/TELEGRAM-SETUP.md).
+
 There is no Muxel server, no Muxel database and no Muxel account. Your
 documents, your conversations and your credentials never leave infrastructure
 you control.

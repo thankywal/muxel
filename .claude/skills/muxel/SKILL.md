@@ -1,0 +1,134 @@
+---
+name: muxel
+description: Work on or diagnose a Muxel deployment. Use when someone asks why their Muxel bot is silent, answers wrongly, will not ingest a document, or when changing the runtime, the console or the retrieval pipeline. Covers the Cloudflare API calls that read a live deployment's state.
+---
+
+# Muxel
+
+A self hosted customer support agent. It runs entirely inside the operator's own
+Cloudflare account: there is no Muxel server, no Muxel database and no account
+to sign into. A deployment is a Worker plus D1, KV and Vectorize, driven by a
+Telegram console bot.
+
+That shape decides most things. Nothing can be fixed centrally, an operator
+cannot be asked to read a dashboard, and a change only reaches anyone who
+updates their own copy.
+
+## Layout
+
+| Path | What lives there |
+| ---- | ---------------- |
+| `packages/runtime/src/index.ts` | Worker entry: `/`, `/setup`, `/health`, `/tg/:path`, cron |
+| `packages/runtime/src/telegram/admin.ts` | the console, one screen per action |
+| `packages/runtime/src/telegram/reply.ts` | the customer facing path |
+| `packages/runtime/src/ai/gateway.ts` | inference, Workers AI binding and gateway |
+| `packages/runtime/src/rag/` | chunking, embedding, retrieval, PDF text, ingest |
+| `packages/runtime/src/db/migrate.ts` | schema, versioned, applied lazily |
+| `packages/core/` | ids, callback encoding, chunking, error taxonomy |
+
+## Rules that are not obvious from the code
+
+- **Migrations are CREATE only.** `ensureSchema` runs a batch then writes the
+  version separately. If the batch lands and the version write does not, the
+  next run replays it, and `ALTER TABLE` fails on replay. Add a table, not a
+  column.
+- **Callback data is capped at 64 bytes.** `packages/core/src/callback.ts`
+  encodes and spills the overflow into KV. Do not hand roll button payloads.
+- **The console bot is not a business bot.** They are separate tables and
+  separate webhook paths, so a customer can never reach the console.
+- **Thinking is off.** `chat_template_kwargs.enable_thinking: false` on the
+  Workers AI path. It is what keeps replies under a second and inside the
+  output budget. Removing it brings back empty replies.
+- **No R2.** Enabling it demands a payment method, which the product promises
+  is unnecessary.
+- **Never commit a value into `packages/runtime/src/repo.ts`.** The build
+  stamps it per deployment; a committed value points every copy at whoever
+  built it last. A test guards this.
+
+## Reading a live deployment
+
+Everything below is read only and needs a Cloudflare API token with Account
+Analytics Read, Workers Scripts Read, D1 Read, Workers Observability Read.
+Ask the operator for one rather than guessing at ids.
+
+```bash
+CF=<token>; ACC=<account id>
+api(){ curl -s -H "Authorization: Bearer $CF" "https://api.cloudflare.com/client/v4/accounts/$ACC/$1"; }
+
+api workers/scripts        # is it deployed, and when
+api d1/database            # database uuid
+api storage/kv/namespaces
+api vectorize/v2/indexes   # must be 1024 dimensions, cosine
+```
+
+**Which version is actually running.** A deployment has no link home, so ask
+the bundle:
+
+```bash
+curl -s -H "Authorization: Bearer $CF" \
+  ".../accounts/$ACC/workers/scripts/muxel" -o live.js
+grep -oE '"0\.[0-9]+\.[0-9]+"' live.js | sort -u
+```
+
+Grep the same file for a marker of the fix in question before believing a
+report that it did not work. More than once the answer has been that the
+deployment predates the fix.
+
+**Query D1 directly.**
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $CF" -H "content-type: application/json" \
+  ".../accounts/$ACC/d1/database/$DB/query" -d '{"sql":"SELECT ..."}'
+```
+
+Useful ones: `document` for status and chunk counts, `chunk` for what was
+actually extracted, `event_log` for failures the operator saw, `message` for
+the real conversation, `handover` for chats waiting on a person.
+
+**Measure retrieval rather than reasoning about it.** Embed the customer's
+exact question and query the index in their namespace, which is the business
+id. Scores below `MIN_SCORE`, currently 0.35, are dropped and the model is told
+nothing matched.
+
+**Worker logs.** `POST /accounts/$ACC/workers/observability/telemetry/query`
+with `{"parameters":{"datasets":["cloudflare-workers"]},"view":"events"}`.
+Look for `waitUntil() tasks ... cancelled`, which means work ran past the
+thirty seconds allowed after a response.
+
+## Failure modes already diagnosed
+
+Check these before starting from first principles. Each one presented as
+"the bot does not answer" and had a different cause.
+
+| Symptom | Cause | Where |
+| ------- | ----- | ----- |
+| Says it does not know, right after a document was added | Vectorize makes a write findable about twenty seconds later. Retrieval genuinely matched nothing and the handover was correct. | `rag/ingest.ts` waits and the console says so |
+| Empty reply, then an apology | Reasoning model spent the output budget thinking and never wrote anything | budget is 3000 and thinking is off |
+| No reply at all, `waitUntil` cancelled | Work ran past thirty seconds. Once from retrying at double budget, once from inserting products one row at a time. | deadline in `reply.ts`, batching in `queries.ts` |
+| Asterisks in the reply | Model writes Markdown, Telegram renders none of it | `telegram/format.ts` |
+| Reply rejected outright | Model wrote a bare `<`, so Telegram refused to parse the HTML | escape before tagging, plus a plain text retry |
+| A PDF became hundreds of junk products | PDF text arrives one fragment per line, nothing like a list | importer refuses input whose lines lack separators |
+| Update notice never arrived | The version check cached the upstream file for an hour | no cache override |
+
+## Verifying a change
+
+`pnpm typecheck && pnpm test`, then `npx wrangler deploy --dry-run --outdir /tmp/x`
+to confirm it still bundles.
+
+Bump `VERSION` and `packages/runtime/src/version.ts` together, in the same
+commit as anything worth telling operators about. A test enforces that they
+match. Docs only changes should not bump, because every bump nags every
+deployment.
+
+Commit as the human author, with no assistant attribution.
+
+## Measuring model behaviour
+
+Reasoning length varies enormously between identical calls, so **a single
+sample proves nothing**. An earlier attempt at turning thinking off concluded
+from one sample per parameter that no switch existed; four samples each showed
+one of them working perfectly and the rest being ignored. Run at least five,
+and compare distributions rather than single values.
+
+Read the answer from `result.choices[0].message.content`, not
+`result.response`, which is the older shape and is absent on chat models.
