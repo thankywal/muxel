@@ -81,7 +81,18 @@ jobs:
             exit 0
           fi
 
-          git reset --hard upstream/main
+          # Upstream's files are copied onto this branch rather than its history
+          # being adopted. An earlier version reset onto upstream/main and force
+          # pushed, which cannot work: the fetch is shallow, so the branch ended
+          # at a graft point and the remote rejected the push for an object it
+          # never received. Taking the tree alone keeps the push complete and
+          # leaves this repository's own history intact, so no force is needed.
+          #
+          # Tracked files are cleared first, because checking a tree out over
+          # the top updates and adds but never deletes, and a file dropped
+          # upstream would otherwise stay here forever.
+          git ls-files -z | xargs -0 rm -f
+          git checkout upstream/main -- .
           cp /tmp/wrangler.jsonc wrangler.jsonc
 
           git config user.name "muxel-update"
@@ -93,10 +104,9 @@ jobs:
           configuration in wrangler.jsonc is preserved because it holds the
           identifiers of resources in this account."
 
-          # This repository tracks upstream, so its history is replaced rather
-          # than merged. Local code changes do not survive: disable this
-          # workflow if you intend to make any.
-          git push --force-with-lease
+          # Local code changes to tracked files do not survive an update.
+          # Disable this workflow if you intend to make any.
+          git push
 
       - name: Report
         if: steps.green.outputs.state != 'success'
