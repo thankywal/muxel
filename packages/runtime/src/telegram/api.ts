@@ -174,6 +174,25 @@ export class TelegramClient {
     return this.#call<unknown>("deleteWebhook", { drop_pending_updates: true });
   }
 
+  /**
+   * Reports where Telegram currently delivers updates.
+   *
+   * `url` is empty when no webhook is set, and `last_error_message` explains why
+   * delivery has been failing, which is the difference between a bot that was
+   * never connected and one Telegram gave up on.
+   */
+  getWebhookInfo(): Promise<{
+    url: string;
+    pending_update_count?: number;
+    last_error_message?: string;
+  }> {
+    return this.#call<{
+      url: string;
+      pending_update_count?: number;
+      last_error_message?: string;
+    }>("getWebhookInfo", {});
+  }
+
   async getFileLink(fileId: string): Promise<string> {
     const file = await this.#call<{ file_path?: string }>("getFile", { file_id: fileId });
     if (!file.file_path) {

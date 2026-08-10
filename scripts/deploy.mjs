@@ -104,7 +104,14 @@ for (const [attempt, delay] of DELAYS_MS.entries()) {
 
 if (outcome.done && outcome.failed !== true) {
   console.log(outcome.note);
-} else {
-  console.log(`Setup did not finish: ${outcome.note}`);
-  console.log(`Open ${url}/setup in a browser to complete it and see the full message.`);
+  process.exit(0);
 }
+
+// Failing here is deliberate. The Worker is already live, so exiting quietly
+// would report a green deploy with a bot that never answers, which is how this
+// went unnoticed twice. A red build with the reason on it is worth more than a
+// green one that lies.
+console.error(`\nSetup did not finish: ${outcome.note}`);
+console.error(`The Worker is deployed but not connected to Telegram yet.`);
+console.error(`Open ${url}/setup in a browser to finish it and see the full message.`);
+process.exit(1);

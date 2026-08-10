@@ -17,18 +17,19 @@
 
 import { generateId, generateShortId } from "@muxel/core";
 
-import { seal, sha256Hex } from "./crypto.js";
+import { open, seal, sha256Hex } from "./crypto.js";
 import {
   addOperator,
   createBot,
   createBusiness,
   firstBusiness,
   getAdminBot,
+  getBotByWebhookPath,
   replaceBotIdentity,
 } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
 import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
-import { resolveMasterKey } from "./secrets.js";
+import { peekMasterKey, resolveMasterKey } from "./secrets.js";
 import { TelegramClient } from "./telegram/api.js";
 
 export const ORIGIN_KEY = "system:origin";
@@ -183,6 +184,48 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
         ? "Setup complete."
         : "Webhook re-registered against the current address.",
   };
+}
+
+/**
+ * Re-registers the Telegram webhook if it has drifted.
+ *
+ * Runs on a schedule once a deployment knows its own address. Telegram drops a
+ * webhook that fails for long enough, and a move to a custom domain leaves the
+ * old address registered. Both leave a bot that looks configured and answers
+ * nothing, so they are repaired rather than waited on.
+ */
+export async function repairWebhook(env: Env): Promise<"skipped" | "healthy" | "repaired"> {
+  const origin = await env.STATE.get(ORIGIN_KEY);
+  if (origin === null) {
+    // Nothing has ever reached this deployment, so its address is still unknown.
+    return "skipped";
+  }
+
+  const bot = await getAdminBot(env);
+  if (bot === null) {
+    return "skipped";
+  }
+
+  const masterKey = await peekMasterKey(env);
+  const sealed = await getBotByWebhookPath(env, bot.webhookPath);
+  if (masterKey === null || sealed === null) {
+    return "skipped";
+  }
+
+  const client = new TelegramClient(await open(masterKey, sealed.tokenCiphertext));
+  const expected = `${origin}/tg/${bot.webhookPath}`;
+  const info = await client.getWebhookInfo();
+  if (info.url === expected) {
+    return "healthy";
+  }
+
+  console.warn("telegram webhook had drifted, re-registering", {
+    expected,
+    found: info.url,
+    lastError: info.last_error_message ?? null,
+  });
+  await runSetup(env, origin);
+  return "repaired";
 }
 
 function escapeHtml(value: string): string {

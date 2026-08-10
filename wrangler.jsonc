@@ -12,6 +12,13 @@
 
   "placement": { "mode": "smart" },
 
+  // Periodic repair. A webhook Telegram has dropped, or an address that changed
+  // when the deployment moved to a custom domain, both leave a bot that looks
+  // configured and answers nothing. This checks quarter hourly.
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+
   // The identifiers below are placeholders. Both setup paths replace them: the
   // deploy button provisions each resource and rewrites this file, and the
   // command line tool does the same locally. They are all zeros rather than

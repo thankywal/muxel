@@ -14,7 +14,7 @@ import { ensureSchema } from "./db/migrate.js";
 import { getBusiness, getBotByWebhookPath } from "./db/queries.js";
 import { missingConfiguration, type Env } from "./env.js";
 import { peekMasterKey, requireMasterKey } from "./secrets.js";
-import { renderSetupPage, runSetup } from "./setup.js";
+import { renderSetupPage, repairWebhook, runSetup } from "./setup.js";
 import { TelegramClient, type TelegramUpdate } from "./telegram/api.js";
 import { handleAdminUpdate } from "./telegram/admin.js";
 import { handleReplyUpdate } from "./telegram/reply.js";
@@ -83,6 +83,30 @@ export default {
     }
 
     return new Response("not found", { status: 404 });
+  },
+
+  /**
+   * Periodic repair.
+   *
+   * Telegram drops a webhook that has been failing, and moving a deployment to
+   * a custom domain leaves the old address registered. Either leaves a bot that
+   * looks configured and answers nothing, which is the failure nobody notices.
+   * This checks and re-registers rather than waiting to be told.
+   */
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      repairWebhook(env)
+        .then((outcome) => {
+          if (outcome !== "healthy") {
+            console.log("scheduled webhook check", { outcome });
+          }
+        })
+        .catch((error: unknown) => {
+          console.error("scheduled webhook check failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
+    );
   },
 } satisfies ExportedHandler<Env>;
 
