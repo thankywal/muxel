@@ -1,3 +1,5 @@
+**English** · [မြန်မာ](README.my.md) · [ไทย](README.th.md) · [日本語](README.ja.md) · [中文](README.zh.md)
+
 # Muxel
 
 Self-hosted AI support agent. Answers your customers on Telegram from your own
