@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import { generateMasterKey, open, seal, sha256Hex } from "../src/crypto.js";
 
-const TOKEN = "8012345678:AAHf9Xy2QpLmN0oPqRsTuVwXyZaBcDeFgHi";
+/**
+ * Stands in for a bot token.
+ *
+ * Deliberately not shaped like a real one. Sealing does not care what the bytes
+ * are, and a realistic looking value trips secret scanners, which trains people
+ * to dismiss those alerts. Please leave it unrealistic.
+ */
+const TOKEN = "example-credential-for-tests";
 
 describe("seal and open", () => {
   it("round trips a bot token", async () => {
