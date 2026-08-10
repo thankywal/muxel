@@ -42,7 +42,7 @@ const MAX_INPUT_CHARS = 2000;
  * slow database read or retrieval cannot quietly spend the margin that the
  * apology needs.
  */
-const ANSWER_DEADLINE_MS = 20_000;
+const ANSWER_DEADLINE_MS = 22_000;
 
 class DeadlineExceeded extends Error {
   constructor(seconds: number) {

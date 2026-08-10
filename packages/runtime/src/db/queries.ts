@@ -565,6 +565,20 @@ export async function appendMessage(
     .run();
 }
 
+/**
+ * Removes every product in a business.
+ *
+ * A bad import can create hundreds of rows in one press, and deleting those one
+ * at a time through a phone keyboard is not a repair anyone would attempt.
+ */
+export async function deleteAllProducts(env: Env, businessId: string): Promise<number> {
+  const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM product WHERE business_id = ?")
+    .bind(businessId)
+    .first<{ n: number }>();
+  await env.DB.prepare("DELETE FROM product WHERE business_id = ?").bind(businessId).run();
+  return before?.n ?? 0;
+}
+
 /** Records that a reply was typed by a person rather than produced by the model. */
 export async function appendHumanMessage(
   env: Env,
@@ -812,6 +826,43 @@ export async function createProduct(
     .bind(id, input.businessId, input.name, input.price, input.description, now())
     .run();
   return id;
+}
+
+/**
+ * Inserts a whole imported list in as few round trips as possible.
+ *
+ * Written one row at a time, a hundred and forty products meant a hundred and
+ * forty sequential trips to the database, which took the import past the time
+ * the runtime allows for work after a response. It was cancelled halfway: the
+ * rows existed, the catalogue the assistant reads did not, and the operator saw
+ * no reply at all. Batches keep an import of any plausible size well inside the
+ * budget.
+ */
+export async function createProducts(
+  env: Env,
+  businessId: string,
+  items: readonly { name: string; price: string; description: string }[],
+): Promise<number> {
+  assertValidId(businessId, "businessId");
+  if (items.length === 0) {
+    return 0;
+  }
+  const stamp = now();
+  const statement = env.DB.prepare(
+    "INSERT INTO product (id, business_id, name, price, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  // Chunked because a single batch of unbounded size is its own failure mode.
+  const BATCH = 50;
+  for (let start = 0; start < items.length; start += BATCH) {
+    await env.DB.batch(
+      items
+        .slice(start, start + BATCH)
+        .map((item) =>
+          statement.bind(generateId(), businessId, item.name, item.price, item.description, stamp),
+        ),
+    );
+  }
+  return items.length;
 }
 
 export async function listProducts(env: Env, businessId: string): Promise<Product[]> {

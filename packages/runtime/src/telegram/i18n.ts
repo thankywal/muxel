@@ -417,6 +417,30 @@ const STRINGS = {
     zh: "请至少提供商品名称。",
     my: "အနည်းဆုံး ကုန်ပစ္စည်းအမည် ပို့ပါ။",
   },
+  prodNotAList: {
+    en: "That file does not read as a product list. Each line needs a name and its fields separated by | or a comma, like: Whole Milk | $2.40 | 1 gallon. A PDF cannot be read this way, because its text arrives as loose fragments. Send the price list under Add data instead, where the assistant reads it as a document, or upload a CSV or Excel file here.",
+    th: "ไฟล์นี้อ่านเป็นรายการสินค้าไม่ได้ แต่ละบรรทัดต้องมีชื่อและแยกฟิลด์ด้วย | หรือจุลภาค เช่น Whole Milk | $2.40 | 1 gallon ไฟล์ PDF อ่านแบบนี้ไม่ได้ เพราะข้อความจะออกมาเป็นชิ้นส่วนกระจัดกระจาย กรุณาส่งรายการราคาผ่าน Add data เพื่อให้ผู้ช่วยอ่านเป็นเอกสาร หรืออัปโหลดไฟล์ CSV หรือ Excel ที่นี่",
+    zh: "这个文件无法作为商品清单读取。每一行都需要有名称，字段之间用 | 或逗号分隔，例如：Whole Milk | $2.40 | 1 gallon。PDF 无法这样读取，因为它的文字会变成零散的片段。请改用 Add data 上传价格表，让助手把它当作文档来读，或者在这里上传 CSV 或 Excel 文件。",
+    my: "ဒီဖိုင်ကို ကုန်ပစ္စည်းစာရင်းအဖြစ် ဖတ်လို့ မရပါ။ စာကြောင်းတိုင်းမှာ အမည်ပါရမည်ဖြစ်ပြီး field များကို | သို့မဟုတ် ကော်မာနဲ့ ခွဲရပါမည်။ ဥပမာ: Whole Milk | $2.40 | 1 gallon။ PDF ကို ဒီနည်းနဲ့ ဖတ်လို့ မရပါ — စာသားက အပိုင်းအစလေးတွေအဖြစ် ထွက်လာလို့ပါ။ ဈေးနှုန်းစာရင်းကို Add data ကနေ ပို့ပါ၊ assistant က document အဖြစ် ဖတ်ပါလိမ့်မယ်။ ဒါမှမဟုတ် CSV သို့မဟုတ် Excel ဖိုင်ကို ဒီမှာ တင်ပါ။",
+  },
+  btnClearProducts: {
+    en: "Remove every product",
+    th: "ลบสินค้าทั้งหมด",
+    zh: "删除所有商品",
+    my: "ကုန်ပစ္စည်းအားလုံး ဖျက်",
+  },
+  prodClearConfirm: {
+    en: "Remove all {count} products from {name}? Your documents are not touched.",
+    th: "ลบสินค้าทั้งหมด {count} รายการออกจาก {name} หรือไม่? เอกสารของคุณจะไม่ถูกแตะต้อง",
+    zh: "要从 {name} 中删除全部 {count} 件商品吗？你的文档不会受到影响。",
+    my: "{name} က ကုန်ပစ္စည်း {count} ခုလုံး ဖျက်မလား? သင့် document များကို မထိပါ။",
+  },
+  prodCleared: {
+    en: "Removed {count} products.",
+    th: "ลบสินค้าแล้ว {count} รายการ",
+    zh: "已删除 {count} 件商品。",
+    my: "ကုန်ပစ္စည်း {count} ခု ဖျက်ပြီးပါပြီ။",
+  },
   btnDeleteProduct: { en: "Delete this product", th: "ลบสินค้านี้", zh: "删除此商品", my: "ဤပစ္စည်း ဖျက်" },
   prodDeleteConfirm: { en: "Delete {name}?", th: "ลบ {name} หรือไม่?", zh: "删除 {name}？", my: "{name} ကို ဖျက်မလား?" },
   prodSynced: {

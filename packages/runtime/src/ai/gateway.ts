@@ -31,14 +31,26 @@ interface CompletionResponse {
 /**
  * Default output budget.
  *
- * Reasoning models spend most of their completion budget before emitting a
- * single visible character. Measured against Gemma 4, a reply of 133 characters
- * consumed between 366 and 566 completion tokens. The budget is set well above
- * what the answer needs so the model is not cut off mid thought, but not so
- * high that a stubborn generation runs long: the whole reply has to finish
- * inside the time the runtime allows for work after a response.
+ * Reasoning models spend the budget on thinking before emitting a single
+ * visible character, and the completion stops at the cap whether or not the
+ * answer has been written. Cut it too fine and the model runs out mid thought
+ * and returns nothing at all, which is what an empty completion is.
+ *
+ * Measured against Gemma 4 on a grounded question over a real price list:
+ *
+ * | budget | empty replies | slowest |
+ * | ------ | ------------- | ------- |
+ * | 1200   | 4 of 8        | 12s     |
+ * | 2000   | 2 of 8        | 23s     |
+ * | 3000   | 0 of 8        | 15s     |
+ * | 4000   | 1 of 8        | 31s     |
+ *
+ * Answers that completed used between 547 and 2032 tokens, so 3000 leaves the
+ * model room to finish reasoning and still write. Going higher buys nothing
+ * and lets a stubborn generation run past the time the runtime allows for
+ * work after a response.
  */
-const DEFAULT_OUTPUT_TOKENS = 1200;
+const DEFAULT_OUTPUT_TOKENS = 3000;
 
 export interface GenerateInput {
   readonly model: string;

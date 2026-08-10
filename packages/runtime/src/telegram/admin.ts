@@ -35,7 +35,7 @@ import {
   canAccessBusiness,
   createBot,
   createBusiness,
-  createProduct,
+  createProducts,
   deleteBusiness,
   deleteProduct,
   findOperator,
@@ -61,6 +61,7 @@ import {
   setOperatorLocale,
   appendHumanMessage,
   conversationForCustomer,
+  deleteAllProducts,
   endHandover,
   getBotById,
   getHandover,
@@ -440,6 +441,9 @@ function productsScreen(locale: Locale, business: Business, products: readonly P
         ),
       row({ text: t(locale, "btnAddProduct"), action: "prodadd", args: [business.id] }),
       row({ text: t(locale, "btnBulkProducts"), action: "prodbulk", args: [business.id] }),
+      ...(products.length > 0
+        ? [row({ text: t(locale, "btnClearProducts"), action: "prodclr", args: [business.id] })]
+        : []),
       backTo(locale, "biz", [business.id]),
     ],
   };
@@ -1070,6 +1074,38 @@ async function screenFor(
       };
     }
 
+    case "prodclr": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const [business, products] = await Promise.all([
+        getBusiness(env, businessId),
+        listProducts(env, businessId),
+      ]);
+      return confirmScreen(
+        locale,
+        t(locale, "prodClearConfirm", {
+          count: String(products.length),
+          name: escapeHtml(business.name),
+        }),
+        { action: "prodclry", args: [businessId] },
+        { action: "prod", args: [businessId] },
+      );
+    }
+
+    case "prodclry": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const removed = await deleteAllProducts(env, businessId);
+      // Re-synced so the assistant stops answering from a catalogue that is no
+      // longer there.
+      await syncProductCatalogue(env, businessId);
+      const emptied = await screenFor(env, locale, userId, "prod", [businessId]);
+      return {
+        ...emptied,
+        text: `${t(locale, "prodCleared", { count: String(removed) })}\n\n${emptied.text}`,
+      };
+    }
+
     case "prodbulk": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
@@ -1365,11 +1401,39 @@ async function handleDataUpload(
  * Accepts the pipe separated form the console asks for, and falls back to
  * commas so a spreadsheet exported as CSV also works.
  */
+/**
+ * Reads a product list.
+ *
+ * One item per line, fields separated by a pipe or a comma. A single line with
+ * no separator is accepted as a bare name, because adding one item by typing
+ * its name is a reasonable thing to do.
+ *
+ * A multi line input is held to a stricter rule: most of its lines have to
+ * carry a separator. Text lifted out of a PDF arrives as one fragment per
+ * line, and the earlier reading of that turned a twelve row inventory table
+ * into a hundred and forty two products called things like "Dairy", "12" and
+ * "-". A price list nobody can use is worse than an import that refused, so a
+ * shape that does not look like a list of items is rejected rather than
+ * guessed at.
+ */
 export function parseProductLines(text: string): { name: string; price: string; description: string }[] {
-  return text
+  const lines = text
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line.length > 0)
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) {
+    return [];
+  }
+
+  const delimited = lines.filter((line) => line.includes("|") || line.includes(","));
+  if (lines.length > 1 && delimited.length * 2 < lines.length) {
+    return [];
+  }
+
+  const usable = lines.length === 1 ? lines : delimited;
+
+  return usable
     .map((line) => (line.includes("|") ? line.split("|") : line.split(",")))
     .map((parts) => parts.map((part) => part.trim()))
     .filter((parts) => (parts[0] ?? "").length > 0)
@@ -1497,12 +1561,16 @@ async function handlePendingInput(
 
     const parsed = parseProductLines(source);
     if (parsed.length === 0) {
-      await client.sendMessage({ chatId, text: t(locale, "prodAddInvalid") });
+      // A file that produced nothing usable gets the long explanation, because
+      // the person is holding a document and needs to know which door it goes
+      // through. A typed line just needs to be typed again.
+      await client.sendMessage({
+        chatId,
+        text: t(locale, input.message.document === undefined ? "prodAddInvalid" : "prodNotAList"),
+      });
       return;
     }
-    for (const item of parsed) {
-      await createProduct(env, { businessId, ...item });
-    }
+    await createProducts(env, businessId, parsed);
     const total = await syncProductCatalogue(env, businessId);
     await client.sendMessage({ chatId, text: t(locale, "prodSynced", { count: total }) });
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "prod", [businessId]));

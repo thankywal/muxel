@@ -114,32 +114,132 @@ function decodeHex(raw: string): string {
 }
 
 /**
+ * Kerning gap, in thousandths of an em, wide enough to be a word space.
+ *
+ * Inside a TJ array a number nudges the next glyph backwards. Small values are
+ * letter fitting; a large one is how most writers encode a space without
+ * emitting one.
+ */
+const WORD_GAP = 120;
+
+/**
+ * Vertical movement, in text space units, that counts as a new line.
+ *
+ * Cells of one row are rarely placed at byte identical coordinates, and a
+ * fraction of a unit is rounding rather than a new row. Anything smaller than
+ * this is treated as the same baseline.
+ */
+const LINE_EPSILON = 1;
+
+/** One token of a content stream: a string, a number, a delimiter, an operator. */
+const TOKEN = /\((?:[^()\\]|\\.)*\)|<[0-9A-Fa-f\s]*>|[-+]?(?:\d+\.?\d*|\.\d+)|\[|\]|[A-Za-z'"*]+/g;
+
+/**
  * Pulls the shown text out of one decoded content stream.
  *
- * Positioning operators become line breaks. A PDF has no notion of a line in
- * its text layer, so this is what turns a table exported from a spreadsheet
- * back into something that reads in order.
+ * A PDF has no notion of a line in its text layer, only glyphs at coordinates,
+ * so line breaks have to be inferred from where the text cursor moves. The
+ * inference is what matters for a table: a spreadsheet export positions every
+ * single cell with its own move, so treating each move as a line break turns
+ * one row of a price list into a column of loose words. Every product name,
+ * price and unit ends up on a line of its own, which no reader and no
+ * retrieval scorer can put back together.
+ *
+ * So a move only breaks the line when it actually changed the vertical
+ * position. A move along the same baseline is a gap between cells and becomes
+ * a space, which keeps a row on one line where it belongs.
  */
 function readContentStream(content: string): string {
-  const pieces: string[] = [];
-  // Matches a literal string, a hex string, or one of the operators that ends
-  // a run of text on the page.
-  const pattern = /\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]*>|\bT[dD*]\b|\bTJ\b|\bTj\b|\bET\b/g;
+  const out: string[] = [];
+  const operands: number[] = [];
+  let lastY: number | null = null;
+  let arrayDepth = 0;
+  let wantBreak = false;
+  let wantSpace = false;
 
-  let match: RegExpExecArray | null = pattern.exec(content);
-  while (match !== null) {
-    const token = match[0];
-    if (token.startsWith("(")) {
-      pieces.push(decodeLiteral(token.slice(1, -1)));
-    } else if (token.startsWith("<")) {
-      pieces.push(decodeHex(token.slice(1, -1)));
-    } else if (token === "Td" || token === "TD" || token === "T*" || token === "ET") {
-      pieces.push("\n");
+  // Held rather than written immediately, so a break decided at the end of a
+  // stream never leaves a trailing blank line.
+  function emit(text: string): void {
+    if (text.length === 0) {
+      return;
     }
-    match = pattern.exec(content);
+    if (wantBreak) {
+      out.push("\n");
+    } else if (wantSpace) {
+      out.push(" ");
+    }
+    wantBreak = false;
+    wantSpace = false;
+    out.push(text);
   }
 
-  return pieces.join("");
+  function moved(y: number | null, verticalChange: boolean): void {
+    if (verticalChange) {
+      wantBreak = true;
+    } else {
+      wantSpace = true;
+    }
+    if (y !== null) {
+      lastY = y;
+    }
+  }
+
+  let match: RegExpExecArray | null = TOKEN.exec(content);
+  while (match !== null) {
+    const token = match[0];
+    const first = token[0] ?? "";
+
+    if (first === "(") {
+      emit(decodeLiteral(token.slice(1, -1)));
+    } else if (first === "<") {
+      emit(decodeHex(token.slice(1, -1)));
+    } else if (token === "[") {
+      arrayDepth += 1;
+    } else if (token === "]") {
+      arrayDepth = Math.max(0, arrayDepth - 1);
+    } else if (/^[-+.\d]/.test(first)) {
+      const value = Number(token);
+      if (Number.isFinite(value)) {
+        operands.push(value);
+        if (arrayDepth > 0 && value <= -WORD_GAP) {
+          wantSpace = true;
+        }
+      }
+    } else {
+      switch (token) {
+        case "Td":
+        case "TD": {
+          // Relative move. A non zero vertical component is a new line, and
+          // anything else is the next cell along the same one.
+          const ty = operands[operands.length - 1] ?? 0;
+          moved(lastY === null ? null : lastY + ty, Math.abs(ty) >= LINE_EPSILON);
+          break;
+        }
+        case "Tm": {
+          // Absolute placement. The sixth operand is the vertical translation.
+          const y = operands[operands.length - 1] ?? 0;
+          moved(y, lastY !== null && Math.abs(y - lastY) >= LINE_EPSILON);
+          break;
+        }
+        case "T*":
+        case "'":
+        case '"':
+          wantBreak = true;
+          break;
+        // BT and ET are deliberately not breaks. Many writers wrap every table
+        // cell in its own text object, so breaking on them puts each cell of a
+        // row on a line of its own, which is the thing this is here to avoid.
+        // The baseline is carried across them and the coordinates decide.
+        default:
+          break;
+      }
+      operands.length = 0;
+    }
+
+    match = TOKEN.exec(content);
+  }
+
+  return out.join("");
 }
 
 /**

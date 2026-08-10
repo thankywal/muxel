@@ -68,3 +68,52 @@ describe("parseProductLines", () => {
     expect(parseProductLines("   \n  ")).toEqual([]);
   });
 });
+
+/**
+ * The shape a PDF actually produces.
+ *
+ * Text lifted from a form based PDF arrives as one fragment per line, with no
+ * separators anywhere. Read as a product list it turned a twelve row inventory
+ * table into a hundred and forty two products called "Dairy", "12" and "-",
+ * and clearing those by hand through a phone is not a repair anyone attempts.
+ */
+describe("parseProductLines on text that is not a product list", () => {
+  const FROM_PDF = [
+    "NEIGHBOURHOOD STORE",
+    "12 - 12 - 2025",
+    "1",
+    "Dairy",
+    "Whole Milk",
+    "Meadow Fresh",
+    "Gallon",
+    "Refrigerator A",
+    "2026-03-01",
+    "$2.40",
+  ].join("\n");
+
+  it("refuses it rather than inventing a product per fragment", () => {
+    expect(parseProductLines(FROM_PDF)).toEqual([]);
+  });
+
+  it("still refuses when a stray line happens to hold a comma", () => {
+    expect(parseProductLines(`${FROM_PDF}\nRefrigerator B, top shelf`)).toEqual([]);
+  });
+
+  it("accepts a real list even when a heading has no separator", () => {
+    const list = [
+      "PRICE LIST",
+      "Whole Milk | $2.40 | 1 gallon",
+      "Greek Yogurt | $1.80 | cup",
+      "Cheddar Cheese | $3.25 | block",
+    ].join("\n");
+    const parsed = parseProductLines(list);
+    expect(parsed).toHaveLength(3);
+    expect(parsed[0]).toEqual({ name: "Whole Milk", price: "$2.40", description: "1 gallon" });
+  });
+
+  it("keeps accepting a single typed name, which has no separator either", () => {
+    expect(parseProductLines("Whole Milk")).toEqual([
+      { name: "Whole Milk", price: "", description: "" },
+    ]);
+  });
+});
