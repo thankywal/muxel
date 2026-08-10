@@ -22,6 +22,7 @@ import type { Env } from "../env.js";
 import { formatFacts, recall, remember, shouldExtract } from "../memory.js";
 import { formatContext, retrieve } from "../rag/retrieve.js";
 import type { TelegramClient, TelegramUpdate } from "./api.js";
+import { toTelegramHtml } from "./format.js";
 
 /** Longest customer message accepted. Longer input is truncated, not rejected. */
 const MAX_INPUT_CHARS = 2000;
@@ -94,6 +95,10 @@ function buildSystemPrompt(
       `Reply in the language the customer used. The primary language of this business is ${business.locale}.`,
       NO_ANSWER_NOTE,
       "Keep replies short enough to read on a phone.",
+      // Bullets and emphasis survive the conversion to Telegram markup.
+      // Headings and tables do not translate to a chat message, and asking for
+      // prose costs nothing when the answer is short anyway.
+      "Write in plain sentences, with a short bullet list only when listing several things. Do not use headings or tables.",
     ]
       .filter((line) => line.length > 0)
       .join("\n"),
@@ -192,13 +197,15 @@ export async function handleReplyUpdate(
       return;
     }
 
+    // Started before the remaining work rather than after it, so the customer
+    // sees the bot react to their message rather than sit still.
+    stopTyping = keepTyping(client, chatId);
+
     conversationId = await upsertConversation(env, {
       businessId: business.id,
       botId: bot.id,
       chatId,
     });
-
-    stopTyping = keepTyping(client, chatId);
 
     const result = await withDeadline(
       (async () => {
@@ -242,7 +249,9 @@ export async function handleReplyUpdate(
   }
 
   try {
-    await client.sendMessage({ chatId, text: answer });
+    // The transcript keeps the model's own words. Only the copy the customer
+    // reads is converted, so the next turn is not fed its own markup back.
+    await client.sendMessage({ chatId, text: toTelegramHtml(answer) });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("reply delivery failed", {
