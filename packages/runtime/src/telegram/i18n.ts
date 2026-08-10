@@ -165,6 +165,63 @@ const STRINGS = {
     my: "assistant မဖြေနိုင်တဲ့အခါ အကြောင်းရင်းကို ဤနေရာမှာ မှတ်ထားပါသည် — dashboard ဖွင့်စရာ မလိုပါ။",
   },
 
+  // Cloudflare usage ----------------------------------------------------------
+  btnUsage: { en: "Usage", th: "การใช้งาน", zh: "用量", my: "အသုံးပြုမှု" },
+  usgTitle: {
+    en: "Cloudflare usage",
+    th: "การใช้งาน Cloudflare",
+    zh: "Cloudflare 用量",
+    my: "Cloudflare အသုံးပြုမှု",
+  },
+  usgToday: { en: "Today", th: "วันนี้", zh: "今天", my: "ယနေ့" },
+  usgMonth: { en: "This month", th: "เดือนนี้", zh: "本月", my: "ဤလ" },
+  usgNeurons: { en: "AI neurons", th: "AI neurons", zh: "AI neurons", my: "AI neurons" },
+  usgRequests: { en: "Worker requests", th: "คำขอ Worker", zh: "Worker 请求", my: "Worker requests" },
+  usgVectorQueried: {
+    en: "Vectorize searched",
+    th: "Vectorize ที่ค้นหา",
+    zh: "Vectorize 查询量",
+    my: "Vectorize ရှာဖွေမှု",
+  },
+  usgVectorStored: {
+    en: "Vectorize stored",
+    th: "Vectorize ที่เก็บไว้",
+    zh: "Vectorize 存储量",
+    my: "Vectorize သိမ်းဆည်းမှု",
+  },
+  usgMuxel: {
+    en: "Answered by this deployment today",
+    th: "ตอบโดยระบบนี้วันนี้",
+    zh: "本部署今天已回复",
+    my: "ဤ deployment က ယနေ့ ဖြေကြားပြီး",
+  },
+  usgMessages: { en: "replies", th: "การตอบ", zh: "条回复", my: "ခု" },
+  usgTokens: { en: "tokens in / out", th: "โทเคน เข้า / ออก", zh: "输入 / 输出 tokens", my: "token ဝင် / ထွက်" },
+  usgRepliesLeft: {
+    en: "About {count} more replies fit in today's free allowance, at today's rate.",
+    th: "ยังตอบได้อีกประมาณ {count} ครั้งภายในโควตาฟรีของวันนี้ ตามอัตราการใช้ปัจจุบัน",
+    zh: "按今天的消耗速度，免费额度还够大约 {count} 条回复。",
+    my: "ယနေ့ နှုန်းအတိုင်းဆိုရင် အခမဲ့ခွင့်ပြုချက်နဲ့ နောက်ထပ် {count} ခန့် ဖြေနိုင်ပါသေးတယ်။",
+  },
+  usgFreeNote: {
+    en: "Limits shown are the Free plan allowance. On a paid plan they are included amounts, not caps.",
+    th: "ขีดจำกัดที่แสดงคือโควตาของแผนฟรี หากใช้แผนแบบชำระเงิน ตัวเลขนี้คือส่วนที่รวมให้ ไม่ใช่เพดาน",
+    zh: "所示额度为免费方案的配额。付费方案中这些是包含用量，而非上限。",
+    my: "ပြထားတဲ့ ကန့်သတ်ချက်တွေက Free plan ခွင့်ပြုချက် ဖြစ်ပါတယ်။ ငွေပေးချေ plan မှာတော့ ဒါတွေက ပါဝင်တဲ့ ပမာဏဖြစ်ပြီး အမြင့်ဆုံး ကန့်သတ်ချက် မဟုတ်ပါ။",
+  },
+  usgNoToken: {
+    en: "Account totals are not shown because no Cloudflare API token is set. Muxel's own measurements are above. To see the account figures, create a token with Account Analytics: Read and add it as the secret CF_API_TOKEN, along with CF_ACCOUNT_ID.",
+    th: "ไม่แสดงยอดรวมของบัญชีเพราะยังไม่ได้ตั้งค่า Cloudflare API token ตัวเลขด้านบนคือค่าที่ Muxel วัดเอง หากต้องการดูยอดของบัญชี ให้สร้าง token ที่มีสิทธิ์ Account Analytics: Read แล้วเพิ่มเป็น secret ชื่อ CF_API_TOKEN พร้อมกับ CF_ACCOUNT_ID",
+    zh: "未设置 Cloudflare API token，因此不显示账户总量。上方为 Muxel 自己的统计。若要查看账户数据，请创建具有 Account Analytics: Read 权限的 token，并将其添加为密钥 CF_API_TOKEN，同时设置 CF_ACCOUNT_ID。",
+    my: "Cloudflare API token မထည့်ရသေးလို့ account စုစုပေါင်း မပြနိုင်ပါ။ အပေါ်က ဂဏန်းတွေက Muxel ကိုယ်တိုင် တိုင်းတာထားတာပါ။ Account ဂဏန်းတွေ ကြည့်ချင်ရင် Account Analytics: Read ခွင့်ပြုချက်ပါတဲ့ token တစ်ခု ဆောက်ပြီး CF_ACCOUNT_ID နဲ့အတူ CF_API_TOKEN secret အဖြစ် ထည့်ပါ။",
+  },
+  usgUnreachable: {
+    en: "Cloudflare could not be reached, or the token lacks Account Analytics: Read. Muxel's own measurements are above.",
+    th: "ติดต่อ Cloudflare ไม่ได้ หรือ token ไม่มีสิทธิ์ Account Analytics: Read ตัวเลขด้านบนคือค่าที่ Muxel วัดเอง",
+    zh: "无法连接 Cloudflare，或该 token 缺少 Account Analytics: Read 权限。上方为 Muxel 自己的统计。",
+    my: "Cloudflare ကို ဆက်သွယ်လို့ မရပါ၊ ဒါမှမဟုတ် token မှာ Account Analytics: Read ခွင့်ပြုချက် မပါပါ။ အပေါ်က ဂဏန်းတွေက Muxel ကိုယ်တိုင် တိုင်းတာထားတာပါ။",
+  },
+
   // Updates -------------------------------------------------------------------
   btnUpdates: { en: "Updates", th: "อัปเดต", zh: "更新", my: "အပ်ဒိတ်" },
   updTitle: { en: "Updates", th: "อัปเดต", zh: "更新", my: "အပ်ဒိတ်" },

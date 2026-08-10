@@ -1036,6 +1036,30 @@ export async function recordUsage(
     .run();
 }
 
+/**
+ * Totals what this deployment has answered today, across every business.
+ *
+ * Recorded by Muxel itself rather than read from Cloudflare, so it is available
+ * on a deployment that has no API token configured.
+ */
+export async function todayUsageAll(
+  env: Env,
+): Promise<{ messages: number; inputTokens: number; outputTokens: number }> {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(SUM(messages), 0) AS messages,
+            COALESCE(SUM(input_tokens), 0) AS input_tokens,
+            COALESCE(SUM(output_tokens), 0) AS output_tokens
+       FROM usage_daily WHERE day = ?`,
+  )
+    .bind(utcDay())
+    .first<{ messages: number; input_tokens: number; output_tokens: number }>();
+  return {
+    messages: row?.messages ?? 0,
+    inputTokens: row?.input_tokens ?? 0,
+    outputTokens: row?.output_tokens ?? 0,
+  };
+}
+
 export async function todayUsage(
   env: Env,
   businessId: string,

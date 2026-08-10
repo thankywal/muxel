@@ -302,6 +302,31 @@ step beyond free is cents rather than a plan change. Selecting a model from
 another provider is the one thing that needs money up front, because you pay
 that provider directly.
 
+### Seeing what you have used
+
+The console has a **Usage** screen. Without any configuration it reports what
+this deployment has answered today and the tokens that took, because Muxel
+counts those itself.
+
+The account totals are a different question, since your other Workers draw on
+the same allowance, and only Cloudflare can answer it. To show them, create an
+API token with **Account Analytics: Read** and nothing else, then add two
+secrets to the Worker under Settings, Variables and Secrets:
+
+| Secret          | Value                                    |
+| --------------- | ---------------------------------------- |
+| `CF_ACCOUNT_ID` | your account id, from the dashboard URL  |
+| `CF_API_TOKEN`  | the read only token you just created     |
+
+The screen then shows neurons used today against the daily allowance, a
+breakdown per model, Worker requests, Vectorize search and storage, and an
+estimate of how many more replies today's allowance covers. That estimate comes
+from what your own replies actually cost rather than from a published rate, so
+it stays accurate if you change model.
+
+The token is read only. It cannot deploy, change configuration or read your
+data, and Muxel never displays it.
+
 Muxel deliberately uses no R2 bucket. It would only archive the original of an
 uploaded file, which nothing reads back, and enabling R2 requires a payment
 method even inside its own free tier. Add a binding named `DOCUMENTS` if you

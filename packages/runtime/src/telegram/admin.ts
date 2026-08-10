@@ -25,6 +25,11 @@ import {
   type Product,
 } from "@muxel/core";
 
+import {
+  accountUsage,
+  FREE_ALLOWANCE,
+  repliesRemaining,
+} from "../cloudflare/usage.js";
 import { seal, sha256Hex } from "../crypto.js";
 import {
   canAccessBusiness,
@@ -55,6 +60,7 @@ import {
   setCustomerStage,
   setOperatorLocale,
   todayUsage,
+  todayUsageAll,
   updateBusinessModel,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
@@ -184,6 +190,40 @@ function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit)}...`;
 }
 
+/** Rounds a neuron figure to something readable without losing small values. */
+function round(value: number): string {
+  return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
+}
+
+/** Abbreviates large counts so a usage line fits on one row of a phone. */
+function formatCount(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}k`;
+  }
+  return String(value);
+}
+
+/**
+ * Renders a figure against its allowance.
+ *
+ * The percentage is what an operator actually reads, and the raw pair is kept
+ * beside it so the number stays checkable against the Cloudflare dashboard.
+ */
+function meter(used: number, allowance: number): string {
+  const percent = allowance <= 0 ? 0 : (used / allowance) * 100;
+  const shown = percent > 0 && percent < 0.1 ? "<0.1" : percent.toFixed(1);
+  return `${formatCount(Math.round(used))} / ${formatCount(allowance)}  (${shown}%)`;
+}
+
+/** Drops the vendor prefix so a model id fits beside its usage figure. */
+function shortModel(model: string): string {
+  const parts = model.split("/");
+  return parts[parts.length - 1] ?? model;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) {
     return `${bytes} B`;
@@ -228,6 +268,7 @@ function homeScreen(locale: Locale): Screen {
         { text: t(locale, "btnUpdates"), action: "upd" },
       ),
       row(
+        { text: t(locale, "btnUsage"), action: "usg" },
         { text: t(locale, "btnLanguage"), action: "lang" },
         { text: t(locale, "btnHelp"), action: "help" },
       ),
@@ -681,6 +722,59 @@ async function screenFor(
               )),
         ].join("\n"),
         rows: [backTo(locale, "home")],
+      };
+    }
+
+    case "usg": {
+      // Muxel's own counters always work. The account totals need a token, so
+      // the two are fetched together and the screen degrades to the first when
+      // the second is unavailable rather than showing nothing.
+      const [mine, account] = await Promise.all([todayUsageAll(env), accountUsage(env)]);
+
+      const lines = [
+        `<b>${t(locale, "usgTitle")}</b>`,
+        "",
+        `<b>${t(locale, "usgMuxel")}</b>`,
+        `${mine.messages} ${t(locale, "usgMessages")}`,
+        `${formatCount(mine.inputTokens)} / ${formatCount(mine.outputTokens)} ${t(locale, "usgTokens")}`,
+      ];
+
+      if (account.ok) {
+        const usage = account.usage;
+        const left = repliesRemaining(usage.neuronsToday, mine.messages);
+        lines.push(
+          "",
+          `<b>${t(locale, "usgToday")}</b>`,
+          `${t(locale, "usgNeurons")}: ${meter(usage.neuronsToday, FREE_ALLOWANCE.neuronsPerDay)}`,
+          ...usage.byModel.map(
+            (row) => `   ${escapeHtml(shortModel(row.model))}  ${round(row.neurons)}`,
+          ),
+          `${t(locale, "usgRequests")}: ${meter(usage.requestsToday, FREE_ALLOWANCE.requestsPerDay)}`,
+          "",
+          `<b>${t(locale, "usgMonth")}</b>`,
+          `${t(locale, "usgNeurons")}: ${round(usage.neuronsThisMonth)}`,
+          `${t(locale, "usgVectorQueried")}: ${meter(
+            usage.queriedDimensionsThisMonth,
+            FREE_ALLOWANCE.queriedDimensionsPerMonth,
+          )}`,
+          `${t(locale, "usgVectorStored")}: ${meter(
+            usage.storedDimensions,
+            FREE_ALLOWANCE.storedDimensions,
+          )}`,
+          ...(left === null ? [] : ["", t(locale, "usgRepliesLeft", { count: String(left) })]),
+          "",
+          t(locale, "usgFreeNote"),
+        );
+      } else {
+        lines.push(
+          "",
+          t(locale, account.problem === "not_configured" ? "usgNoToken" : "usgUnreachable"),
+        );
+      }
+
+      return {
+        text: lines.join("\n"),
+        rows: [row({ text: t(locale, "btnCheckAgain"), action: "usg" }), backTo(locale, "home")],
       };
     }
 

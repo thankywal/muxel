@@ -32,6 +32,17 @@ export interface Env {
   readonly AI_GATEWAY_TOKEN?: string;
 
   /**
+   * Read only token used to report account usage in the console.
+   *
+   * Muxel records what it spends itself, but only Cloudflare knows the account
+   * total, and an operator who wants to see how much of the free allowance is
+   * left needs the real figure rather than an estimate. Needs Account
+   * Analytics: Read and nothing more. Absent means the console shows Muxel's
+   * own measurements and says how to enable the rest.
+   */
+  readonly CF_API_TOKEN?: string;
+
+  /**
    * Key sealing bot tokens at rest.
    *
    * Set by the command line tool during provisioning. When absent the Worker
