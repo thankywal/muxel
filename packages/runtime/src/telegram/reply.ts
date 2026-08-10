@@ -13,6 +13,7 @@ import { generate } from "../ai/gateway.js";
 import {
   appendMessage,
   recentTurns,
+  recordEvent,
   recordUsage,
   touchCustomer,
   upsertConversation,
@@ -157,13 +158,20 @@ export async function handleReplyUpdate(
     inputTokens = result.inputTokens ?? 0;
     outputTokens = result.outputTokens ?? 0;
   } catch (error) {
-    // The customer sees a neutral message. Details stay in Workers Logs so that
-    // an upstream error string cannot leak configuration into a public chat.
+    const detail = error instanceof Error ? error.message : String(error);
+    // The customer sees a neutral message, because an upstream error string
+    // must not leak configuration into a public chat. The operator sees the
+    // real reason in the console, which is the only place they can reach.
     console.error("reply generation failed", {
       businessId: business.id,
       botId: bot.id,
-      error: error instanceof Error ? error.message : String(error),
+      error: detail,
     });
+    await recordEvent(env, {
+      businessId: business.id,
+      kind: "reply_failed",
+      detail: `${question.slice(0, 80)} -> ${detail}`,
+    }).catch(() => undefined);
     await client.sendMessage({
       chatId,
       text: "Sorry, I could not answer that just now. Please try again shortly.",

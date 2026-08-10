@@ -729,6 +729,62 @@ export async function findDocumentByName(
   return row?.id ?? null;
 }
 
+// Events ------------------------------------------------------------------------
+
+export interface LoggedEvent {
+  readonly kind: string;
+  readonly detail: string;
+  readonly createdAt: string;
+  readonly businessName: string | null;
+}
+
+/** Keeps the log short enough to read and small enough to ignore. */
+const EVENT_LIMIT = 40;
+
+/**
+ * Records something the operator would want to know went wrong.
+ *
+ * Failures are already written to the Worker logs, but reading those needs a
+ * dashboard and an account. This copy is for the person who only has the
+ * console. Never called on the customer path in a way that can itself fail the
+ * reply: the caller swallows any error from here.
+ */
+export async function recordEvent(
+  env: Env,
+  input: { businessId?: string; kind: string; detail: string },
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT INTO event_log (id, business_id, kind, detail, created_at) VALUES (?, ?, ?, ?, ?)",
+  )
+    .bind(generateId(), input.businessId ?? null, input.kind, input.detail.slice(0, 400), now())
+    .run();
+
+  await env.DB.prepare(
+    `DELETE FROM event_log WHERE id NOT IN (
+       SELECT id FROM event_log ORDER BY created_at DESC LIMIT ?
+     )`,
+  )
+    .bind(EVENT_LIMIT)
+    .run();
+}
+
+export async function listEvents(env: Env, limit = 10): Promise<LoggedEvent[]> {
+  const result = await env.DB.prepare(
+    `SELECT e.kind, e.detail, e.created_at, b.name AS business_name
+       FROM event_log e
+       LEFT JOIN business b ON b.id = e.business_id
+      ORDER BY e.created_at DESC LIMIT ?`,
+  )
+    .bind(limit)
+    .all<{ kind: string; detail: string; created_at: string; business_name: string | null }>();
+  return result.results.map((row) => ({
+    kind: row.kind,
+    detail: row.detail,
+    createdAt: row.created_at,
+    businessName: row.business_name,
+  }));
+}
+
 // Customers ------------------------------------------------------------------
 
 interface CustomerRow {

@@ -205,6 +205,26 @@ const MIGRATIONS: readonly Migration[] = [
       `DELETE FROM bot WHERE role = 'admin'`,
     ],
   },
+  {
+    version: 5,
+    statements: [
+      // Recent failures, readable from the console.
+      //
+      // When the assistant does not answer, the reason is in the Worker logs,
+      // which means a dashboard, an account and knowing where to look. A shop
+      // owner has none of that, and neither does anyone helping them by
+      // message. Keeping the last few problems here puts the answer in the
+      // place they already are.
+      `CREATE TABLE IF NOT EXISTS event_log (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT,
+         kind        TEXT NOT NULL,
+         detail      TEXT NOT NULL,
+         created_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS event_log_idx ON event_log (created_at DESC)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

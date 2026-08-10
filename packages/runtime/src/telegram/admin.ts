@@ -45,6 +45,7 @@ import {
   listBusinesses,
   listCustomers,
   listDocuments,
+  listEvents,
   listFacts,
   listProducts,
   previousPrompt,
@@ -219,7 +220,10 @@ function homeScreen(locale: Locale): Screen {
     rows: [
       row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
       row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
-      row({ text: t(locale, "btnConsoleBot"), action: "console" }),
+      row(
+        { text: t(locale, "btnConsoleBot"), action: "console" },
+        { text: t(locale, "btnDiagnostics"), action: "diag" },
+      ),
       row(
         { text: t(locale, "btnLanguage"), action: "lang" },
         { text: t(locale, "btnHelp"), action: "help" },
@@ -655,6 +659,27 @@ async function screenFor(
         text: `<b>${t(locale, "bizAddTitle")}</b>\n\n${t(locale, "bizAddBody")}`,
         rows: [row({ text: t(locale, "cancel"), action: "home" })],
       };
+
+    case "diag": {
+      const events = await listEvents(env, 10);
+      return {
+        text: [
+          `<b>${t(locale, "diagTitle")}</b>`,
+          "",
+          t(locale, "diagBody"),
+          "",
+          ...(events.length === 0
+            ? [t(locale, "diagEmpty")]
+            : events.map(
+                (event) =>
+                  `<b>${event.createdAt.slice(5, 16).replace("T", " ")}</b> ${escapeHtml(
+                    event.businessName ?? "",
+                  )}\n${escapeHtml(truncate(event.detail, 200))}`,
+              )),
+        ].join("\n"),
+        rows: [backTo(locale, "home")],
+      };
+    }
 
     case "console": {
       const bot = await getConsoleBot(env);

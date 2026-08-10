@@ -149,6 +149,22 @@ const STRINGS = {
     my: "အဲဒါက ဤ console bot ပါ။ လုပ်ငန်းအတွက် သီးခြား bot တစ်ခု ဆောက်ပါ။",
   },
 
+  // Diagnostics ---------------------------------------------------------------
+  btnDiagnostics: { en: "Problems", th: "ปัญหา", zh: "问题", my: "ပြဿနာများ" },
+  diagTitle: { en: "Recent problems", th: "ปัญหาล่าสุด", zh: "近期问题", my: "မကြာသေးမီ ပြဿနာများ" },
+  diagEmpty: {
+    en: "Nothing has gone wrong recently.",
+    th: "ไม่มีปัญหาในช่วงที่ผ่านมา",
+    zh: "近期没有出现问题。",
+    my: "မကြာသေးမီက ပြဿနာ မရှိပါ။",
+  },
+  diagBody: {
+    en: "When the assistant fails to answer, the reason is recorded here so you do not need a dashboard to find it.",
+    th: "เมื่อผู้ช่วยตอบไม่ได้ เหตุผลจะถูกบันทึกไว้ที่นี่ คุณจึงไม่ต้องเปิดแดชบอร์ดเพื่อค้นหา",
+    zh: "当助手无法回答时，原因会记录在这里，你无需打开控制面板即可查看。",
+    my: "assistant မဖြေနိုင်တဲ့အခါ အကြောင်းရင်းကို ဤနေရာမှာ မှတ်ထားပါသည် — dashboard ဖွင့်စရာ မလိုပါ။",
+  },
+
   // Console bot -------------------------------------------------------------
   btnConsoleBot: { en: "Console bot", th: "บอทคอนโซล", zh: "控制台机器人", my: "Console bot" },
   consoleBotTitle: { en: "Console bot", th: "บอทคอนโซล", zh: "控制台机器人", my: "Console bot" },
