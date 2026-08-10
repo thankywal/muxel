@@ -26,6 +26,12 @@ import { addOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
 import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
 import { dimensionAdvice } from "./rag/dimensions.js";
+import {
+  repositorySettingsUrl,
+  repositoryVisibility,
+  SOURCE_REPO,
+  type RepoVisibility,
+} from "./repo.js";
 import { peekMasterKey, resolveMasterKey } from "./secrets.js";
 import { TelegramClient } from "./telegram/api.js";
 
@@ -70,6 +76,9 @@ export interface SetupOutcome {
   readonly owner: number | null;
   readonly missing: readonly string[];
   readonly note: string;
+  /** The GitHub copy this was built from, when the build could tell. */
+  readonly repo?: string;
+  readonly repoVisibility?: RepoVisibility;
 }
 
 function notReady(note: string, missing: readonly string[] = []): SetupOutcome {
@@ -134,12 +143,18 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
 
   await env.STATE.put(ORIGIN_KEY, origin);
 
+  // Checked on every visit rather than remembered, so the warning disappears
+  // by itself the moment the operator acts on it.
+  const repoVisibility = await repositoryVisibility(SOURCE_REPO);
+
   return {
     ok: true,
     schemaVersion,
     botUsername: username,
     owner,
     missing: [],
+    repo: SOURCE_REPO,
+    repoVisibility,
     note: [
       existing === null ? "Setup complete." : "Webhook re-registered against the current address.",
       indexNote,
@@ -190,6 +205,34 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Renders the one thing the deploy flow cannot do for the operator.
+ *
+ * Cloudflare creates the GitHub copy public and offers no choice, and nothing
+ * in the deployment can change that for them. Shown only while the copy is
+ * actually still public, so acting on it makes it go away rather than leaving a
+ * permanent scold on the page.
+ */
+function renderRepoCard(outcome: SetupOutcome): string {
+  const repo = outcome.repo ?? "";
+  if (repo.length === 0 || outcome.repoVisibility !== "public") {
+    return "";
+  }
+  const settings = escapeHtml(repositorySettingsUrl(repo));
+  return `
+      <div class="card">
+        <p class="warn"><strong>Your code copy is public</strong></p>
+        <p>Cloudflare copied this project into
+        <code>${escapeHtml(repo)}</code> and had to create it public. No business
+        data or secret is in it, but the identifiers of the resources in your
+        account are, and those are not worth publishing.</p>
+        <p><a href="${settings}" rel="noreferrer">Open the repository settings</a>,
+        scroll to <strong>Danger Zone</strong>, choose <strong>Change
+        visibility</strong> and pick <strong>Private</strong>. Deployments keep
+        working. Reload this page afterwards and this notice will be gone.</p>
+      </div>`;
+}
+
 /** Renders the outcome as a page a non technical owner can act on. */
 export function renderSetupPage(outcome: SetupOutcome): string {
   const body = outcome.ok
@@ -206,7 +249,8 @@ export function renderSetupPage(outcome: SetupOutcome): string {
         outcome.note.includes("dimensions")
           ? `<p class="warn">${escapeHtml(outcome.note)}</p>`
           : ""
-      }`
+      }
+      ${renderRepoCard(outcome)}`
     : `
       <p class="bad">Not ready yet.</p>
       <p>${escapeHtml(outcome.note)}</p>
@@ -236,6 +280,11 @@ export function renderSetupPage(outcome: SetupOutcome): string {
   dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 1.5rem 0; }
   dt { opacity: 0.65; }
   dd { margin: 0; }
+  .card {
+    border: 1px solid #a16207; border-radius: 0.5rem;
+    padding: 0.25rem 1rem; margin: 1.75rem 0;
+  }
+  .card p:first-child { margin-top: 0.85rem; }
   code {
     font: 0.9em ui-monospace, monospace;
     background: rgba(127,127,127,0.15); padding: 0.1em 0.35em; border-radius: 4px;

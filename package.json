@@ -15,7 +15,7 @@
   },
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "build": "pnpm -r --filter=./packages/* run build",
+    "build": "node scripts/stamp-repo.mjs && pnpm -r --filter=./packages/* run build",
     "build:worker": "wrangler deploy --dry-run --outdir dist",
     "deploy": "node scripts/deploy.mjs",
     "dev": "wrangler dev",

@@ -91,6 +91,13 @@ cannot be used to read anything without your account, but they are not worth
 publishing. Set the repository to private under Settings, General, Change
 visibility.
 
+The setup page checks this for you and shows a link straight at the setting
+while the copy is still public. Acting on it makes the notice disappear, so
+there is nothing to remember and nothing to dismiss. Muxel cannot do the change
+itself: the repository is created by Cloudflare's GitHub App, the copy arrives
+without a `.github` directory so no workflow of ours can run in it, and the
+Worker holds no GitHub credential and should not.
+
 Builds keep working after that. Cloudflare reaches your repository as an
 installed GitHub App holding `contents: write` on the repositories you granted
 it, and an installation's access does not depend on whether a repository is
