@@ -237,6 +237,25 @@ const STRINGS = {
   convCustomer: { en: "Customer", th: "ลูกค้า", zh: "客户", my: "ဝယ်သူ" },
   convAssistant: { en: "Assistant", th: "ผู้ช่วย", zh: "助手", my: "Assistant" },
   convHuman: { en: "You", th: "คุณ", zh: "你", my: "သင်" },
+  convNoUsername: {
+    en: "No Telegram username, so they can only be reached inside this chat.",
+    th: "ไม่มีชื่อผู้ใช้ Telegram จึงติดต่อได้เฉพาะในแชทนี้",
+    zh: "没有 Telegram 用户名，只能在这个对话里联系。",
+    my: "Telegram username မရှိလို့ ဒီ chat ထဲကပဲ ဆက်သွယ်လို့ ရပါတယ်။",
+  },
+  btnShowMedia: { en: "Show {time}", th: "ดูของ {time}", zh: "查看 {time}", my: "{time} ကို ကြည့်" },
+  mediaGone: {
+    en: "That attachment is no longer available.",
+    th: "ไฟล์แนบนี้ไม่มีอยู่แล้ว",
+    zh: "该附件已不可用。",
+    my: "အဲဒီ ပူးတွဲဖိုင် မရှိတော့ပါ။",
+  },
+  mediaFailed: {
+    en: "Telegram would not hand that file over. Files older than a few months are usually gone.",
+    th: "Telegram ไม่ยอมส่งไฟล์นั้นมา ไฟล์ที่เก่ากว่าไม่กี่เดือนมักถูกลบไปแล้ว",
+    zh: "Telegram 无法提供该文件。超过几个月的文件通常已被清除。",
+    my: "Telegram က အဲဒီဖိုင်ကို မပေးပါ။ လအနည်းငယ်ကျော်တဲ့ ဖိုင်တွေက များသောအားဖြင့် ပျောက်သွားပါပြီ။",
+  },
   convStateWaiting: {
     en: "The assistant could not answer this and asked for a person.",
     th: "ผู้ช่วยตอบคำถามนี้ไม่ได้ จึงขอให้เจ้าหน้าที่ช่วย",

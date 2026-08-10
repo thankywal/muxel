@@ -12,6 +12,7 @@ import type { Bot, Business, ChatTurn, CustomerFact } from "@muxel/core";
 import { generate } from "../ai/gateway.js";
 import {
   appendMessage,
+  appendMessageWithMedia,
   getHandover,
   openHandover,
   recentTurns,
@@ -24,7 +25,7 @@ import type { Env } from "../env.js";
 import { alertOwner, HANDOVER_SENTINEL, stripSentinel, wantsHandover } from "../escalation.js";
 import { formatFacts, recall, remember, shouldExtract } from "../memory.js";
 import { formatContext, retrieve } from "../rag/retrieve.js";
-import type { TelegramClient, TelegramUpdate, TelegramUser } from "./api.js";
+import { attachmentIn, type Attachment, type TelegramClient, type TelegramUpdate, type TelegramUser } from "./api.js";
 import { toTelegramHtml } from "./format.js";
 
 /** Longest customer message accepted. Longer input is truncated, not rejected. */
@@ -97,6 +98,16 @@ const HANDOVER_REPLY: Record<string, string> = {
 
 function handoverReply(locale: string): string {
   return HANDOVER_REPLY[locale] ?? HANDOVER_REPLY.en ?? "";
+}
+
+/** Names an attachment for a transcript, where the bytes are not shown. */
+function describeAttachment(attachment: Attachment | null): string {
+  if (attachment === null) {
+    return "";
+  }
+  return attachment.label.length > 0
+    ? `[${attachment.kind}] ${attachment.label}`
+    : `[${attachment.kind}]`;
 }
 
 function nameOf(sender: TelegramUser | undefined): string {
@@ -178,7 +189,8 @@ export async function handleReplyUpdate(
   }
 
   const text = (message.text ?? message.caption ?? "").trim();
-  if (text.length === 0) {
+  const attachment = attachmentIn(message);
+  if (text.length === 0 && attachment === null) {
     return;
   }
 
@@ -233,24 +245,40 @@ export async function handleReplyUpdate(
       chatId,
     });
 
-    // A person is answering this chat. The assistant records what was said and
-    // forwards it, but does not reply: two voices answering the same customer
-    // is worse than a slower single one.
+    // A person is answering this chat, or the customer sent something the
+    // assistant cannot read. Either way the turn is recorded and forwarded
+    // without a reply: two voices answering one customer is worse than a
+    // slower single one, and guessing at a photo is worse than both.
     const handover = await getHandover(env, conversationId);
-    if (handover?.state === "human") {
+    const forHuman = handover?.state === "human" || (attachment !== null && text.length === 0);
+
+    if (forHuman) {
       stopTyping();
-      await appendMessage(env, {
+      await appendMessageWithMedia(env, {
         conversationId,
         businessId: business.id,
-        role: "user",
-        content: question,
+        botId: bot.id,
+        content: question.length > 0 ? question : describeAttachment(attachment),
+        media: attachment,
       });
+      if (handover?.state !== "human") {
+        await openHandover(env, {
+          conversationId,
+          businessId: business.id,
+          customerId: customer?.id ?? null,
+          reason: describeAttachment(attachment),
+        }).catch(() => undefined);
+        await client
+          .sendMessage({ chatId, text: handoverReply(business.locale) })
+          .catch(() => undefined);
+      }
       await alertOwner(env, {
         businessName: business.name,
         customerName: nameOf(sender),
-        question,
+        customerUsername: sender?.username ?? "",
+        question: question.length > 0 ? question : describeAttachment(attachment),
         customerId: customer?.id ?? null,
-        duringTakeover: true,
+        duringTakeover: handover?.state === "human",
       }).catch(() => undefined);
       return;
     }
@@ -361,6 +389,7 @@ export async function handleReplyUpdate(
     await alertOwner(env, {
       businessName: business.name,
       customerName: nameOf(sender),
+      customerUsername: sender?.username ?? "",
       question,
       customerId: customer?.id ?? null,
     }).catch((error: unknown) => {

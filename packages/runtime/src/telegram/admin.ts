@@ -64,6 +64,7 @@ import {
   deleteAllProducts,
   endHandover,
   getBotById,
+  getMedia,
   getHandover,
   listHandovers,
   takeOverConversation,
@@ -81,12 +82,18 @@ import {
   removeDocument,
   syncProductCatalogue,
 } from "../rag/ingest.js";
+import { describeCustomer } from "../escalation.js";
 import { resolveMasterKey } from "../secrets.js";
 import { findSkill, matchSkill, SKILLS } from "./skills.js";
 import { versionStatus } from "../updates.js";
 import { UPSTREAM_REPO } from "../version.js";
 import { isLocale, LOCALE_NAMES, LOCALES, t, type Locale, type MessageKey } from "./i18n.js";
-import { TelegramClient, type TelegramMessage, type TelegramUpdate } from "./api.js";
+import {
+  TelegramClient,
+  type MediaKind,
+  type TelegramMessage,
+  type TelegramUpdate,
+} from "./api.js";
 import { buildKeyboard, resolveSpilled, row, type ButtonSpec } from "./keyboard.js";
 
 export interface ModelPreset {
@@ -234,6 +241,31 @@ function meter(used: number, allowance: number): string {
 function shortModel(model: string): string {
   const parts = model.split("/");
   return parts[parts.length - 1] ?? model;
+}
+
+/**
+ * Renders a stored timestamp as a date and a time.
+ *
+ * A time alone reads as "today" and a transcript spans days, so a reply that
+ * arrived last week looked like one from an hour ago. Seconds and the year are
+ * dropped because neither settles anything an operator is deciding.
+ */
+function stamp(isoUtc: string): string {
+  return `${isoUtc.slice(5, 10)} ${isoUtc.slice(11, 16)}`;
+}
+
+/** Marks an attachment in a transcript line, where the file itself cannot go. */
+function mediaIcon(kind: string): string {
+  const icons: Record<string, string> = {
+    photo: "🖼",
+    video: "🎬",
+    animation: "🎞",
+    sticker: "🙂",
+    voice: "🎤",
+    audio: "🎵",
+    document: "📎",
+  };
+  return icons[kind] ?? "📎";
 }
 
 function formatBytes(bytes: number): string {
@@ -813,9 +845,17 @@ async function screenFor(
             ? t(locale, "convHuman")
             : t(locale, "convAssistant");
 
+      // Attachments are listed as buttons under the transcript rather than
+      // inline, because a photo cannot live inside the message the console
+      // edits. Tapping one sends it into the chat as a separate message.
+      const attachments = turns.filter((turn) => turn.media !== null);
+
       return {
         text: [
           `<b>${t(locale, "convTitle", { name: escapeHtml(name) })}</b>`,
+          describeCustomer(name, customer.username) === escapeHtml(name)
+            ? `<i>${t(locale, "convNoUsername")}</i>`
+            : `@${escapeHtml(customer.username)}`,
           handover === null
             ? ""
             : `\n<i>${t(locale, handover.state === "human" ? "convStateHuman" : "convStateWaiting")}</i>`,
@@ -824,14 +864,23 @@ async function screenFor(
             ? [t(locale, "convEmpty")]
             : turns.map(
                 (turn) =>
-                  `<b>${speaker(turn)}</b>  <i>${turn.createdAt.slice(11, 16)}</i>\n${escapeHtml(
-                    truncate(turn.content, 400),
-                  )}`,
+                  `<b>${speaker(turn)}</b>  <i>${stamp(turn.createdAt)}</i>\n${
+                    turn.media === null ? "" : `${mediaIcon(turn.media.kind)} `
+                  }${escapeHtml(truncate(turn.content, 400))}`,
               )),
         ]
           .filter((line) => line !== "")
           .join("\n"),
         rows: [
+          ...attachments.map((turn) =>
+            row({
+              text: `${mediaIcon(turn.media?.kind ?? "")} ${t(locale, "btnShowMedia", {
+                time: stamp(turn.createdAt),
+              })}`,
+              action: "med",
+              args: [turn.id, customer.id],
+            }),
+          ),
           ...(handover?.state === "human"
             ? [
                 row({ text: t(locale, "btnSendAsHuman"), action: "csend", args: [customer.id] }),
@@ -1859,6 +1908,55 @@ async function handlePendingInput(
   }
 }
 
+/**
+ * Sends a customer's attachment into the operator's chat.
+ *
+ * A Telegram file id belongs to the bot that received it, so the console
+ * cannot forward one a business bot was given. What it can do is ask that bot
+ * for a temporary link and hand the link to Telegram, which fetches the file
+ * itself. No bytes pass through the Worker and nothing is stored.
+ *
+ * The link carries the business bot's token and expires in about an hour,
+ * which is why it is built at the moment of viewing and never written down.
+ */
+async function showMedia(
+  env: Env,
+  client: TelegramClient,
+  input: { chatId: number; userId: number; locale: Locale; messageId: string },
+): Promise<void> {
+  const media = await getMedia(env, input.messageId);
+  if (media === null) {
+    await client.sendMessage({ chatId: input.chatId, text: t(input.locale, "mediaGone") });
+    return;
+  }
+
+  const bot = await getBotById(env, media.botId);
+  if (bot === null) {
+    await client.sendMessage({ chatId: input.chatId, text: t(input.locale, "mediaGone") });
+    return;
+  }
+  await requireAccess(env, input.userId, bot.businessId);
+
+  try {
+    const masterKey = await resolveMasterKey(env);
+    const asBusiness = new TelegramClient(await openSealed(masterKey, bot.tokenCiphertext));
+    const link = await asBusiness.getFileLink(media.fileId);
+    await client.sendMedia({
+      chatId: input.chatId,
+      kind: media.kind as MediaKind,
+      source: link,
+      caption: media.label,
+    });
+  } catch (error) {
+    console.error("could not show an attachment", {
+      messageId: input.messageId,
+      kind: media.kind,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    await client.sendMessage({ chatId: input.chatId, text: t(input.locale, "mediaFailed") });
+  }
+}
+
 async function handleCallback(
   env: Env,
   client: TelegramClient,
@@ -1888,6 +1986,18 @@ async function handleCallback(
         return;
       }
       decoded = resolved;
+    }
+
+    // Handled here rather than as a screen, because an attachment cannot live
+    // inside the message the console keeps editing. It arrives as its own.
+    if (decoded.action === "med") {
+      await showMedia(env, client, {
+        chatId: callback.message.chat.id,
+        userId: callback.from.id,
+        locale,
+        messageId: decoded.args[0] ?? "",
+      });
+      return;
     }
 
     const screen = await screenFor(env, locale, callback.from.id, decoded.action, decoded.args);

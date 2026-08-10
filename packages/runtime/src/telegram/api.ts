@@ -92,6 +92,11 @@ export interface TelegramDocument {
   readonly file_size?: number;
 }
 
+interface TelegramFile {
+  readonly file_id: string;
+  readonly file_size?: number;
+}
+
 export interface TelegramMessage {
   readonly message_id: number;
   readonly from?: TelegramUser;
@@ -99,7 +104,78 @@ export interface TelegramMessage {
   readonly text?: string;
   readonly caption?: string;
   readonly document?: TelegramDocument;
+  /** Ordered smallest to largest; the last entry is the full resolution one. */
+  readonly photo?: readonly TelegramFile[];
+  readonly video?: TelegramFile;
+  readonly animation?: TelegramFile;
+  readonly voice?: TelegramFile;
+  readonly audio?: TelegramFile;
+  readonly sticker?: TelegramFile & { readonly emoji?: string };
 }
+
+/** Kinds of attachment the console can show back to an operator. */
+export type MediaKind =
+  | "photo"
+  | "video"
+  | "animation"
+  | "voice"
+  | "audio"
+  | "sticker"
+  | "document";
+
+export interface Attachment {
+  readonly kind: MediaKind;
+  readonly fileId: string;
+  /** Filename for a document, or a sticker's emoji. Empty for the rest. */
+  readonly label: string;
+}
+
+/**
+ * Finds the attachment on a message, if it carries one.
+ *
+ * A photo arrives as several sizes and the largest is taken, because the
+ * operator is looking at it to decide something rather than to save data.
+ */
+export function attachmentIn(message: TelegramMessage): Attachment | null {
+  if (message.photo !== undefined && message.photo.length > 0) {
+    const largest = message.photo[message.photo.length - 1] as TelegramFile;
+    return { kind: "photo", fileId: largest.file_id, label: "" };
+  }
+  if (message.sticker !== undefined) {
+    return { kind: "sticker", fileId: message.sticker.file_id, label: message.sticker.emoji ?? "" };
+  }
+  if (message.video !== undefined) {
+    return { kind: "video", fileId: message.video.file_id, label: "" };
+  }
+  if (message.animation !== undefined) {
+    return { kind: "animation", fileId: message.animation.file_id, label: "" };
+  }
+  if (message.voice !== undefined) {
+    return { kind: "voice", fileId: message.voice.file_id, label: "" };
+  }
+  if (message.audio !== undefined) {
+    return { kind: "audio", fileId: message.audio.file_id, label: "" };
+  }
+  if (message.document !== undefined) {
+    return {
+      kind: "document",
+      fileId: message.document.file_id,
+      label: message.document.file_name ?? "",
+    };
+  }
+  return null;
+}
+
+/** Telegram method and body field for each kind of attachment. */
+const SEND_METHOD: Record<MediaKind, { method: string; field: string; caption: boolean }> = {
+  photo: { method: "sendPhoto", field: "photo", caption: true },
+  video: { method: "sendVideo", field: "video", caption: true },
+  animation: { method: "sendAnimation", field: "animation", caption: true },
+  voice: { method: "sendVoice", field: "voice", caption: true },
+  audio: { method: "sendAudio", field: "audio", caption: true },
+  sticker: { method: "sendSticker", field: "sticker", caption: false },
+  document: { method: "sendDocument", field: "document", caption: true },
+};
 
 export interface TelegramCallbackQuery {
   readonly id: string;
@@ -327,6 +403,29 @@ export class TelegramClient {
       pending_update_count?: number;
       last_error_message?: string;
     }>("getWebhookInfo", {});
+  }
+
+  /**
+   * Sends an attachment the console fetched from somewhere else.
+   *
+   * A file id belongs to the bot that received it, so the console cannot
+   * forward a customer's photo by id: a business bot's id means nothing to it.
+   * Telegram will fetch a URL on our behalf though, so the console passes the
+   * business bot's temporary file link and Telegram does the copying. That
+   * keeps the bytes out of the Worker entirely.
+   */
+  sendMedia(input: {
+    chatId: number;
+    kind: MediaKind;
+    source: string;
+    caption?: string;
+  }): Promise<unknown> {
+    const spec = SEND_METHOD[input.kind];
+    return this.#call<unknown>(spec.method, {
+      chat_id: input.chatId,
+      [spec.field]: input.source,
+      ...(spec.caption && input.caption ? { caption: input.caption.slice(0, 1024) } : {}),
+    });
   }
 
   async getFileLink(fileId: string): Promise<string> {

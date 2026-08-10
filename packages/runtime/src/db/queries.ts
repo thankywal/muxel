@@ -595,11 +595,77 @@ export async function appendHumanMessage(
   ]);
 }
 
+/**
+ * Records a customer turn that carried a photo, video, sticker or file.
+ *
+ * The attachment row is written in the same batch as the message, so a
+ * transcript can never show a turn that promises an image the console cannot
+ * find.
+ */
+export async function appendMessageWithMedia(
+  env: Env,
+  input: {
+    conversationId: string;
+    businessId: string;
+    botId: string;
+    content: string;
+    media: { kind: string; fileId: string; label: string } | null;
+  },
+): Promise<void> {
+  const id = generateId();
+  const statements = [
+    env.DB.prepare(
+      "INSERT INTO message (id, conversation_id, business_id, role, content, created_at) VALUES (?, ?, ?, 'user', ?, ?)",
+    ).bind(id, input.conversationId, input.businessId, input.content, now()),
+  ];
+  if (input.media !== null) {
+    statements.push(
+      env.DB.prepare(
+        "INSERT INTO message_media (message_id, bot_id, kind, file_id, label) VALUES (?, ?, ?, ?, ?)",
+      ).bind(id, input.botId, input.media.kind, input.media.fileId, input.media.label.slice(0, 120)),
+    );
+  }
+  await env.DB.batch(statements);
+}
+
+export interface StoredMedia {
+  readonly messageId: string;
+  readonly botId: string;
+  readonly kind: string;
+  readonly fileId: string;
+  readonly label: string;
+}
+
+/** Loads one attachment so the console can ask Telegram to fetch it. */
+export async function getMedia(env: Env, messageId: string): Promise<StoredMedia | null> {
+  const row = await env.DB.prepare("SELECT * FROM message_media WHERE message_id = ?")
+    .bind(messageId)
+    .first<{
+      message_id: string;
+      bot_id: string;
+      kind: string;
+      file_id: string;
+      label: string;
+    }>();
+  return row === null
+    ? null
+    : {
+        messageId: row.message_id,
+        botId: row.bot_id,
+        kind: row.kind,
+        fileId: row.file_id,
+        label: row.label,
+      };
+}
+
 export interface TranscriptTurn {
+  readonly id: string;
   readonly role: "user" | "assistant";
   readonly content: string;
   readonly sentBy: "bot" | "human";
   readonly createdAt: string;
+  /** Present when the turn carried an attachment. */
+  readonly media: { readonly kind: string; readonly label: string } | null;
 }
 
 /**
@@ -615,21 +681,37 @@ export async function transcript(
   limit = 30,
 ): Promise<TranscriptTurn[]> {
   const result = await env.DB.prepare(
-    `SELECT m.role, m.content, m.created_at, COALESCE(a.sent_by, 'bot') AS sent_by
+    `SELECT m.id, m.role, m.content, m.created_at,
+            COALESCE(a.sent_by, 'bot') AS sent_by,
+            md.kind AS media_kind, md.label AS media_label
        FROM message m
        LEFT JOIN message_author a ON a.message_id = m.id
+       LEFT JOIN message_media  md ON md.message_id = m.id
       WHERE m.conversation_id = ?
       ORDER BY m.created_at DESC
       LIMIT ?`,
   )
     .bind(conversationId, limit)
-    .all<{ role: string; content: string; created_at: string; sent_by: string }>();
+    .all<{
+      id: string;
+      role: string;
+      content: string;
+      created_at: string;
+      sent_by: string;
+      media_kind: string | null;
+      media_label: string | null;
+    }>();
   return result.results
     .map((row) => ({
+      id: row.id,
       role: row.role as "user" | "assistant",
       content: row.content,
       sentBy: row.sent_by === "human" ? ("human" as const) : ("bot" as const),
       createdAt: row.created_at,
+      media:
+        row.media_kind === null
+          ? null
+          : { kind: row.media_kind, label: row.media_label ?? "" },
     }))
     .reverse();
 }

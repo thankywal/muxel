@@ -262,6 +262,28 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 7,
+    statements: [
+      // Photos, videos, stickers and files a customer sent.
+      //
+      // Only the Telegram file id is kept, never the bytes. Storing the bytes
+      // would mean R2, and R2 asks for a payment method, which this project
+      // promises is unnecessary. The id is enough: the business bot can turn it
+      // into a temporary link on demand, and the console asks Telegram to fetch
+      // that link when an operator wants to look.
+      //
+      // A file id belongs to the bot that received it, so the bot is recorded
+      // alongside it. The console cannot resolve one on its own.
+      `CREATE TABLE IF NOT EXISTS message_media (
+         message_id TEXT PRIMARY KEY REFERENCES message (id) ON DELETE CASCADE,
+         bot_id     TEXT NOT NULL,
+         kind       TEXT NOT NULL,
+         file_id    TEXT NOT NULL,
+         label      TEXT NOT NULL DEFAULT ''
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

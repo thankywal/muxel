@@ -43,11 +43,29 @@ export function stripSentinel(answer: string): string {
 export interface AlertInput {
   readonly businessName: string;
   readonly customerName: string;
+  /**
+   * The customer's Telegram username, without the at sign.
+   *
+   * A display name is whatever the person typed into their profile, so two
+   * customers can share one and neither can be contacted from it. The username
+   * is unique and tappable, which is what an operator needs when they want to
+   * reach someone outside the bot.
+   */
+  readonly customerUsername?: string;
   readonly question: string;
   /** Identifies the conversation so the alert can open it directly. */
   readonly customerId: string | null;
   /** Set when a customer writes while a person is already answering them. */
   readonly duringTakeover?: boolean;
+}
+
+/** Renders a customer as a name and, when they have one, a tappable handle. */
+export function describeCustomer(name: string, username: string | undefined): string {
+  const handle = (username ?? "").replace(/^@/, "").trim();
+  if (handle.length === 0) {
+    return escapeHtml(name);
+  }
+  return `${escapeHtml(name)} (@${escapeHtml(handle)})`;
 }
 
 /**
@@ -72,7 +90,7 @@ export async function alertOwner(env: Env, input: AlertInput): Promise<boolean> 
 
   const text = [
     `<b>${heading}</b>`,
-    `${escapeHtml(input.businessName)} · ${escapeHtml(input.customerName)}`,
+    `${escapeHtml(input.businessName)} · ${describeCustomer(input.customerName, input.customerUsername)}`,
     "",
     escapeHtml(input.question.slice(0, 500)),
   ].join("\n");

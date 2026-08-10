@@ -332,6 +332,20 @@ anything the customer writes, so two voices never reply to the same person. A
 message you send is recorded as part of the conversation, which means the
 assistant has read it if you hand the chat back.
 
+The alert and the transcript both name the customer with their Telegram
+username, `Ma Ma (@mama_shop)`, because a display name is whatever someone
+typed into their profile and cannot be used to reach them.
+
+Every line carries its date as well as its time. A transcript spans days, and
+a time on its own reads as today.
+
+**Photos, videos, stickers, voice notes and files are kept too.** A photo with
+no caption is not something the assistant should guess at, so it goes straight
+to you rather than being answered. Attachments appear as buttons under the
+transcript; tapping one sends it into your chat. Nothing is stored: the console
+asks the business bot for a temporary link at the moment you look, so
+attachments older than a few months may be gone from Telegram's side.
+
 **Waiting for a person** on the console home lists every chat that needs you,
 across all your businesses.
 
