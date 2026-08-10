@@ -65,7 +65,9 @@ Then the two secrets:
 Everything else provisions itself, including the Telegram webhook: the deploy
 step makes the first request to the Worker so it can learn its own address.
 
-When the build finishes, open your console bot and send `/start`.
+When the build finishes, open your console bot and send `/start`. That bot is
+your private control panel. Add a business there and it will ask for the bot
+your customers write to.
 
 If the bot stays silent, open the Worker address Cloudflare showed you. That
 page runs setup again and says what is wrong.
@@ -163,6 +165,23 @@ a US cent per thousand answers, and roughly 330 replies a day fall inside the
 free daily allowance. Embeddings always run on `bge-m3`, which is multilingual
 and effectively free.
 
+## Two kinds of bot
+
+The distinction matters, and the console is built around it.
+
+| | Console bot | Business bot |
+| --- | --- | --- |
+| Who writes to it | you, alone | your customers |
+| What it reaches | every business | exactly one |
+| Where it comes from | `ADMIN_BOT_TOKEN` at deploy | created per business in the console |
+| Belongs to a business | never | yes, the one it serves |
+
+A business exists because a bot serves it, so the two are created together.
+Add business asks for a bot token rather than a name, and the bot's own name
+becomes the business name. There is no step where a business sits waiting for a
+bot, and no way to attach the console bot to a business: the console refuses its
+own token.
+
 ## The console
 
 Everything after setup happens in the console bot, in buttons.
@@ -173,7 +192,7 @@ Everything after setup happens in the console bot, in buttons.
 | Products | Items typed in one at a time or uploaded in bulk |
 | Customers | Everyone who has written, with stages, notes and memory |
 | Instructions | Your own rules for the assistant, with an undo |
-| Bots | Connect a customer bot, or replace the console bot |
+| Bots | The business bots customers write to, and adding another |
 
 Data accepts PDF, Word, Excel, CSV, TXT, Markdown, JSON and JSONL. Text formats
 are read directly. Spreadsheets and documents go through the platform

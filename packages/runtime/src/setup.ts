@@ -6,27 +6,23 @@
  * Worker unable to discover its own public address, because that is assigned
  * after the code is uploaded.
  *
- * Visiting this route supplies the missing piece. The request carries the
- * public origin, so setup can register the Telegram webhook against it, record
- * it for later repair, apply the schema and install the configured owner.
+ * A request supplies the missing piece: it carries the public origin, so setup
+ * can register the Telegram webhook against it, record it for later repair,
+ * apply the schema and install the configured owner.
  *
- * Every step is idempotent. Visiting twice re-points the webhook and changes
- * nothing else, which is also the repair path when a deployment moves to a
- * custom domain.
+ * No business is created here. A business exists because a bot serves it, and
+ * that pairing is made in the console. The bot connected at this point is the
+ * console itself, which belongs to the deployment and to no business.
+ *
+ * Every step is idempotent. Running it twice re-registers the webhook and
+ * changes nothing else, which is also the repair path when a deployment moves
+ * to a custom domain.
  */
 
 import { generateId, generateShortId } from "@muxel/core";
 
 import { open, seal, sha256Hex } from "./crypto.js";
-import {
-  addOperator,
-  createBot,
-  createBusiness,
-  firstBusiness,
-  getAdminBot,
-  getBotByWebhookPath,
-  replaceBotIdentity,
-} from "./db/queries.js";
+import { addOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
 import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
 import { peekMasterKey, resolveMasterKey } from "./secrets.js";
@@ -40,8 +36,7 @@ export const ORIGIN_KEY = "system:origin";
  * The Vectorize binding in wrangler.jsonc can only name an index. Its dimension
  * count and distance metric are chosen when the index is created, which for a
  * one click deploy means a human typing them into a form. Getting either wrong
- * produces an index that accepts nothing, and the failure would otherwise only
- * appear when a customer asks a question. Setup checks it instead.
+ * produces an index that accepts nothing.
  */
 const EMBEDDING_DIMENSIONS = 1024;
 
@@ -70,49 +65,38 @@ export interface SetupOutcome {
   readonly schemaVersion: number;
   readonly botUsername: string | null;
   readonly owner: number | null;
-  readonly businessName: string | null;
   readonly missing: readonly string[];
   readonly note: string;
+}
+
+function notReady(note: string, missing: readonly string[] = []): SetupOutcome {
+  return {
+    ok: false,
+    schemaVersion: 0,
+    botUsername: null,
+    owner: null,
+    missing,
+    note,
+  };
 }
 
 export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> {
   const missing = missingConfiguration(env);
   if (missing.length > 0) {
-    return {
-      ok: false,
-      schemaVersion: 0,
-      botUsername: null,
-      owner: null,
-      businessName: null,
-      missing,
-      note: "Add the missing settings as Worker secrets, then reload this page.",
-    };
+    return notReady("Add the missing settings as Worker secrets, then reload this page.", missing);
   }
 
   const owner = ownerTelegramId(env);
   if (owner === null) {
-    return {
-      ok: false,
-      schemaVersion: 0,
-      botUsername: null,
-      owner: null,
-      businessName: null,
-      missing: ["OWNER_TELEGRAM_ID"],
-      note: "OWNER_TELEGRAM_ID must be the numeric Telegram account id, digits only.",
-    };
+    return notReady(
+      "OWNER_TELEGRAM_ID must be the numeric Telegram account id, digits only.",
+      ["OWNER_TELEGRAM_ID"],
+    );
   }
 
   const indexProblem = await checkIndex(env);
   if (indexProblem !== null) {
-    return {
-      ok: false,
-      schemaVersion: 0,
-      botUsername: null,
-      owner: null,
-      businessName: null,
-      missing: [],
-      note: indexProblem,
-    };
+    return notReady(indexProblem);
   }
 
   const schemaVersion = await ensureSchema(env);
@@ -127,43 +111,19 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
 
   await addOperator(env, { telegramUserId: owner, role: "owner" });
 
-  const business =
-    (await firstBusiness(env)) ??
-    (await createBusiness(env, {
-      name: env.BUSINESS_NAME?.trim() || "My Business",
-      locale: env.BUSINESS_LOCALE?.trim() || "en",
-      model: env.DEFAULT_MODEL,
-    }));
+  const existing = await getConsoleBot(env);
 
   // A fresh path and secret on every run means an address leaked from an old
   // deployment stops working as soon as setup is repeated.
   const webhookPath = generateId(24);
   const webhookSecret = generateShortId() + generateShortId();
-  const webhookSecretHash = await sha256Hex(webhookSecret);
 
-  const existing = await getAdminBot(env);
-  const sealed = await seal(masterKey, token);
-  if (existing === null) {
-    await createBot(env, {
-      businessId: business.id,
-      role: "admin",
-      username,
-      webhookPath,
-      tokenCiphertext: sealed,
-      webhookSecretHash,
-    });
-  } else {
-    // Credentials and username are rewritten too, so changing ADMIN_BOT_TOKEN
-    // and running setup again actually moves the console to the new bot rather
-    // than leaving the row describing the old one.
-    await replaceBotIdentity(env, {
-      botId: existing.id,
-      username,
-      tokenCiphertext: sealed,
-      webhookPath,
-      webhookSecretHash,
-    });
-  }
+  await putConsoleBot(env, {
+    username,
+    webhookPath,
+    tokenCiphertext: await seal(masterKey, token),
+    webhookSecretHash: await sha256Hex(webhookSecret),
+  });
 
   await client.setWebhook({
     url: `${origin}/tg/${webhookPath}`,
@@ -177,12 +137,9 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
     schemaVersion,
     botUsername: username,
     owner,
-    businessName: business.name,
     missing: [],
     note:
-      existing === null
-        ? "Setup complete."
-        : "Webhook re-registered against the current address.",
+      existing === null ? "Setup complete." : "Webhook re-registered against the current address.",
   };
 }
 
@@ -201,18 +158,13 @@ export async function repairWebhook(env: Env): Promise<"skipped" | "healthy" | "
     return "skipped";
   }
 
-  const bot = await getAdminBot(env);
-  if (bot === null) {
-    return "skipped";
-  }
-
+  const bot = await getConsoleBot(env);
   const masterKey = await peekMasterKey(env);
-  const sealed = await getBotByWebhookPath(env, bot.webhookPath);
-  if (masterKey === null || sealed === null) {
+  if (bot === null || masterKey === null) {
     return "skipped";
   }
 
-  const client = new TelegramClient(await open(masterKey, sealed.tokenCiphertext));
+  const client = new TelegramClient(await open(masterKey, bot.tokenCiphertext));
   const expected = `${origin}/tg/${bot.webhookPath}`;
   const info = await client.getWebhookInfo();
   if (info.url === expected) {
@@ -236,14 +188,14 @@ function escapeHtml(value: string): string {
 export function renderSetupPage(outcome: SetupOutcome): string {
   const body = outcome.ok
     ? `
-      <p class="ok">Your assistant is connected.</p>
+      <p class="ok">Your console is connected.</p>
       <dl>
         <dt>Console bot</dt><dd>@${escapeHtml(outcome.botUsername ?? "")}</dd>
-        <dt>Business</dt><dd>${escapeHtml(outcome.businessName ?? "")}</dd>
         <dt>Owner</dt><dd>Telegram id ${outcome.owner}</dd>
       </dl>
       <p>Open <strong>@${escapeHtml(outcome.botUsername ?? "")}</strong> in Telegram and send
-      <code>/start</code>. Everything after that is buttons.</p>`
+      <code>/start</code>. This bot is your private control panel: add a business
+      there and it will ask for the bot your customers will write to.</p>`
     : `
       <p class="bad">Not ready yet.</p>
       <p>${escapeHtml(outcome.note)}</p>

@@ -36,7 +36,7 @@ import {
   findOperator,
   forgetCustomer,
   forgetFacts,
-  getAdminBot,
+  getConsoleBot,
   getBusiness,
   getCustomer,
   getOperatorLocale,
@@ -48,7 +48,7 @@ import {
   listFacts,
   listProducts,
   previousPrompt,
-  replaceBotIdentity,
+  putConsoleBot,
   setBusinessPrompt,
   setCustomerNote,
   setCustomerStage,
@@ -119,8 +119,8 @@ const MAX_PROMPT_CHARS = 8000;
 const LIST_LIMIT = 12;
 
 type PendingKind =
-  | "business_name"
-  | "bot_token"
+  | "new_business"
+  | "console_bot"
   | "instructions"
   | "customer_note"
   | "product_line"
@@ -219,6 +219,7 @@ function homeScreen(locale: Locale): Screen {
     rows: [
       row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
       row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+      row({ text: t(locale, "btnConsoleBot"), action: "console" }),
       row(
         { text: t(locale, "btnLanguage"), action: "lang" },
         { text: t(locale, "btnHelp"), action: "help" },
@@ -512,7 +513,6 @@ function botsScreen(
     ),
     rows: [
       row({ text: t(locale, "btnConnectBot"), action: "botadd", args: [business.id] }),
-      row({ text: t(locale, "btnReplaceConsole"), action: "botrep", args: [business.id] }),
       backTo(locale, "biz", [business.id]),
     ],
   };
@@ -650,10 +650,38 @@ async function screenFor(
       return businessListScreen(locale, await listBusinesses(env, userId));
 
     case "bizadd":
-      await setPending(env, userId, { kind: "business_name" });
+      await setPending(env, userId, { kind: "new_business" });
       return {
         text: `<b>${t(locale, "bizAddTitle")}</b>\n\n${t(locale, "bizAddBody")}`,
         rows: [row({ text: t(locale, "cancel"), action: "home" })],
+      };
+
+    case "console": {
+      const bot = await getConsoleBot(env);
+      return {
+        text: [
+          `<b>${t(locale, "consoleBotTitle")}</b>`,
+          "",
+          t(locale, "consoleBotBody", { username: bot?.username ?? "" }),
+        ].join("\n"),
+        rows: [
+          row({ text: t(locale, "btnReplaceConsole"), action: "conrep" }),
+          backTo(locale, "home"),
+        ],
+      };
+    }
+
+    case "conrep":
+      await setPending(env, userId, { kind: "console_bot", replace: true });
+      return {
+        text: [
+          `<b>${t(locale, "btnReplaceConsole")}</b>`,
+          "",
+          t(locale, "botAddBody"),
+          "",
+          t(locale, "botReplaceWarning"),
+        ].join("\n"),
+        rows: [row({ text: t(locale, "cancel"), action: "console" })],
       };
 
     case "biz":
@@ -901,26 +929,12 @@ async function screenFor(
       return botsScreen(locale, business, bots);
     }
 
-    case "botadd":
-    case "botrep": {
+    case "botadd": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      const replace = action === "botrep";
-      await setPending(env, userId, {
-        kind: "bot_token",
-        businessId,
-        role: replace ? "admin" : "reply",
-        replace,
-      });
+      await setPending(env, userId, { kind: "new_business", businessId });
       return {
-        text: [
-          `<b>${replace ? t(locale, "btnReplaceConsole") : t(locale, "btnConnectBot")}</b>`,
-          "",
-          t(locale, "botAddBody"),
-          replace ? `\n${t(locale, "botReplaceWarning")}` : "",
-        ]
-          .filter((line) => line !== "")
-          .join("\n"),
+        text: [`<b>${t(locale, "btnConnectBot")}</b>`, "", t(locale, "botAddBody")].join("\n"),
         rows: [row({ text: t(locale, "cancel"), action: "bots", args: [businessId] })],
       };
     }
@@ -1116,19 +1130,6 @@ async function handlePendingInput(
     return;
   }
 
-  if (pending.kind === "business_name") {
-    if (text.length === 0 || text.length > 80) {
-      await client.sendMessage({ chatId, text: t(locale, "bizAddInvalid") });
-      return;
-    }
-    const business = await createBusiness(env, {
-      name: text,
-      locale: env.BUSINESS_LOCALE?.trim() || "en",
-      model: env.DEFAULT_MODEL,
-    });
-    await render(env, client, { chatId }, await businessDetail(env, locale, userId, business.id));
-    return;
-  }
 
   if (pending.kind === "customer_note") {
     const customerId = pending.customerId;
@@ -1214,67 +1215,83 @@ async function handlePendingInput(
     return;
   }
 
-  if (pending.kind === "bot_token") {
-    const businessId = pending.businessId;
-    if (businessId === undefined) {
-      return;
-    }
-    await requireAccess(env, userId, businessId);
-
+  if (pending.kind === "new_business" || pending.kind === "console_bot") {
     // Remove the credential from the transcript before doing anything slow.
     await client.deleteMessage({ chatId, messageId: input.message.message_id });
 
     const incoming = new TelegramClient(text);
-    let username: string;
+    let me: { username?: string; first_name?: string };
     try {
-      username = (await incoming.getMe()).username ?? "unknown";
+      me = await incoming.getMe();
     } catch {
       await client.sendMessage({ chatId, text: t(locale, "botRejected") });
       return;
     }
+    const username = me.username ?? "unknown";
 
     const webhookPath = generateId(24);
     const webhookSecret = generateShortId() + generateShortId();
     const sealed = await seal(await resolveMasterKey(env), text);
     const webhookSecretHash = await sha256Hex(webhookSecret);
 
-    if (pending.replace === true) {
-      const existing = await getAdminBot(env);
-      if (existing === null) {
-        return;
-      }
-      // Stop the old bot first so the two never answer the same operator.
+    if (pending.kind === "console_bot") {
+      // Stop the old console first so the two never answer the same operator.
       await client.deleteWebhook().catch(() => undefined);
-      await replaceBotIdentity(env, {
-        botId: existing.id,
-        username,
-        tokenCiphertext: sealed,
-        webhookPath,
-        webhookSecretHash,
+      await putConsoleBot(env, { username, webhookPath, tokenCiphertext: sealed, webhookSecretHash });
+      await incoming.setWebhook({
+        url: `${input.origin}/tg/${webhookPath}`,
+        secretToken: webhookSecret,
       });
-    } else {
-      await createBot(env, {
-        businessId,
-        role: pending.role ?? "reply",
-        username,
-        webhookPath,
-        tokenCiphertext: sealed,
-        webhookSecretHash,
-      });
-    }
-
-    await incoming.setWebhook({
-      url: `${input.origin}/tg/${webhookPath}`,
-      secretToken: webhookSecret,
-    });
-
-    if (pending.replace === true) {
       // The old bot is already detached, so this goes out through the new one.
       await incoming.sendMessage({ chatId, text: t(locale, "botMoved", { username }) });
       return;
     }
 
-    await render(env, client, { chatId }, await screenFor(env, locale, userId, "bots", [businessId]));
+    // Refusing the console's own token is what keeps the two roles apart.
+    // Connecting it as a customer bot would hand the control panel to whoever
+    // finds it.
+    const consoleBot = await getConsoleBot(env);
+    if (consoleBot !== null && consoleBot.username === username) {
+      await client.sendMessage({ chatId, text: t(locale, "bizAddSameAsConsole") });
+      return;
+    }
+
+    // A business exists because a bot serves it, so the bot's own name is the
+    // business name. Asking for it separately invites two names for one thing.
+    let businessId = pending.businessId;
+    if (businessId === undefined) {
+      const business = await createBusiness(env, {
+        name: (me.first_name ?? username).slice(0, 80),
+        locale: env.BUSINESS_LOCALE?.trim() || "en",
+        model: env.DEFAULT_MODEL,
+      });
+      businessId = business.id;
+    } else {
+      await requireAccess(env, userId, businessId);
+    }
+
+    await createBot(env, {
+      businessId,
+      role: "reply",
+      username,
+      webhookPath,
+      tokenCiphertext: sealed,
+      webhookSecretHash,
+    });
+    await incoming.setWebhook({
+      url: `${input.origin}/tg/${webhookPath}`,
+      secretToken: webhookSecret,
+    });
+
+    await client.sendMessage({
+      chatId,
+      text: t(locale, "bizAddedFromBot", {
+        name: escapeHtml(me.first_name ?? username),
+        username,
+      }),
+    });
+    await render(env, client, { chatId }, await businessDetail(env, locale, userId, businessId));
+    return;
   }
 }
 

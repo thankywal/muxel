@@ -73,9 +73,8 @@
 
     "AI_GATEWAY_ID": "muxel",
 
-    // Name and reply language of the business created during setup. Both can
-    // be changed later from the console.
-    "BUSINESS_NAME": "My Business",
+    // Default reply language for a business when it is created. The console
+    // can change it per business afterwards.
     "BUSINESS_LOCALE": "en"
   }
 }

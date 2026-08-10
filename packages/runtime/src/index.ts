@@ -11,7 +11,7 @@ import { isMuxelError, timingSafeEqual } from "@muxel/core";
 
 import { open, sha256Hex } from "./crypto.js";
 import { ensureSchema } from "./db/migrate.js";
-import { getBusiness, getBotByWebhookPath } from "./db/queries.js";
+import { getBusiness, getBotByWebhookPath, getConsoleBot } from "./db/queries.js";
 import { missingConfiguration, type Env } from "./env.js";
 import { peekMasterKey, requireMasterKey } from "./secrets.js";
 import { renderSetupPage, repairWebhook, runSetup } from "./setup.js";
@@ -66,7 +66,6 @@ export default {
             schemaVersion: 0,
             botUsername: null,
             owner: null,
-            businessName: null,
             missing: [],
             note:
               error instanceof Error
@@ -120,7 +119,18 @@ async function handleWebhook(
   // exist even if a webhook lands before anyone has opened the setup page.
   await ensureSchema(env);
 
-  const bot = await getBotByWebhookPath(env, webhookPath);
+  // The console bot and the customer bots are separate things. The console
+  // belongs to the deployment and reaches every business; a customer bot serves
+  // exactly one. They are looked up separately so a customer can never arrive
+  // on the console path.
+  const console_ = await getConsoleBot(env);
+  const bot =
+    console_ !== null && console_.webhookPath === webhookPath
+      ? ({ kind: "console" as const, ...console_ })
+      : await getBotByWebhookPath(env, webhookPath).then((found) =>
+          found === null ? null : ({ kind: "reply" as const, ...found }),
+        );
+
   if (bot === null) {
     // Same response as a bad secret so that probing cannot enumerate paths.
     return new Response("not found", { status: 404 });
@@ -145,8 +155,7 @@ async function handleWebhook(
   ctx.waitUntil(
     dispatch(env, bot, update, new URL(request.url).origin).catch((error: unknown) => {
       console.error("update handling failed", {
-        botId: bot.id,
-        businessId: bot.businessId,
+        kind: bot.kind,
         code: isMuxelError(error) ? error.code : "unknown",
         error: error instanceof Error ? error.message : String(error),
       });
@@ -156,17 +165,20 @@ async function handleWebhook(
   return json({ ok: true });
 }
 
+type ResolvedBot =
+  | ({ kind: "console" } & NonNullable<Awaited<ReturnType<typeof getConsoleBot>>>)
+  | ({ kind: "reply" } & NonNullable<Awaited<ReturnType<typeof getBotByWebhookPath>>>);
+
 async function dispatch(
   env: Env,
-  bot: NonNullable<Awaited<ReturnType<typeof getBotByWebhookPath>>>,
+  bot: ResolvedBot,
   update: TelegramUpdate,
   origin: string,
 ): Promise<void> {
   const masterKey = await requireMasterKey(env);
-  const token = await open(masterKey, bot.tokenCiphertext);
-  const client = new TelegramClient(token);
+  const client = new TelegramClient(await open(masterKey, bot.tokenCiphertext));
 
-  if (bot.role === "admin") {
+  if (bot.kind === "console") {
     await handleAdminUpdate(env, client, update, origin);
     return;
   }

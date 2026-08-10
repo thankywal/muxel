@@ -18,9 +18,7 @@ export interface Env {
   readonly EMBEDDING_MODEL: string;
   readonly DEFAULT_MODEL: string;
   readonly AI_GATEWAY_ID: string;
-  /** Name given to the business created during setup. */
-  readonly BUSINESS_NAME?: string;
-  /** Reply language for that business, as a language tag such as "my". */
+  /** Default reply language for a new business, as a language tag such as "my". */
   readonly BUSINESS_LOCALE?: string;
 
   // Required at setup.

@@ -258,12 +258,57 @@ export async function getBotByWebhookPath(
   };
 }
 
-/** Returns the console bot for this deployment, if one has been connected. */
-export async function getAdminBot(env: Env): Promise<Bot | null> {
-  const row = await env.DB.prepare(
-    "SELECT * FROM bot WHERE role = 'admin' ORDER BY created_at LIMIT 1",
-  ).first<BotRow>();
-  return row === null ? null : toBot(row);
+export interface ConsoleBot {
+  readonly username: string;
+  readonly webhookPath: string;
+  readonly tokenCiphertext: string;
+  readonly webhookSecretHash: string;
+}
+
+/**
+ * Returns the bot that serves the console, if one has been connected.
+ *
+ * The console bot belongs to the deployment rather than to a business. It is
+ * never listed among a business's bots and customers never reach it.
+ */
+export async function getConsoleBot(env: Env): Promise<ConsoleBot | null> {
+  const row = await env.DB.prepare("SELECT * FROM console_bot WHERE id = 1").first<{
+    username: string;
+    webhook_path: string;
+    token_ciphertext: string;
+    webhook_secret_hash: string;
+  }>();
+  if (row === null) {
+    return null;
+  }
+  return {
+    username: row.username,
+    webhookPath: row.webhook_path,
+    tokenCiphertext: row.token_ciphertext,
+    webhookSecretHash: row.webhook_secret_hash,
+  };
+}
+
+/** Creates or replaces the console bot. */
+export async function putConsoleBot(env: Env, input: ConsoleBot): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO console_bot
+       (id, username, webhook_path, token_ciphertext, webhook_secret_hash, created_at)
+     VALUES (1, ?, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET
+       username            = excluded.username,
+       webhook_path        = excluded.webhook_path,
+       token_ciphertext    = excluded.token_ciphertext,
+       webhook_secret_hash = excluded.webhook_secret_hash`,
+  )
+    .bind(
+      input.username,
+      input.webhookPath,
+      input.tokenCiphertext,
+      input.webhookSecretHash,
+      now(),
+    )
+    .run();
 }
 
 /** Returns the oldest business, used as the default target during setup. */

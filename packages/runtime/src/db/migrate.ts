@@ -181,6 +181,30 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS product_business_idx ON product (business_id, name)`,
     ],
   },
+  {
+    version: 4,
+    statements: [
+      // The console bot belongs to the deployment, not to a business. Holding it
+      // in the bot table forced it to reference one, which then appeared in that
+      // business's bot list as though customers could reach it. There is exactly
+      // one, so the row is pinned to id 1.
+      `CREATE TABLE IF NOT EXISTS console_bot (
+         id                  INTEGER PRIMARY KEY CHECK (id = 1),
+         username            TEXT NOT NULL,
+         webhook_path        TEXT NOT NULL UNIQUE,
+         token_ciphertext    TEXT NOT NULL,
+         webhook_secret_hash TEXT NOT NULL,
+         created_at          TEXT NOT NULL
+       )`,
+      // Carry an existing console bot across so a running deployment keeps
+      // working through the upgrade without re-registering anything.
+      `INSERT OR IGNORE INTO console_bot
+         (id, username, webhook_path, token_ciphertext, webhook_secret_hash, created_at)
+       SELECT 1, username, webhook_path, token_ciphertext, webhook_secret_hash, created_at
+         FROM bot WHERE role = 'admin' ORDER BY created_at LIMIT 1`,
+      `DELETE FROM bot WHERE role = 'admin'`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */
