@@ -33,6 +33,10 @@ const MAX_INPUT_CHARS = 2000;
  * runtime cancels that work at thirty seconds. A generation that ran past the
  * limit used to take the apology down with it, so the customer heard nothing at
  * all. Giving up first means they always hear something.
+ *
+ * The clock starts when the update arrives, not when inference starts, so a
+ * slow database read or retrieval cannot quietly spend the margin that the
+ * apology needs.
  */
 const ANSWER_DEADLINE_MS = 20_000;
 
@@ -44,12 +48,32 @@ class DeadlineExceeded extends Error {
 }
 
 function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    work,
-    new Promise<never>((_resolve, reject) =>
-      setTimeout(() => reject(new DeadlineExceeded(Math.round(ms / 1000))), ms),
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new DeadlineExceeded(Math.round(ms / 1000))), ms);
+  });
+  return Promise.race([work, expiry]).finally(() => clearTimeout(timer ?? null));
+}
+
+/**
+ * Keeps the typing indicator alive while the answer is produced.
+ *
+ * Telegram shows the indicator for about five seconds per call and an answer
+ * may take twenty. A single call at the start leaves the chat looking dead for
+ * most of the wait, so the indicator is refreshed until the caller stops it.
+ * The loop is capped so a forgotten stop cannot outlive the invocation.
+ */
+function keepTyping(client: TelegramClient, chatId: number): () => void {
+  let stopped = false;
+  void (async () => {
+    for (let round = 0; round < 5 && !stopped; round += 1) {
+      await client.sendChatAction(chatId).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 4500));
+    }
+  })();
+  return () => {
+    stopped = true;
+  };
 }
 
 const NO_ANSWER_NOTE =
@@ -107,6 +131,8 @@ function buildSystemPrompt(
   return sections.join("\n");
 }
 
+const APOLOGY = "Sorry, I could not answer that just now. Please try again shortly.";
+
 export async function handleReplyUpdate(
   env: Env,
   client: TelegramClient,
@@ -114,6 +140,7 @@ export async function handleReplyUpdate(
   business: Business,
   update: TelegramUpdate,
 ): Promise<void> {
+  const startedAt = Date.now();
   const message = update.message;
   if (message === undefined) {
     return;
@@ -137,54 +164,58 @@ export async function handleReplyUpdate(
 
   const question = text.slice(0, MAX_INPUT_CHARS);
 
-  const customer =
-    sender === undefined
-      ? null
-      : await touchCustomer(env, {
-          businessId: business.id,
-          telegramUserId: sender.id,
-          chatId,
-          displayName: sender.first_name ?? "",
-          username: sender.username ?? "",
-        });
-
-  if (customer !== null) {
-    const blocked = await isBlocked(env, customer.id);
-    if (blocked) {
-      return;
-    }
-  }
-
-  const conversationId = await upsertConversation(env, {
-    businessId: business.id,
-    botId: bot.id,
-    chatId,
-  });
-
-  // Answers take several seconds. Without this the chat looks dead.
-  await client.sendChatAction(chatId).catch(() => undefined);
-
+  let customer: Awaited<ReturnType<typeof touchCustomer>> | null = null;
+  let conversationId = "";
   let history: ChatTurn[] = [];
   let facts: CustomerFact[] = [];
   let answer: string;
   let inputTokens = 0;
   let outputTokens = 0;
+  let stopTyping: (() => void) | undefined;
 
+  // Everything between here and the send sits inside one try block: a database
+  // hiccup while recording the customer must end in the same apology as a
+  // failed generation, never in silence.
   try {
-    [history, facts] = await Promise.all([
-      recentTurns(env, conversationId),
-      customer === null ? Promise.resolve([]) : recall(env, customer.id),
-    ]);
-    const chunks = await retrieve(env, business.id, question);
+    customer =
+      sender === undefined
+        ? null
+        : await touchCustomer(env, {
+            businessId: business.id,
+            telegramUserId: sender.id,
+            chatId,
+            displayName: sender.first_name ?? "",
+            username: sender.username ?? "",
+          });
+
+    if (customer !== null && (await isBlocked(env, customer.id))) {
+      return;
+    }
+
+    conversationId = await upsertConversation(env, {
+      businessId: business.id,
+      botId: bot.id,
+      chatId,
+    });
+
+    stopTyping = keepTyping(client, chatId);
+
     const result = await withDeadline(
-      generate(env, {
-        model: business.model,
-        system: buildSystemPrompt(business, formatContext(chunks), facts),
-        history,
-        userMessage: question,
-        businessId: business.id,
-      }),
-      ANSWER_DEADLINE_MS,
+      (async () => {
+        [history, facts] = await Promise.all([
+          recentTurns(env, conversationId),
+          customer === null ? Promise.resolve([]) : recall(env, customer.id),
+        ]);
+        const chunks = await retrieve(env, business.id, question);
+        return generate(env, {
+          model: business.model,
+          system: buildSystemPrompt(business, formatContext(chunks), facts),
+          history,
+          userMessage: question,
+          businessId: business.id,
+        });
+      })(),
+      Math.max(ANSWER_DEADLINE_MS - (Date.now() - startedAt), 1),
     );
     answer = result.text;
     inputTokens = result.inputTokens ?? 0;
@@ -204,14 +235,31 @@ export async function handleReplyUpdate(
       kind: "reply_failed",
       detail: `${question.slice(0, 80)} -> ${detail}`,
     }).catch(() => undefined);
-    await client.sendMessage({
-      chatId,
-      text: "Sorry, I could not answer that just now. Please try again shortly.",
-    });
+    await client.sendMessage({ chatId, text: APOLOGY });
     return;
+  } finally {
+    stopTyping?.();
   }
 
-  await client.sendMessage({ chatId, text: answer });
+  try {
+    await client.sendMessage({ chatId, text: answer });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("reply delivery failed", {
+      businessId: business.id,
+      botId: bot.id,
+      error: detail,
+    });
+    await recordEvent(env, {
+      businessId: business.id,
+      kind: "reply_failed",
+      detail: `${question.slice(0, 80)} -> delivery: ${detail}`,
+    }).catch(() => undefined);
+    // The answer may have been rejected rather than undeliverable, so the
+    // short plain apology is still worth one attempt.
+    await client.sendMessage({ chatId, text: APOLOGY }).catch(() => undefined);
+    return;
+  }
 
   await Promise.all([
     appendMessage(env, {
@@ -227,7 +275,14 @@ export async function handleReplyUpdate(
       content: answer,
     }),
     recordUsage(env, { businessId: business.id, inputTokens, outputTokens }),
-  ]);
+  ]).catch((error: unknown) => {
+    // The customer already has their answer. Bookkeeping failure is the
+    // operator's problem and must not read as a failed update.
+    console.error("post reply bookkeeping failed", {
+      businessId: business.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 
   // Distillation happens after the reply is on its way, and only every few
   // messages. A failure here is invisible to the customer by design.

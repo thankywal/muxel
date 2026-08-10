@@ -6,9 +6,63 @@
  * request shapes visible at the call site.
  */
 
-import { MuxelError } from "@muxel/core";
+import { isMuxelError, MuxelError } from "@muxel/core";
 
 const API_ROOT = "https://api.telegram.org";
+
+/** Telegram rejects any message body longer than this many characters. */
+const MESSAGE_LIMIT = 4096;
+
+/** Longest rate limit wait honoured. Anything longer fails instead of stalling. */
+const MAX_RETRY_AFTER_SECONDS = 5;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Splits a long message into pieces Telegram will accept.
+ *
+ * Cuts fall on a line break or space where one exists in the second half of the
+ * window, so a sentence is not severed mid word unless the text has no better
+ * boundary to offer.
+ */
+export function splitMessage(text: string, limit: number = MESSAGE_LIMIT): string[] {
+  if (text.length <= limit) {
+    return [text];
+  }
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    const boundary = Math.max(window.lastIndexOf("\n"), window.lastIndexOf(" "));
+    const cut = boundary > limit / 2 ? boundary : limit;
+    const piece = rest.slice(0, cut).trimEnd();
+    if (piece.length > 0) {
+      parts.push(piece);
+    }
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest.length > 0) {
+    parts.push(rest);
+  }
+  return parts;
+}
+
+/**
+ * Recognises Telegram refusing a message because its HTML did not parse.
+ *
+ * A model writes for a person, not for a parser, and a bare `<` in an answer is
+ * enough to make Telegram reject the whole message. That must downgrade the
+ * formatting, never swallow the reply.
+ */
+function isEntityParseFailure(error: unknown): boolean {
+  return (
+    isMuxelError(error) &&
+    typeof error.details.description === "string" &&
+    error.details.description.includes("can't parse entities")
+  );
+}
 
 export interface InlineKeyboardButton {
   readonly text: string;
@@ -65,6 +119,7 @@ interface TelegramResponse<T> {
   readonly result?: T;
   readonly description?: string;
   readonly error_code?: number;
+  readonly parameters?: { readonly retry_after?: number };
 }
 
 export class TelegramClient {
@@ -74,13 +129,35 @@ export class TelegramClient {
     this.#token = token;
   }
 
-  async #call<T>(method: string, body: Record<string, unknown>): Promise<T> {
-    const response = await fetch(`${API_ROOT}/bot${this.#token}/${method}`, {
+  #post(method: string, body: Record<string, unknown>): Promise<Response> {
+    return fetch(`${API_ROOT}/bot${this.#token}/${method}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const payload = (await response.json()) as TelegramResponse<T>;
+  }
+
+  async #call<T>(method: string, body: Record<string, unknown>): Promise<T> {
+    let response: Response;
+    try {
+      response = await this.#post(method, body);
+    } catch {
+      // One transient network failure gets a second chance. To the person
+      // waiting in the chat, a reply lost to a blip and a broken bot look
+      // identical.
+      response = await this.#post(method, body);
+    }
+    let payload = (await response.json()) as TelegramResponse<T>;
+
+    if (!payload.ok && payload.error_code === 429) {
+      const seconds = payload.parameters?.retry_after ?? 1;
+      if (seconds <= MAX_RETRY_AFTER_SECONDS) {
+        await sleep(seconds * 1000);
+        response = await this.#post(method, body);
+        payload = (await response.json()) as TelegramResponse<T>;
+      }
+    }
+
     if (!payload.ok || payload.result === undefined) {
       throw new MuxelError("upstream_failure", `Telegram ${method} failed`, {
         method,
@@ -92,18 +169,51 @@ export class TelegramClient {
     return payload.result;
   }
 
-  sendMessage(input: {
+  async sendMessage(input: {
     chatId: number;
     text: string;
     replyMarkup?: InlineKeyboardMarkup;
   }): Promise<TelegramMessage> {
-    return this.#call<TelegramMessage>("sendMessage", {
+    const parts = splitMessage(input.text);
+    let sent: TelegramMessage | undefined;
+    for (const [index, part] of parts.entries()) {
+      sent = await this.#sendPart({
+        chatId: input.chatId,
+        text: part,
+        // The keyboard belongs under the final piece, where the reader ends up.
+        replyMarkup: index === parts.length - 1 ? input.replyMarkup : undefined,
+      });
+    }
+    if (sent === undefined) {
+      throw new MuxelError("invalid_input", "cannot send an empty message", {
+        chatId: input.chatId,
+      });
+    }
+    return sent;
+  }
+
+  async #sendPart(input: {
+    chatId: number;
+    text: string;
+    replyMarkup?: InlineKeyboardMarkup;
+  }): Promise<TelegramMessage> {
+    const body: Record<string, unknown> = {
       chat_id: input.chatId,
       text: input.text,
-      parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
       ...(input.replyMarkup ? { reply_markup: input.replyMarkup } : {}),
-    });
+    };
+    try {
+      return await this.#call<TelegramMessage>("sendMessage", {
+        ...body,
+        parse_mode: "HTML",
+      });
+    } catch (error) {
+      if (isEntityParseFailure(error)) {
+        return this.#call<TelegramMessage>("sendMessage", body);
+      }
+      throw error;
+    }
   }
 
   editMessageText(input: {
