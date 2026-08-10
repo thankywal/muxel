@@ -34,6 +34,8 @@ import {
 } from "./repo.js";
 import { peekMasterKey, resolveMasterKey } from "./secrets.js";
 import { TelegramClient } from "./telegram/api.js";
+import { CONSOLE_COMMANDS } from "./telegram/admin.js";
+import { t } from "./telegram/i18n.js";
 
 export const ORIGIN_KEY = "system:origin";
 
@@ -140,6 +142,23 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
     url: `${origin}/tg/${webhookPath}`,
     secretToken: webhookSecret,
   });
+
+  // Published in English, because Telegram holds one list per bot and setup
+  // runs before anyone has chosen a console language. The screens the commands
+  // open are translated.
+  await client
+    .setMyCommands(
+      CONSOLE_COMMANDS.map((entry) => ({
+        command: entry.command,
+        description: t("en", entry.key),
+      })),
+    )
+    // A missing menu is a smaller problem than a setup that refuses to finish.
+    .catch((error: unknown) => {
+      console.warn("could not publish the command list", {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
 
   await env.STATE.put(ORIGIN_KEY, origin);
 

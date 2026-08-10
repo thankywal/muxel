@@ -339,6 +339,34 @@ A question the assistant could not answer does not mute it for the rest of the
 chat. It keeps answering everything else, because going silent after one hard
 question would be worse than the question.
 
+## Telling a bot how to behave
+
+Send `/instruction` in the console. It opens the business you were last working
+on, or asks which one if there is no obvious answer. The console publishes its
+commands to Telegram, so they appear under the menu button rather than having
+to be remembered.
+
+| Command        | Goes to                        |
+| -------------- | ------------------------------ |
+| `/start`       | the console home               |
+| `/instruction` | how the current bot behaves    |
+| `/business`    | your businesses                |
+| `/help`        | the guide, in your language    |
+
+Instructions can be written three ways, and they all end in the same place:
+
+- **Type them** into the chat, in any language.
+- **Upload a file**, `skill.md` or any plain text, when they are long enough to
+  be worth keeping somewhere.
+- **Choose a style** and edit it. Four starting points are offered: a friendly
+  shop, formal and precise, sales minded, and patient support. Picking one
+  writes it in as ordinary instructions, so it can be edited or undone like
+  anything typed by hand.
+
+The previous version is kept, so **Undo** puts it back if a change makes the
+assistant worse. That happens more often than it sounds, which is why the undo
+is there.
+
 ## Instructions and documents are different things
 
 The console keeps them apart because the assistant has to trust them

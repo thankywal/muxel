@@ -82,6 +82,7 @@ import {
   syncProductCatalogue,
 } from "../rag/ingest.js";
 import { resolveMasterKey } from "../secrets.js";
+import { findSkill, SKILLS } from "./skills.js";
 import { versionStatus } from "../updates.js";
 import { UPSTREAM_REPO } from "../version.js";
 import { isLocale, LOCALE_NAMES, LOCALES, t, type Locale, type MessageKey } from "./i18n.js";
@@ -478,6 +479,7 @@ function instructionsScreen(locale: Locale, business: Business, hasPrevious: boo
     ].join("\n"),
     rows: [
       row({ text: t(locale, "btnEditInstructions"), action: "instset", args: [business.id] }),
+      row({ text: t(locale, "btnChooseStyle"), action: "skills", args: [business.id] }),
       ...(hasPrevious
         ? [row({ text: t(locale, "btnUndoInstructions"), action: "instundo", args: [business.id] })]
         : []),
@@ -1154,6 +1156,39 @@ async function screenFor(
       return instructionsScreen(locale, business, previous !== null);
     }
 
+    case "skills": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      return {
+        text: [
+          `<b>${t(locale, "skillsTitle")}</b>`,
+          "",
+          t(locale, "skillsBody"),
+          "",
+          ...SKILLS.map((skill) => `<b>${skill.label[locale]}</b>\n${skill.summary[locale]}`),
+        ].join("\n"),
+        rows: [
+          ...SKILLS.map((skill) =>
+            row({ text: skill.label[locale], action: "skillset", args: [businessId, skill.id] }),
+          ),
+          backTo(locale, "inst", [businessId]),
+        ],
+      };
+    }
+
+    case "skillset": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const skill = findSkill(requireArg(args, 1));
+      if (skill === undefined) {
+        return screenFor(env, locale, userId, "skills", [businessId]);
+      }
+      // Written as ordinary instruction text, so the previous one lands in the
+      // undo history and the operator can edit this like anything they typed.
+      await setBusinessPrompt(env, businessId, skill.body);
+      return screenFor(env, locale, userId, "inst", [businessId]);
+    }
+
     case "instset": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
@@ -1273,6 +1308,63 @@ async function screenFor(
 
 // Entry point ---------------------------------------------------------------------
 
+/**
+ * Commands the console answers, in the order Telegram should list them.
+ *
+ * The console is button driven, so these are shortcuts rather than a second
+ * way to do everything. They exist because the two things an operator returns
+ * to most, the instructions and the businesses, were four taps deep.
+ */
+export const CONSOLE_COMMANDS: readonly { command: string; key: MessageKey }[] = [
+  { command: "start", key: "cmdStart" },
+  { command: "instruction", key: "cmdInstruction" },
+  { command: "business", key: "cmdBusiness" },
+  { command: "help", key: "cmdHelp" },
+];
+
+/**
+ * Extracts a command name from a message.
+ *
+ * Telegram appends the bot username when a command is sent in a group, and
+ * although the console is a private chat, a forwarded command carries it too.
+ */
+export function parseCommand(text: string): string | null {
+  const match = /^\/([a-z_]+)(?:@\S+)?\b/i.exec(text.trim());
+  return match === null ? null : (match[1] as string).toLowerCase();
+}
+
+/**
+ * Maps a command to a screen.
+ *
+ * `/instruction` goes straight to the open business when there is one, because
+ * an operator who has been working on a shop means that shop. With none open it
+ * falls back to the picker rather than guessing.
+ */
+async function routeCommand(
+  env: Env,
+  userId: number,
+  command: string,
+): Promise<[string, string[]]> {
+  if (command === "instruction" || command === "instructions") {
+    const businessId = await getContext(env, userId);
+    if (businessId === null) {
+      return ["bizls", []];
+    }
+    // The open business is remembered for a day and can be deleted inside it,
+    // so it is confirmed rather than trusted. A stale one falls back to the
+    // list instead of failing with nothing on screen.
+    const reachable = await canAccessBusiness(env, userId, businessId).catch(() => false);
+    return reachable ? ["inst", [businessId]] : ["bizls", []];
+  }
+  if (command === "business" || command === "businesses") {
+    return ["bizls", []];
+  }
+  if (command === "help") {
+    return ["help", []];
+  }
+  return ["home", []];
+}
+
 export async function handleAdminUpdate(
   env: Env,
   client: TelegramClient,
@@ -1296,6 +1388,21 @@ export async function handleAdminUpdate(
   const locale = await localeFor(env, userId);
   if (operator === null) {
     await client.sendMessage({ chatId, text: t(locale, "private") });
+    return;
+  }
+
+  // A command outranks a prompt the operator armed and then abandoned. Typing
+  // /instruction while a half finished upload is waiting should go where it
+  // says, not be swallowed as the answer to the earlier question.
+  const command = parseCommand(message.text ?? "");
+  if (command !== null) {
+    await takePending(env, userId);
+    await render(
+      env,
+      client,
+      { chatId },
+      await screenFor(env, locale, userId, ...(await routeCommand(env, userId, command))),
+    );
     return;
   }
 

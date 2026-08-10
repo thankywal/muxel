@@ -165,6 +165,35 @@ const STRINGS = {
     my: "assistant မဖြေနိုင်တဲ့အခါ အကြောင်းရင်းကို ဤနေရာမှာ မှတ်ထားပါသည် — dashboard ဖွင့်စရာ မလိုပါ။",
   },
 
+  // Commands and instruction styles ----------------------------------------------
+  cmdStart: { en: "Open the console", th: "เปิดคอนโซล", zh: "打开控制台", my: "Console ဖွင့်" },
+  cmdInstruction: {
+    en: "How the bot should behave",
+    th: "ตั้งค่าพฤติกรรมของบอท",
+    zh: "设置机器人的行为",
+    my: "Bot ဘယ်လို ပြုမူရမလဲ",
+  },
+  cmdBusiness: { en: "Your businesses", th: "ธุรกิจของคุณ", zh: "你的商家", my: "သင့် business များ" },
+  cmdHelp: { en: "Help", th: "ช่วยเหลือ", zh: "帮助", my: "အကူအညီ" },
+  btnChooseStyle: {
+    en: "Choose a style",
+    th: "เลือกสไตล์",
+    zh: "选择风格",
+    my: "ပုံစံ ရွေးမည်",
+  },
+  skillsTitle: {
+    en: "How should this bot behave?",
+    th: "ให้บอทนี้ทำตัวอย่างไร?",
+    zh: "这个机器人该如何表现？",
+    my: "ဒီ bot က ဘယ်လို ပြုမူသင့်လဲ?",
+  },
+  skillsBody: {
+    en: "Pick a starting point. It is written in as ordinary instructions, so you can edit it afterwards or undo it. Your documents and products are not affected.",
+    th: "เลือกจุดเริ่มต้นสักแบบ ระบบจะบันทึกเป็นคำสั่งธรรมดา คุณจึงแก้ไขหรือย้อนกลับได้ภายหลัง เอกสารและสินค้าของคุณไม่ได้รับผลกระทบ",
+    zh: "先选一个起点。它会写成普通指令，之后你可以修改或撤销。你的文档和商品不受影响。",
+    my: "အစပြုစရာ တစ်ခု ရွေးပါ။ ပုံမှန် ညွှန်ကြားချက်အဖြစ် ရေးသွင်းမှာမို့ နောက်မှ ပြင်လို့လည်း ရ၊ ပြန်ဖျက်လို့လည်း ရပါတယ်။ သင့် document နဲ့ ကုန်ပစ္စည်းတွေကို မထိပါ။",
+  },
+
   // Human takeover --------------------------------------------------------------
   btnConversation: { en: "Conversation", th: "บทสนทนา", zh: "对话记录", my: "စကားဝိုင်း" },
   btnTakeOver: { en: "Take over", th: "รับช่วงต่อ", zh: "接手对话", my: "လူကိုယ်တိုင် ဖြေမည်" },

@@ -260,6 +260,22 @@ export class TelegramClient {
   }
 
   /**
+   * Publishes the command list behind the menu button in the chat.
+   *
+   * Without this a command works only if the operator already knows it exists,
+   * which is the same as not having it.
+   */
+  setMyCommands(commands: readonly { command: string; description: string }[]): Promise<unknown> {
+    return this.#call<boolean>("setMyCommands", {
+      commands: commands.map((entry) => ({
+        command: entry.command,
+        // Telegram rejects a description longer than this outright.
+        description: entry.description.slice(0, 256),
+      })),
+    });
+  }
+
+  /**
    * Removes a message from the chat.
    *
    * Used to clear a bot token out of the transcript as soon as it is read.
