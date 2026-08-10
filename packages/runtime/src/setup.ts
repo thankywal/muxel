@@ -49,9 +49,14 @@ async function checkIndex(env: Env): Promise<string | null> {
   try {
     dimensions = (await env.KNOWLEDGE.describe()).dimensions;
   } catch (error) {
-    return `The Vectorize index could not be read: ${
-      error instanceof Error ? error.message : String(error)
-    }`;
+    // Setup runs seconds after the index was created, and a read that early can
+    // fail while it settles. Blocking on that would leave a deployment
+    // unconfigured for a transient reason, so this only warns. A genuinely
+    // broken index still surfaces on the first upload.
+    console.warn("could not read the vectorize index during setup", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
   if (dimensions !== undefined && dimensions !== EMBEDDING_DIMENSIONS) {
     return `The Vectorize index has ${dimensions} dimensions but the embedding model produces ${EMBEDDING_DIMENSIONS}. Delete the index, create it again with ${EMBEDDING_DIMENSIONS} dimensions and the cosine metric, then reload this page.`;

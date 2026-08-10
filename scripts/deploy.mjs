@@ -53,24 +53,58 @@ if (url === undefined) {
   process.exit(0);
 }
 
-console.log(`\nFinishing setup at ${url}/setup`);
-try {
-  const response = await fetch(`${url}/setup`, { signal: AbortSignal.timeout(30_000) });
+/**
+ * Attempts setup, reporting whether it is worth trying again.
+ *
+ * A first deploy finishes before its address is serving and moments after the
+ * resources were created, so an early attempt can fail for reasons that pass on
+ * their own. Only a definite answer from the Worker ends the loop.
+ */
+async function attemptSetup(target) {
+  let response;
+  try {
+    response = await fetch(`${target}/setup`, { signal: AbortSignal.timeout(30_000) });
+  } catch (error) {
+    return { done: false, note: error.message };
+  }
+
   const body = await response.text();
   if (response.ok) {
     const bot = body.match(/<dd>@([A-Za-z0-9_]+)<\/dd>/)?.[1];
-    console.log(
-      bot === undefined
-        ? "Setup complete."
-        : `Setup complete. Open @${bot} in Telegram and send /start.`,
-    );
-  } else {
-    // The page explains what is wrong in prose; surface just that line.
-    const note = body.match(/<p>([^<]{10,300})<\/p>/)?.[1];
-    console.log(`Setup did not finish: ${note ?? `the Worker answered ${response.status}`}`);
-    console.log(`Open ${url}/setup in a browser for the full message.`);
+    return {
+      done: true,
+      note:
+        bot === undefined
+          ? "Setup complete."
+          : `Setup complete. Open @${bot} in Telegram and send /start.`,
+    };
   }
-} catch (error) {
-  console.log(`Could not reach the Worker to finish setup: ${error.message}`);
-  console.log(`Open ${url}/setup in a browser to complete it.`);
+
+  // The page explains what is wrong in prose; surface just that line.
+  const note = body.match(/<p>([^<]{10,300})<\/p>/)?.[1] ?? `the Worker answered ${response.status}`;
+  // A missing setting will not fix itself, so there is no point waiting.
+  const permanent = /missing|OWNER_TELEGRAM_ID|dimensions/i.test(note);
+  return { done: permanent, note, failed: true };
+}
+
+const DELAYS_MS = [0, 2000, 3000, 5000, 8000, 10_000, 10_000, 15_000];
+
+console.log(`\nFinishing setup at ${url}/setup`);
+let outcome = { done: false, note: "not attempted" };
+for (const [attempt, delay] of DELAYS_MS.entries()) {
+  if (delay > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+  outcome = await attemptSetup(url);
+  if (outcome.done) {
+    break;
+  }
+  console.log(`  attempt ${attempt + 1} did not finish: ${outcome.note}`);
+}
+
+if (outcome.done && outcome.failed !== true) {
+  console.log(outcome.note);
+} else {
+  console.log(`Setup did not finish: ${outcome.note}`);
+  console.log(`Open ${url}/setup in a browser to complete it and see the full message.`);
 }
