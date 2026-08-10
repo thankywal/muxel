@@ -4,7 +4,7 @@
   "description": "Provision and operate a Muxel deployment inside your own Cloudflare account",
   "license": "Apache-2.0",
   "author": "thankywal",
-  "homepage": "https://muxel.site",
+  "homepage": "https://github.com/thankywal/muxel",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/thankywal/muxel.git",

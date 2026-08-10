@@ -68,8 +68,8 @@ describe("toTelegramHtml", () => {
   });
 
   it("supports italic, strikethrough and links", () => {
-    expect(toTelegramHtml("*today only*, ~~5000~~ 4000, see [our page](https://muxel.site)")).toBe(
-      '<i>today only</i>, <s>5000</s> 4000, see <a href="https://muxel.site">our page</a>',
+    expect(toTelegramHtml("*today only*, ~~5000~~ 4000, see [our page](https://example.com)")).toBe(
+      '<i>today only</i>, <s>5000</s> 4000, see <a href="https://example.com">our page</a>',
     );
   });
 
