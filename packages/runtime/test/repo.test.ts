@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { repositorySettingsUrl, repositoryVisibility, SOURCE_REPO } from "../src/repo.js";
+import { repositorySettingsUrl, repositoryVisibility } from "../src/repo.js";
 
 /**
  * The setup page nags an operator to make their copy private and stops once
@@ -17,11 +19,24 @@ function status(code: number): Response {
   return new Response(code === 200 ? "{}" : "", { status: code });
 }
 
-describe("SOURCE_REPO", () => {
-  it("ships empty so a copy points at itself rather than upstream", () => {
-    // Stamped by the build from the checkout it ran in. Committing a value
-    // here would make every deployment link at whoever built it last.
-    expect(SOURCE_REPO).toBe("");
+describe("the committed stamp", () => {
+  it("is empty, so a copy never links at whoever built it last", () => {
+    // Read from git rather than from the import, because the build stamps the
+    // working copy before the tests run and would make an import assertion
+    // pass or fail depending on where it was invoked. What has to stay empty
+    // is the value that ships, and that is the one in the commit.
+    let committed: string;
+    try {
+      committed = execFileSync("git", ["show", "HEAD:packages/runtime/src/repo.ts"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+    } catch {
+      // A checkout without git history cannot answer this, and failing there
+      // would report a problem with the environment as a problem with the code.
+      return;
+    }
+    expect(committed).toContain('export const SOURCE_REPO = "";');
   });
 });
 
