@@ -237,6 +237,36 @@ The console speaks English, ไทย, 中文 and မြန်မာ. Language i
 changes every button, not only the next screen. It is separate from the language
 a business replies to customers in.
 
+## When the assistant should not answer
+
+The assistant answers from the documents you gave it. Some questions are not in
+them: a discount nobody wrote down, a complaint, a special order. Guessing at
+those is the failure that loses a customer, so it does not.
+
+Instead it tells the customer that someone will follow up, and tells you. The
+alert arrives in the console with a button that opens the conversation.
+
+From a customer's screen in the console:
+
+| Action                        | What happens                                            |
+| ----------------------------- | ------------------------------------------------------- |
+| **Conversation**              | the full transcript, marked by who said each line        |
+| **Take over**                 | the assistant goes quiet in that chat                    |
+| **Send a message**            | you type, the customer receives it from the business bot |
+| **Give back to the assistant**| it resumes answering                                     |
+
+While you are answering, the assistant stays out of the way and forwards
+anything the customer writes, so two voices never reply to the same person. A
+message you send is recorded as part of the conversation, which means the
+assistant has read it if you hand the chat back.
+
+**Waiting for a person** on the console home lists every chat that needs you,
+across all your businesses.
+
+A question the assistant could not answer does not mute it for the rest of the
+chat. It keeps answering everything else, because going silent after one hard
+question would be worse than the question.
+
 ## Instructions and documents are different things
 
 The console keeps them apart because the assistant has to trust them

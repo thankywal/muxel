@@ -12,6 +12,8 @@ import type { Bot, Business, ChatTurn, CustomerFact } from "@muxel/core";
 import { generate } from "../ai/gateway.js";
 import {
   appendMessage,
+  getHandover,
+  openHandover,
   recentTurns,
   recordEvent,
   recordUsage,
@@ -19,9 +21,10 @@ import {
   upsertConversation,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
+import { alertOwner, HANDOVER_SENTINEL, stripSentinel, wantsHandover } from "../escalation.js";
 import { formatFacts, recall, remember, shouldExtract } from "../memory.js";
 import { formatContext, retrieve } from "../rag/retrieve.js";
-import type { TelegramClient, TelegramUpdate } from "./api.js";
+import type { TelegramClient, TelegramUpdate, TelegramUser } from "./api.js";
 import { toTelegramHtml } from "./format.js";
 
 /** Longest customer message accepted. Longer input is truncated, not rejected. */
@@ -77,8 +80,31 @@ function keepTyping(client: TelegramClient, chatId: number): () => void {
   };
 }
 
-const NO_ANSWER_NOTE =
-  "If the reference material does not answer the question, say so plainly and offer to pass the question to a person. Never invent prices, stock levels, delivery times or policies.";
+const NO_ANSWER_NOTE = [
+  `If the reference material does not answer the question, reply with exactly ${HANDOVER_SENTINEL} and nothing else.`,
+  "A person will then take over, so do not apologise or guess.",
+  "Never invent prices, stock levels, delivery times or policies.",
+  "Greetings, thanks and small talk do not need reference material. Answer those normally.",
+].join(" ");
+
+/** Told to the customer when their question is passed to a person. */
+const HANDOVER_REPLY: Record<string, string> = {
+  en: "I do not have that information to hand. Someone from our team will reply here shortly.",
+  th: "ฉันยังไม่มีข้อมูลนี้ ทีมงานของเราจะตอบกลับที่นี่ในไม่ช้า",
+  zh: "这个问题我这里没有资料。我们团队的同事很快会在这里回复你。",
+  my: "ဒီအချက်အလက်ကို ကျွန်တော် မသိရသေးပါ။ ကျွန်တော်တို့ အဖွဲ့သားတစ်ယောက် မကြာမီ ဒီမှာ ပြန်ဖြေပေးပါမယ်။",
+};
+
+function handoverReply(locale: string): string {
+  return HANDOVER_REPLY[locale] ?? HANDOVER_REPLY.en ?? "";
+}
+
+function nameOf(sender: TelegramUser | undefined): string {
+  if (sender === undefined) {
+    return "unknown";
+  }
+  return sender.first_name ?? sender.username ?? String(sender.id);
+}
 
 function buildSystemPrompt(
   business: Business,
@@ -207,6 +233,28 @@ export async function handleReplyUpdate(
       chatId,
     });
 
+    // A person is answering this chat. The assistant records what was said and
+    // forwards it, but does not reply: two voices answering the same customer
+    // is worse than a slower single one.
+    const handover = await getHandover(env, conversationId);
+    if (handover?.state === "human") {
+      stopTyping();
+      await appendMessage(env, {
+        conversationId,
+        businessId: business.id,
+        role: "user",
+        content: question,
+      });
+      await alertOwner(env, {
+        businessName: business.name,
+        customerName: nameOf(sender),
+        question,
+        customerId: customer?.id ?? null,
+        duringTakeover: true,
+      }).catch(() => undefined);
+      return;
+    }
+
     const result = await withDeadline(
       (async () => {
         [history, facts] = await Promise.all([
@@ -246,6 +294,20 @@ export async function handleReplyUpdate(
     return;
   } finally {
     stopTyping?.();
+  }
+
+  // The assistant asked for a person. What the customer hears is a promise
+  // that one is coming, not the marker, and the owner is told straight away.
+  const escalating = wantsHandover(answer);
+  if (escalating) {
+    const remainder = stripSentinel(answer);
+    answer = remainder.length > 0 ? remainder : handoverReply(business.locale);
+    await openHandover(env, {
+      conversationId,
+      businessId: business.id,
+      customerId: customer?.id ?? null,
+      reason: question,
+    }).catch(() => undefined);
   }
 
   try {
@@ -292,6 +354,23 @@ export async function handleReplyUpdate(
       error: error instanceof Error ? error.message : String(error),
     });
   });
+
+  if (escalating) {
+    // After the customer has been answered, because an alert that fails must
+    // not leave them waiting on a message that was never sent.
+    await alertOwner(env, {
+      businessName: business.name,
+      customerName: nameOf(sender),
+      question,
+      customerId: customer?.id ?? null,
+    }).catch((error: unknown) => {
+      console.error("handover alert failed", {
+        businessId: business.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    return;
+  }
 
   // Distillation happens after the reply is on its way, and only every few
   // messages. A failure here is invisible to the customer by design.

@@ -225,6 +225,43 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS event_log_idx ON event_log (created_at DESC)`,
     ],
   },
+  {
+    version: 6,
+    statements: [
+      // Conversations a person needs to look at, and conversations a person is
+      // currently answering.
+      //
+      // `waiting` means the assistant met a question the documents do not cover
+      // and said so. The assistant keeps answering everything else in that
+      // chat, because going mute after one hard question would be worse than
+      // the question itself. `human` means an operator has taken the chat over
+      // and the assistant stays out of the way until they hand it back.
+      //
+      // Its own table rather than a column on conversation, so the migration is
+      // a CREATE and stays safe if it is ever replayed.
+      `CREATE TABLE IF NOT EXISTS handover (
+         conversation_id TEXT PRIMARY KEY REFERENCES conversation (id) ON DELETE CASCADE,
+         business_id     TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         customer_id     TEXT,
+         state           TEXT NOT NULL CHECK (state IN ('waiting', 'human')),
+         reason          TEXT NOT NULL DEFAULT '',
+         opened_at       TEXT NOT NULL,
+         updated_at      TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS handover_business_idx ON handover (business_id, updated_at DESC)`,
+
+      // Which replies came from a person rather than the assistant.
+      //
+      // The transcript has to show the difference, but the model must not: a
+      // reply typed by the owner is still the business speaking, so it stays a
+      // normal assistant turn in `message` and is marked here instead. Only
+      // human replies get a row, so this stays small.
+      `CREATE TABLE IF NOT EXISTS message_author (
+         message_id TEXT PRIMARY KEY REFERENCES message (id) ON DELETE CASCADE,
+         sent_by    TEXT NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

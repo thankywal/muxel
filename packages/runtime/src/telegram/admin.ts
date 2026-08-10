@@ -30,7 +30,7 @@ import {
   FREE_ALLOWANCE,
   repliesRemaining,
 } from "../cloudflare/usage.js";
-import { seal, sha256Hex } from "../crypto.js";
+import { open as openSealed, seal, sha256Hex } from "../crypto.js";
 import {
   canAccessBusiness,
   createBot,
@@ -59,8 +59,17 @@ import {
   setCustomerNote,
   setCustomerStage,
   setOperatorLocale,
+  appendHumanMessage,
+  conversationForCustomer,
+  endHandover,
+  getBotById,
+  getHandover,
+  listHandovers,
+  takeOverConversation,
   todayUsage,
   todayUsageAll,
+  transcript,
+  type TranscriptTurn,
   updateBusinessModel,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
@@ -134,7 +143,8 @@ type PendingKind =
   | "customer_note"
   | "product_line"
   | "product_file"
-  | "data_file";
+  | "data_file"
+  | "human_reply";
 
 interface Pending {
   readonly kind: PendingKind;
@@ -262,6 +272,7 @@ function homeScreen(locale: Locale): Screen {
     rows: [
       row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
       row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+      row({ text: t(locale, "btnNeedsPerson"), action: "wait" }),
       row(
         { text: t(locale, "btnConsoleBot"), action: "console" },
         { text: t(locale, "btnDiagnostics"), action: "diag" },
@@ -528,6 +539,7 @@ function customerScreen(
       .filter((line) => line !== "")
       .join("\n"),
     rows: [
+      row({ text: t(locale, "btnConversation"), action: "conv", args: [customer.id] }),
       row({ text: t(locale, "btnAddNote"), action: "cnote", args: [customer.id] }),
       ...STAGES.filter((stage) => stage !== customer.stage).map((stage) =>
         row({
@@ -722,6 +734,125 @@ async function screenFor(
               )),
         ].join("\n"),
         rows: [backTo(locale, "home")],
+      };
+    }
+
+    case "wait": {
+      const waiting = await listHandovers(env, 15);
+      return {
+        text: [
+          `<b>${t(locale, "waitTitle")}</b>`,
+          "",
+          waiting.length === 0 ? t(locale, "waitEmpty") : "",
+        ]
+          .filter((line) => line !== "")
+          .join("\n"),
+        rows: [
+          ...waiting
+            .filter((item) => item.customerId !== null)
+            .map((item) =>
+              row({
+                text: `${item.customerName || "?"} · ${escapeHtml(item.businessName)}`,
+                action: "conv",
+                args: [item.customerId as string],
+              }),
+            ),
+          backTo(locale, "home"),
+        ],
+      };
+    }
+
+    case "conv": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      const chat = await conversationForCustomer(env, {
+        businessId: customer.businessId,
+        chatId: customer.chatId,
+      });
+      const name = customer.displayName || customer.username || String(customer.telegramUserId);
+
+      if (chat === null) {
+        return {
+          text: `<b>${t(locale, "convTitle", { name: escapeHtml(name) })}</b>\n\n${t(locale, "convNoChat")}`,
+          rows: [backTo(locale, "cst", [customer.id])],
+        };
+      }
+
+      const [turns, handover] = await Promise.all([
+        transcript(env, chat.id, 25),
+        getHandover(env, chat.id),
+      ]);
+
+      const speaker = (turn: TranscriptTurn): string =>
+        turn.role === "user"
+          ? t(locale, "convCustomer")
+          : turn.sentBy === "human"
+            ? t(locale, "convHuman")
+            : t(locale, "convAssistant");
+
+      return {
+        text: [
+          `<b>${t(locale, "convTitle", { name: escapeHtml(name) })}</b>`,
+          handover === null
+            ? ""
+            : `\n<i>${t(locale, handover.state === "human" ? "convStateHuman" : "convStateWaiting")}</i>`,
+          "",
+          ...(turns.length === 0
+            ? [t(locale, "convEmpty")]
+            : turns.map(
+                (turn) =>
+                  `<b>${speaker(turn)}</b>  <i>${turn.createdAt.slice(11, 16)}</i>\n${escapeHtml(
+                    truncate(turn.content, 400),
+                  )}`,
+              )),
+        ]
+          .filter((line) => line !== "")
+          .join("\n"),
+        rows: [
+          ...(handover?.state === "human"
+            ? [
+                row({ text: t(locale, "btnSendAsHuman"), action: "csend", args: [customer.id] }),
+                row({ text: t(locale, "btnHandBack"), action: "cback", args: [customer.id] }),
+              ]
+            : [row({ text: t(locale, "btnTakeOver"), action: "ctake", args: [customer.id] })]),
+          backTo(locale, "cst", [customer.id]),
+        ],
+      };
+    }
+
+    case "ctake": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      const chat = await conversationForCustomer(env, {
+        businessId: customer.businessId,
+        chatId: customer.chatId,
+      });
+      if (chat !== null) {
+        await takeOverConversation(env, {
+          conversationId: chat.id,
+          businessId: customer.businessId,
+          customerId: customer.id,
+        });
+      }
+      return screenFor(env, locale, userId, "conv", [customer.id]);
+    }
+
+    case "cback": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      const chat = await conversationForCustomer(env, {
+        businessId: customer.businessId,
+        chatId: customer.chatId,
+      });
+      if (chat !== null) {
+        await endHandover(env, chat.id);
+      }
+      return screenFor(env, locale, userId, "conv", [customer.id]);
+    }
+
+    case "csend": {
+      const customer = await customerFor(env, userId, requireArg(args, 0));
+      await setPending(env, userId, { kind: "human_reply", customerId: customer.id });
+      return {
+        text: `<b>${t(locale, "btnSendAsHuman")}</b>\n\n${t(locale, "convSendBody")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "conv", args: [customer.id] })],
       };
     }
 
@@ -1274,6 +1405,56 @@ async function handlePendingInput(
     return;
   }
 
+
+  if (pending.kind === "human_reply") {
+    const customerId = pending.customerId;
+    if (customerId === undefined) {
+      return;
+    }
+    const customer = await customerFor(env, userId, customerId);
+    const chat = await conversationForCustomer(env, {
+      businessId: customer.businessId,
+      chatId: customer.chatId,
+    });
+    if (chat === null) {
+      await client.sendMessage({ chatId, text: t(locale, "convNoChat") });
+      return;
+    }
+
+    // Sent through the business bot, not the console bot. The customer has
+    // never seen the console bot and a message from it would look like a
+    // stranger joining the conversation.
+    const bot = await getBotById(env, chat.botId);
+    if (bot === null) {
+      await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
+      return;
+    }
+
+    const reply = text.slice(0, 3500);
+    try {
+      const masterKey = await resolveMasterKey(env);
+      const asBusiness = new TelegramClient(await openSealed(masterKey, bot.tokenCiphertext));
+      await asBusiness.sendMessage({ chatId: chat.chatId, text: escapeHtml(reply) });
+    } catch (error) {
+      console.error("human reply failed", {
+        businessId: customer.businessId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
+      return;
+    }
+
+    // Recorded as an ordinary assistant turn so the model reads it as context
+    // if the chat is handed back, and marked as human so the transcript can
+    // show who actually said it.
+    await appendHumanMessage(env, {
+      conversationId: chat.id,
+      businessId: customer.businessId,
+      content: reply,
+    });
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "conv", [customerId]));
+    return;
+  }
 
   if (pending.kind === "customer_note") {
     const customerId = pending.customerId;

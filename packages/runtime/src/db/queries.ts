@@ -565,6 +565,198 @@ export async function appendMessage(
     .run();
 }
 
+/** Records that a reply was typed by a person rather than produced by the model. */
+export async function appendHumanMessage(
+  env: Env,
+  input: { conversationId: string; businessId: string; content: string },
+): Promise<void> {
+  const id = generateId();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO message (id, conversation_id, business_id, role, content, created_at) VALUES (?, ?, ?, 'assistant', ?, ?)",
+    ).bind(id, input.conversationId, input.businessId, input.content, now()),
+    // Marked separately so the transcript can show who spoke while the model
+    // still reads it as an ordinary turn from the business.
+    env.DB.prepare("INSERT INTO message_author (message_id, sent_by) VALUES (?, 'human')").bind(id),
+  ]);
+}
+
+export interface TranscriptTurn {
+  readonly role: "user" | "assistant";
+  readonly content: string;
+  readonly sentBy: "bot" | "human";
+  readonly createdAt: string;
+}
+
+/**
+ * Returns a conversation as a person would read it, newest last.
+ *
+ * Separate from `recentTurns` because the two have different jobs: that one
+ * feeds a prompt and must stay small, this one is read by an operator deciding
+ * whether to step in.
+ */
+export async function transcript(
+  env: Env,
+  conversationId: string,
+  limit = 30,
+): Promise<TranscriptTurn[]> {
+  const result = await env.DB.prepare(
+    `SELECT m.role, m.content, m.created_at, COALESCE(a.sent_by, 'bot') AS sent_by
+       FROM message m
+       LEFT JOIN message_author a ON a.message_id = m.id
+      WHERE m.conversation_id = ?
+      ORDER BY m.created_at DESC
+      LIMIT ?`,
+  )
+    .bind(conversationId, limit)
+    .all<{ role: string; content: string; created_at: string; sent_by: string }>();
+  return result.results
+    .map((row) => ({
+      role: row.role as "user" | "assistant",
+      content: row.content,
+      sentBy: row.sent_by === "human" ? ("human" as const) : ("bot" as const),
+      createdAt: row.created_at,
+    }))
+    .reverse();
+}
+
+export type HandoverState = "waiting" | "human";
+
+export interface Handover {
+  readonly conversationId: string;
+  readonly businessId: string;
+  readonly customerId: string | null;
+  readonly state: HandoverState;
+  readonly reason: string;
+  readonly updatedAt: string;
+}
+
+function toHandover(row: {
+  conversation_id: string;
+  business_id: string;
+  customer_id: string | null;
+  state: string;
+  reason: string;
+  updated_at: string;
+}): Handover {
+  return {
+    conversationId: row.conversation_id,
+    businessId: row.business_id,
+    customerId: row.customer_id,
+    state: row.state === "human" ? "human" : "waiting",
+    reason: row.reason,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getHandover(env: Env, conversationId: string): Promise<Handover | null> {
+  const row = await env.DB.prepare("SELECT * FROM handover WHERE conversation_id = ?")
+    .bind(conversationId)
+    .first<Parameters<typeof toHandover>[0]>();
+  return row === null ? null : toHandover(row);
+}
+
+/**
+ * Flags a conversation for a person to look at.
+ *
+ * An existing flag is left alone rather than reopened, so a customer asking
+ * three questions the documents do not cover produces one item of work and does
+ * not drag a chat a person is already answering back into the queue.
+ */
+export async function openHandover(
+  env: Env,
+  input: {
+    conversationId: string;
+    businessId: string;
+    customerId: string | null;
+    reason: string;
+  },
+): Promise<void> {
+  const stamp = now();
+  await env.DB.prepare(
+    `INSERT INTO handover (conversation_id, business_id, customer_id, state, reason, opened_at, updated_at)
+     VALUES (?, ?, ?, 'waiting', ?, ?, ?)
+     ON CONFLICT (conversation_id) DO UPDATE SET updated_at = excluded.updated_at`,
+  )
+    .bind(
+      input.conversationId,
+      input.businessId,
+      input.customerId,
+      input.reason.slice(0, 200),
+      stamp,
+      stamp,
+    )
+    .run();
+}
+
+/** Puts a person in charge of a conversation, silencing the assistant there. */
+export async function takeOverConversation(
+  env: Env,
+  input: { conversationId: string; businessId: string; customerId: string | null },
+): Promise<void> {
+  const stamp = now();
+  await env.DB.prepare(
+    `INSERT INTO handover (conversation_id, business_id, customer_id, state, reason, opened_at, updated_at)
+     VALUES (?, ?, ?, 'human', '', ?, ?)
+     ON CONFLICT (conversation_id) DO UPDATE SET state = 'human', updated_at = excluded.updated_at`,
+  )
+    .bind(input.conversationId, input.businessId, input.customerId, stamp, stamp)
+    .run();
+}
+
+/** Returns the conversation to the assistant and clears the flag. */
+export async function endHandover(env: Env, conversationId: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM handover WHERE conversation_id = ?")
+    .bind(conversationId)
+    .run();
+}
+
+/** Conversations across every business that still need someone to look. */
+export async function listHandovers(env: Env, limit = 20): Promise<
+  (Handover & { businessName: string; customerName: string })[]
+> {
+  const result = await env.DB.prepare(
+    `SELECT h.*, b.name AS business_name,
+            COALESCE(NULLIF(c.display_name, ''), NULLIF(c.username, ''), '') AS customer_name
+       FROM handover h
+       JOIN business b ON b.id = h.business_id
+       LEFT JOIN customer c ON c.id = h.customer_id
+      ORDER BY h.updated_at DESC
+      LIMIT ?`,
+  )
+    .bind(limit)
+    .all<Parameters<typeof toHandover>[0] & { business_name: string; customer_name: string }>();
+  return result.results.map((row) => ({
+    ...toHandover(row),
+    businessName: row.business_name,
+    customerName: row.customer_name,
+  }));
+}
+
+/** Finds the chat a customer is talking in, so an operator can answer into it. */
+export async function conversationForCustomer(
+  env: Env,
+  input: { businessId: string; chatId: number },
+): Promise<{ id: string; botId: string; chatId: number } | null> {
+  const row = await env.DB.prepare(
+    "SELECT id, bot_id, chat_id FROM conversation WHERE business_id = ? AND chat_id = ? ORDER BY updated_at DESC LIMIT 1",
+  )
+    .bind(input.businessId, input.chatId)
+    .first<{ id: string; bot_id: string; chat_id: number }>();
+  return row === null ? null : { id: row.id, botId: row.bot_id, chatId: row.chat_id };
+}
+
+/** Loads a bot with its sealed token, for sending on behalf of a business. */
+export async function getBotById(
+  env: Env,
+  botId: string,
+): Promise<(Bot & { tokenCiphertext: string }) | null> {
+  const row = await env.DB.prepare("SELECT * FROM bot WHERE id = ?")
+    .bind(botId)
+    .first<BotRow>();
+  return row === null ? null : { ...toBot(row), tokenCiphertext: row.token_ciphertext };
+}
+
 /** Returns recent turns in chronological order, bounded to keep prompts small. */
 export async function recentTurns(
   env: Env,

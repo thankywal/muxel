@@ -165,6 +165,61 @@ const STRINGS = {
     my: "assistant မဖြေနိုင်တဲ့အခါ အကြောင်းရင်းကို ဤနေရာမှာ မှတ်ထားပါသည် — dashboard ဖွင့်စရာ မလိုပါ။",
   },
 
+  // Human takeover --------------------------------------------------------------
+  btnConversation: { en: "Conversation", th: "บทสนทนา", zh: "对话记录", my: "စကားဝိုင်း" },
+  btnTakeOver: { en: "Take over", th: "รับช่วงต่อ", zh: "接手对话", my: "လူကိုယ်တိုင် ဖြေမည်" },
+  btnSendAsHuman: { en: "Send a message", th: "ส่งข้อความ", zh: "发送消息", my: "စာပို့မည်" },
+  btnHandBack: { en: "Give back to the assistant", th: "คืนให้ผู้ช่วย", zh: "交还给助手", my: "assistant ကို ပြန်အပ်မည်" },
+  btnNeedsPerson: { en: "Waiting for a person", th: "รอเจ้าหน้าที่", zh: "等待人工", my: "လူ စောင့်နေသည်" },
+  convTitle: { en: "Conversation with {name}", th: "บทสนทนากับ {name}", zh: "与 {name} 的对话", my: "{name} နှင့် စကားဝိုင်း" },
+  convEmpty: {
+    en: "Nothing has been said yet.",
+    th: "ยังไม่มีข้อความ",
+    zh: "还没有任何消息。",
+    my: "ဘာမှ မပြောရသေးပါ။",
+  },
+  convCustomer: { en: "Customer", th: "ลูกค้า", zh: "客户", my: "ဝယ်သူ" },
+  convAssistant: { en: "Assistant", th: "ผู้ช่วย", zh: "助手", my: "Assistant" },
+  convHuman: { en: "You", th: "คุณ", zh: "你", my: "သင်" },
+  convStateWaiting: {
+    en: "The assistant could not answer this and asked for a person.",
+    th: "ผู้ช่วยตอบคำถามนี้ไม่ได้ จึงขอให้เจ้าหน้าที่ช่วย",
+    zh: "助手无法回答这个问题，已请求人工协助。",
+    my: "Assistant က ဒါကို မဖြေနိုင်လို့ လူတစ်ယောက် လိုအပ်ကြောင်း တောင်းဆိုထားပါတယ်။",
+  },
+  convStateHuman: {
+    en: "You are answering this chat. The assistant is staying quiet until you give it back.",
+    th: "คุณกำลังตอบแชทนี้อยู่ ผู้ช่วยจะเงียบจนกว่าคุณจะคืนให้",
+    zh: "你正在回复这个对话。在你交还之前，助手不会作答。",
+    my: "ဒီ chat ကို သင် ဖြေနေပါတယ်။ ပြန်မအပ်မချင်း assistant က တိတ်ဆိတ်နေပါမယ်။",
+  },
+  convSendBody: {
+    en: "Type your reply. It is sent to the customer from the business bot, as though the business wrote it.",
+    th: "พิมพ์คำตอบของคุณ ข้อความจะถูกส่งถึงลูกค้าผ่านบอทของธุรกิจ เสมือนว่าธุรกิจเป็นผู้เขียน",
+    zh: "输入你的回复。消息将通过商家机器人发送给客户，就像商家亲自回复一样。",
+    my: "သင့်အဖြေကို ရိုက်ပါ။ business bot ကနေ ဝယ်သူဆီ ပို့ပေးမှာဖြစ်ပြီး business ကိုယ်တိုင် ရေးသလို ဖြစ်ပါမယ်။",
+  },
+  convSent: { en: "Sent.", th: "ส่งแล้ว", zh: "已发送。", my: "ပို့ပြီးပါပြီ။" },
+  convNoChat: {
+    en: "This customer has no conversation to answer into yet.",
+    th: "ลูกค้ารายนี้ยังไม่มีบทสนทนาให้ตอบ",
+    zh: "该客户还没有可回复的对话。",
+    my: "ဒီဝယ်သူမှာ ဖြေစရာ စကားဝိုင်း မရှိသေးပါ။",
+  },
+  convSendFailed: {
+    en: "The message could not be delivered. The customer may have blocked the bot.",
+    th: "ส่งข้อความไม่สำเร็จ ลูกค้าอาจบล็อกบอทไว้",
+    zh: "消息发送失败。客户可能已屏蔽该机器人。",
+    my: "စာ ပို့လို့ မရပါ။ ဝယ်သူက bot ကို block ထားနိုင်ပါတယ်။",
+  },
+  waitTitle: { en: "Waiting for a person", th: "รอเจ้าหน้าที่", zh: "等待人工", my: "လူ စောင့်နေသည်" },
+  waitEmpty: {
+    en: "No customer is waiting.",
+    th: "ไม่มีลูกค้ารออยู่",
+    zh: "没有客户在等待。",
+    my: "စောင့်နေတဲ့ ဝယ်သူ မရှိပါ။",
+  },
+
   // Cloudflare usage ----------------------------------------------------------
   btnUsage: { en: "Usage", th: "การใช้งาน", zh: "用量", my: "အသုံးပြုမှု" },
   usgTitle: {
