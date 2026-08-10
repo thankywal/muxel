@@ -88,8 +88,16 @@ ignored.
 What the copy does hold is the identifiers of the resources in your account,
 written into `wrangler.jsonc` during deployment. Those are not credentials and
 cannot be used to read anything without your account, but they are not worth
-publishing. Set the repository to private under Settings, Change visibility.
-Builds keep working.
+publishing. Set the repository to private under Settings, General, Change
+visibility.
+
+Builds keep working after that. Cloudflare reaches your repository as an
+installed GitHub App holding `contents: write` on the repositories you granted
+it, and an installation's access does not depend on whether a repository is
+public.
+
+Only the repository a button is served from has to stay public, which is this
+one, not your copy.
 
 </details>
 
