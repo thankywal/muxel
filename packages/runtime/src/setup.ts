@@ -25,39 +25,42 @@ import { open, seal, sha256Hex } from "./crypto.js";
 import { addOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
 import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
+import { dimensionAdvice } from "./rag/dimensions.js";
 import { peekMasterKey, resolveMasterKey } from "./secrets.js";
 import { TelegramClient } from "./telegram/api.js";
 
 export const ORIGIN_KEY = "system:origin";
 
-/**
- * Dimension count of the default embedding model.
- *
- * The Vectorize binding in wrangler.jsonc can only name an index. Its dimension
- * count and distance metric are chosen when the index is created, which for a
- * one click deploy means a human typing them into a form. Getting either wrong
- * produces an index that accepts nothing.
- */
-const EMBEDDING_DIMENSIONS = 1024;
+/** Mirrors the key dimensions.ts reads, so setup can prime it. */
+const INDEX_DIMENSIONS_KEY = "system:index_dimensions";
 
-async function checkIndex(env: Env): Promise<string | null> {
+/**
+ * Records what the Vectorize index expects and reports whether it suits us.
+ *
+ * The index fixes its dimension count at creation and the Worker configuration
+ * cannot carry that number, so on a one click deploy it is typed into a form.
+ * Rather than refuse a deployment over it, embeddings are fitted to whatever
+ * the index has, and this only reports the consequence.
+ */
+async function inspectIndex(env: Env): Promise<string | null> {
   let dimensions: number | undefined;
   try {
     dimensions = (await env.KNOWLEDGE.describe()).dimensions;
   } catch (error) {
     // Setup runs seconds after the index was created, and a read that early can
-    // fail while it settles. Blocking on that would leave a deployment
-    // unconfigured for a transient reason, so this only warns. A genuinely
-    // broken index still surfaces on the first upload.
+    // fail while it settles. The model's own size is assumed until it can be
+    // read, which the next upload or scheduled run will do.
     console.warn("could not read the vectorize index during setup", {
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
-  if (dimensions !== undefined && dimensions !== EMBEDDING_DIMENSIONS) {
-    return `The Vectorize index has ${dimensions} dimensions but the embedding model produces ${EMBEDDING_DIMENSIONS}. Delete the index, create it again with ${EMBEDDING_DIMENSIONS} dimensions and the cosine metric, then reload this page.`;
+
+  if (typeof dimensions !== "number" || dimensions <= 0) {
+    return null;
   }
-  return null;
+  await env.STATE.put(INDEX_DIMENSIONS_KEY, String(dimensions));
+  return dimensionAdvice(dimensions);
 }
 
 export interface SetupOutcome {
@@ -94,10 +97,9 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
     );
   }
 
-  const indexProblem = await checkIndex(env);
-  if (indexProblem !== null) {
-    return notReady(indexProblem);
-  }
+  // Reported rather than fatal: a surprising dimension count costs accuracy,
+  // not correctness, and refusing to set up over it strands the deployment.
+  const indexNote = await inspectIndex(env);
 
   const schemaVersion = await ensureSchema(env);
   const masterKey = await resolveMasterKey(env);
@@ -138,8 +140,12 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
     botUsername: username,
     owner,
     missing: [],
-    note:
+    note: [
       existing === null ? "Setup complete." : "Webhook re-registered against the current address.",
+      indexNote,
+    ]
+      .filter((line) => line !== null)
+      .join(" "),
   };
 }
 
@@ -195,7 +201,12 @@ export function renderSetupPage(outcome: SetupOutcome): string {
       </dl>
       <p>Open <strong>@${escapeHtml(outcome.botUsername ?? "")}</strong> in Telegram and send
       <code>/start</code>. This bot is your private control panel: add a business
-      there and it will ask for the bot your customers will write to.</p>`
+      there and it will ask for the bot your customers will write to.</p>
+      ${
+        outcome.note.includes("dimensions")
+          ? `<p class="warn">${escapeHtml(outcome.note)}</p>`
+          : ""
+      }`
     : `
       <p class="bad">Not ready yet.</p>
       <p>${escapeHtml(outcome.note)}</p>
@@ -221,6 +232,7 @@ export function renderSetupPage(outcome: SetupOutcome): string {
   .sub { opacity: 0.65; margin-top: 0; }
   .ok { color: #15803d; font-weight: 600; }
   .bad { color: #b91c1c; font-weight: 600; }
+  .warn { color: #a16207; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem 1rem; margin: 1.5rem 0; }
   dt { opacity: 0.65; }
   dd { margin: 0; }

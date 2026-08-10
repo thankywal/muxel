@@ -10,6 +10,7 @@
 import { MuxelError, type ChatTurn, type InferenceResult } from "@muxel/core";
 
 import type { Env } from "../env.js";
+import { fitVector, indexDimensions } from "../rag/dimensions.js";
 
 const GATEWAY_ROOT = "https://gateway.ai.cloudflare.com/v1";
 
@@ -230,7 +231,9 @@ export async function embed(env: Env, text: string): Promise<number[]> {
       model: env.EMBEDDING_MODEL,
     });
   }
-  return vector;
+  // Fitted so the index accepts it whatever size it was created with, and so a
+  // query is shaped exactly like the vectors it is compared against.
+  return fitVector(vector, await indexDimensions(env));
 }
 
 /** Produces embeddings for a batch of strings, preserving input order. */
@@ -250,5 +253,6 @@ export async function embedBatch(env: Env, texts: readonly string[]): Promise<nu
       received: vectors?.length ?? 0,
     });
   }
-  return vectors;
+  const dimensions = await indexDimensions(env);
+  return vectors.map((vector) => fitVector(vector, dimensions));
 }

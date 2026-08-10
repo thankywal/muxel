@@ -42,18 +42,20 @@ Click the button above. Cloudflare will ask you to connect GitHub, then walk you
 through a setup page. Accept the suggested names for the KV namespace and the
 D1 database, then fill in four fields.
 
-**The Vectorize index needs two values that cannot be filled in for you.**
-Cloudflare picks them when the index is created and the Worker configuration has
-no way to carry them, so the boxes arrive empty:
+**The Vectorize index asks for two values that cannot be filled in for you.**
+They are fixed when the index is created and the Worker configuration has no
+field for either, so the boxes arrive empty:
 
 | Vectorize field | Value    |
 | --------------- | -------- |
 | Dimensions      | `1024`   |
 | Metric          | `cosine` |
 
-Anything else produces an index that silently rejects everything. Setup checks
-this and refuses to continue if it is wrong, so a mistake is recoverable, but
-getting it right the first time saves deleting the index and starting again.
+Getting it wrong is no longer fatal. Embeddings are fitted to whatever the index
+was created with, and setup says what the consequence is. A larger number wastes
+space and changes nothing, because padding with zeros leaves cosine similarity
+exactly as it was. A smaller one shortens embeddings to fit and makes search
+less accurate, which is worth correcting but will not stop anything working.
 
 Then the two secrets:
 
