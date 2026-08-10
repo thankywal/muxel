@@ -15,6 +15,7 @@ import { getBusiness, getBotByWebhookPath, getConsoleBot } from "./db/queries.js
 import { missingConfiguration, type Env } from "./env.js";
 import { peekMasterKey, requireMasterKey } from "./secrets.js";
 import { renderSetupPage, repairWebhook, runSetup } from "./setup.js";
+import { checkForUpdate } from "./updates.js";
 import { TelegramClient, type TelegramUpdate } from "./telegram/api.js";
 import { handleAdminUpdate } from "./telegram/admin.js";
 import { handleReplyUpdate } from "./telegram/reply.js";
@@ -94,17 +95,18 @@ export default {
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      repairWebhook(env)
-        .then((outcome) => {
-          if (outcome !== "healthy") {
-            console.log("scheduled webhook check", { outcome });
-          }
-        })
-        .catch((error: unknown) => {
-          console.error("scheduled webhook check failed", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }),
+      Promise.allSettled([repairWebhook(env), checkForUpdate(env)]).then(([webhook, update]) => {
+        if (webhook.status === "rejected") {
+          console.error("scheduled webhook check failed", { reason: String(webhook.reason) });
+        } else if (webhook.value !== "healthy") {
+          console.log("scheduled webhook check", { outcome: webhook.value });
+        }
+        if (update.status === "rejected") {
+          console.error("scheduled update check failed", { reason: String(update.reason) });
+        } else if (update.value === "notified") {
+          console.log("told the owner an update is available");
+        }
+      }),
     );
   },
 } satisfies ExportedHandler<Env>;

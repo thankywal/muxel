@@ -100,6 +100,14 @@ export async function findOperator(
   return { telegramUserId: row.telegram_user_id, role: row.role as "owner" | "admin" };
 }
 
+/** Returns the Telegram account of the deployment owner, if one is installed. */
+export async function findOwner(env: Env): Promise<number | null> {
+  const row = await env.DB.prepare(
+    "SELECT telegram_user_id FROM operator WHERE role = 'owner' ORDER BY created_at LIMIT 1",
+  ).first<{ telegram_user_id: number }>();
+  return row?.telegram_user_id ?? null;
+}
+
 export async function addOperator(
   env: Env,
   input: { telegramUserId: number; role: "owner" | "admin"; label?: string },

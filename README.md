@@ -93,33 +93,52 @@ Builds keep working.
 
 ## Staying up to date
 
+Updates are **not** automatic, and it is worth being clear about why.
+
 The deploy button makes an independent copy rather than a GitHub fork, so there
-is no Sync fork button and nothing links your copy back here.
+is no Sync fork button and nothing links your copy back here. It also copies
+the project **without its `.github` directory**, because the import cannot
+create workflow files. Any update workflow shipped in this repository therefore
+never arrives in yours.
 
-`.github/workflows/update.yml` closes that gap. It runs daily inside your own
-GitHub account, pulls this repository, keeps your `wrangler.jsonc` and pushes to
-your copy. That push triggers your Workers Build, which redeploys and finishes
-setup. Muxel needs no access to your account for any of it.
+What does happen on its own: your deployment checks this repository for a newer
+version and **messages you in the console bot** when there is one, once per
+version. You will not have to remember to look.
 
-An update is only applied if the upstream commit's own tests passed, so a broken
-commit does not reach a live shop unattended. Run it immediately from the
-Actions tab with **Run workflow**.
-
-Your copy tracks upstream, so its history is replaced rather than merged and
-local code edits do not survive. Configure through the console instead. If you
-do intend to change the code, disable the workflow in the Actions tab first.
-
-A deployment created before this workflow existed does not have it yet. Update
-once by hand and every update after that is automatic:
+### Applying an update
 
 ```bash
 git clone https://github.com/<you>/muxel.git && cd muxel
 git remote add upstream https://github.com/thankywal/muxel.git
+
+# every time, from here on
 git fetch upstream
 git checkout upstream/main -- .
-git checkout HEAD -- wrangler.jsonc
+git checkout HEAD -- wrangler.jsonc      # keeps your resource identifiers
 git commit -am "Update from upstream" && git push
 ```
+
+Pushing triggers your Workers Build, which redeploys and finishes setup. Your
+data, settings and bots are untouched.
+
+### Making it automatic
+
+One manual step buys you daily automatic updates from then on. In your copy on
+GitHub, choose **Add file**, then **Create new file**, name it
+`.github/workflows/update.yml`, and paste
+[the workflow from this repository](.github/workflows/update.yml). You can
+create workflow files by hand even though the import could not.
+
+Then check **Settings**, **Actions**, **General**, **Workflow permissions** is
+set to *Read and write*, or the job cannot push to your own repository.
+
+An update is only applied if the upstream commit's own tests passed, so a broken
+commit does not reach a live shop unattended. Run it on demand from the Actions
+tab with **Run workflow**.
+
+Your copy tracks upstream, so its history is replaced rather than merged and
+local code edits do not survive. Configure through the console instead. If you
+intend to change the code, do not add the workflow.
 
 ## Deploy from a terminal
 
