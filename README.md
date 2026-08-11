@@ -298,7 +298,7 @@ Everything after setup happens in the console bot, in buttons.
 | Screen | What it holds |
 | --- | --- |
 | Data | Uploaded files, one row each, with a delete on every one |
-| Products | Items typed in one at a time or uploaded in bulk |
+| Products | What your data offers, read out by the assistant |
 | Customers | Everyone who has written, with stages, notes and memory |
 | Instructions | Your own rules for the assistant, with an undo |
 | Bots | The business bots customers write to, and adding another |
@@ -311,10 +311,22 @@ what makes a price list exported from Excel work.
 A file has to belong to a business, so the console asks you to open one before
 it will accept an upload rather than guessing.
 
-Products exist alongside files because a file can only be replaced whole. A
-price that changes should not mean re-uploading a catalogue. Products are
-entered as `name | price | description`, one per line, typed in or uploaded, and
-each can be removed on its own. Every change rebuilds what the assistant knows.
+Products are not a second list you maintain. When a file is added, the
+assistant reads it once and the Products screen shows what it found: each item,
+its price, and the file it came from. Your data stays the single source of
+truth, and the screen is a window onto it.
+
+A price that changes should not mean re-uploading a catalogue, so every item
+can be corrected from its own page. A correction is stored as an owner update,
+a small document of its own, which the assistant is told outranks anything
+older. The same works in reverse: mark an item **No longer sold** and the
+assistant says so, whatever the original file still claims. To take a
+correction back, or after replacing a file wholesale, press **Re-read from
+data**.
+
+An item can also be typed in as `name | price | description` when there is no
+file to read it from. It travels the same road: it becomes part of the owner
+updates document, and the assistant learns it like anything else you uploaded.
 
 Deleting a business asks for confirmation and then removes its files, products,
 customers, bots and vectors together.

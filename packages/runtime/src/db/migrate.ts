@@ -284,6 +284,63 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 8,
+    statements: [
+      // Products become a view over the uploaded documents instead of a second
+      // store the operator maintains by hand. Two stores of the same facts was
+      // the cause of a whole class of faults: a PDF imported as products
+      // became a hundred rows of noise, and a price in a document could
+      // disagree with the same price typed into the table.
+      //
+      // What the assistant knows still comes only from the documents. These
+      // rows are read by the console alone, extracted once per document, and
+      // regenerated whenever the operator asks.
+      `CREATE TABLE IF NOT EXISTS extracted_product (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         document_id TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         price       TEXT NOT NULL DEFAULT '',
+         description TEXT NOT NULL DEFAULT '',
+         created_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS extracted_product_idx ON extracted_product (business_id, name)`,
+
+      // Which documents still owe an extraction. The upload tries immediately,
+      // but it runs inside a bounded invocation, so the scheduled run finishes
+      // whatever did not fit.
+      `CREATE TABLE IF NOT EXISTS extraction_state (
+         document_id TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL,
+         state       TEXT NOT NULL CHECK (state IN ('pending', 'done', 'failed')),
+         detail      TEXT NOT NULL DEFAULT '',
+         updated_at  TEXT NOT NULL
+       )`,
+
+      // Corrections the operator makes from the console: a price fixed, an item
+      // withdrawn, an item added by typing. Stored structurally so the products
+      // view can apply them, and rendered into a single owner-updates document
+      // so the assistant learns them through the same door as everything else.
+      `CREATE TABLE IF NOT EXISTS product_correction (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         name_key    TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         price       TEXT NOT NULL DEFAULT '',
+         description TEXT NOT NULL DEFAULT '',
+         removed     INTEGER NOT NULL DEFAULT 0,
+         updated_at  TEXT NOT NULL
+       )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS product_correction_idx ON product_correction (business_id, name_key)`,
+
+      // The synthetic catalogue document is retired: it was the second voice in
+      // the reference material. Vectors it left in the index are tolerated by
+      // retrieval, which skips matches without a backing row.
+      `DELETE FROM chunk WHERE document_id IN (SELECT id FROM document WHERE filename = 'Product catalogue')`,
+      `DELETE FROM document WHERE filename = 'Product catalogue'`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

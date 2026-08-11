@@ -10,6 +10,7 @@
 import { isMuxelError, timingSafeEqual } from "@muxel/core";
 
 import { open, sha256Hex } from "./crypto.js";
+import { pendingExtractions, runExtraction } from "./rag/extract.js";
 import { ensureSchema } from "./db/migrate.js";
 import { getBusiness, getBotByWebhookPath, getConsoleBot } from "./db/queries.js";
 import { missingConfiguration, type Env } from "./env.js";
@@ -95,7 +96,13 @@ export default {
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     ctx.waitUntil(
-      Promise.allSettled([finishSetup(env), checkForUpdate(env)]).then(([webhook, update]) => {
+      // The schedule can fire on a deployment nothing has ever reached, so the
+      // schema is applied here as well as on the webhook path.
+      ensureSchema(env)
+        .then(() =>
+          Promise.allSettled([finishSetup(env), checkForUpdate(env), pumpExtraction(env)]),
+        )
+        .then(([webhook, update, extraction]) => {
         if (webhook.status === "rejected") {
           console.error("scheduled setup check failed", { reason: String(webhook.reason) });
         } else if (webhook.value !== "healthy") {
@@ -108,6 +115,11 @@ export default {
           // silently declines to run looks exactly like one that found nothing,
           // and that ambiguity already cost a release worth of notices.
           console.log("scheduled update check", { outcome: update.value });
+        }
+        if (extraction.status === "rejected") {
+          // The failure is also recorded on the document's extraction state,
+          // which is what the console reads.
+          console.error("scheduled extraction failed", { reason: String(extraction.reason) });
         }
       }),
     );
@@ -190,4 +202,25 @@ async function dispatch(
 
   const business = await getBusiness(env, bot.businessId);
   await handleReplyUpdate(env, client, bot, business, update);
+}
+
+/**
+ * Reads one document the products view is still waiting on.
+ *
+ * One per tick, because extraction is an inference call and this runs beside
+ * the other scheduled work inside one bounded invocation. A backlog of five
+ * documents clears within an hour and a quarter, unattended.
+ */
+async function pumpExtraction(env: Env): Promise<void> {
+  const [next] = await pendingExtractions(env, 1);
+  if (next === undefined) {
+    return;
+  }
+  const business = await getBusiness(env, next.businessId);
+  const count = await runExtraction(env, { ...next, model: business.model });
+  console.log("extracted products from a document", {
+    businessId: next.businessId,
+    documentId: next.documentId,
+    count,
+  });
 }

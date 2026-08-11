@@ -22,7 +22,6 @@ import {
   type Customer,
   type CustomerFact,
   type CustomerStage,
-  type Product,
 } from "@muxel/core";
 
 import {
@@ -35,9 +34,7 @@ import {
   canAccessBusiness,
   createBot,
   createBusiness,
-  createProducts,
   deleteBusiness,
-  deleteProduct,
   findOperator,
   forgetCustomer,
   forgetFacts,
@@ -45,14 +42,12 @@ import {
   getBusiness,
   getCustomer,
   getOperatorLocale,
-  getProduct,
   listBots,
   listBusinesses,
   listCustomers,
   listDocuments,
   listEvents,
   listFacts,
-  listProducts,
   previousPrompt,
   putConsoleBot,
   setBusinessPrompt,
@@ -61,7 +56,6 @@ import {
   setOperatorLocale,
   appendHumanMessage,
   conversationForCustomer,
-  deleteAllProducts,
   endHandover,
   getBotById,
   getMedia,
@@ -78,11 +72,18 @@ import type { Env } from "../env.js";
 import {
   ingestDocument,
   MAX_DOCUMENT_BYTES,
-  readUpload,
   removeDocument,
-  syncProductCatalogue,
+  syncOwnerUpdates,
 } from "../rag/ingest.js";
 import { describeCustomer } from "../escalation.js";
+import { productsView, upsertCorrection, type ProductEntry } from "../products.js";
+import {
+  hasPendingExtraction,
+  markExtractionPending,
+  OWNER_UPDATES_FILENAME,
+  pendingExtractions,
+  runExtraction,
+} from "../rag/extract.js";
 import { resolveMasterKey } from "../secrets.js";
 import { findSkill, matchSkill, SKILLS } from "./skills.js";
 import { versionStatus } from "../updates.js";
@@ -150,8 +151,8 @@ type PendingKind =
   | "console_bot"
   | "instructions"
   | "customer_note"
-  | "product_line"
-  | "product_file"
+  | "manual_product"
+  | "product_fix"
   | "data_file"
   | "human_reply";
 
@@ -161,6 +162,7 @@ interface Pending {
   readonly customerId?: string;
   readonly role?: "admin" | "reply";
   readonly replace?: boolean;
+  readonly productKey?: string;
 }
 
 async function setPending(env: Env, userId: number, pending: Pending): Promise<void> {
@@ -455,45 +457,35 @@ function documentScreen(
   };
 }
 
-function productsScreen(locale: Locale, business: Business, products: readonly Product[]): Screen {
+function productsScreen(
+  locale: Locale,
+  business: Business,
+  products: readonly ProductEntry[],
+  scanning: boolean,
+): Screen {
   return {
     text: [
       `<b>${t(locale, "prodTitle", { name: escapeHtml(business.name) })}</b>`,
       "",
-      products.length === 0 ? t(locale, "prodEmpty") : `${products.length}`,
-    ].join("\n"),
-    rows: [
-      ...products
-        .slice(0, LIST_LIMIT)
-        .map((product) =>
-          row({
-            text: product.price.length > 0 ? `${product.name} - ${product.price}` : product.name,
-            action: "p",
-            args: [product.id],
-          }),
-        ),
-      row({ text: t(locale, "btnAddProduct"), action: "prodadd", args: [business.id] }),
-      row({ text: t(locale, "btnBulkProducts"), action: "prodbulk", args: [business.id] }),
-      ...(products.length > 0
-        ? [row({ text: t(locale, "btnClearProducts"), action: "prodclr", args: [business.id] })]
-        : []),
-      backTo(locale, "biz", [business.id]),
-    ],
-  };
-}
-
-function productScreen(locale: Locale, product: Product): Screen {
-  return {
-    text: [
-      `<b>${escapeHtml(product.name)}</b>`,
-      product.price.length > 0 ? escapeHtml(product.price) : "",
-      product.description.length > 0 ? escapeHtml(product.description) : "",
+      t(locale, "prodDerived"),
+      scanning ? `\n<i>${t(locale, "prodScanning")}</i>` : "",
+      products.length === 0 && !scanning ? `\n${t(locale, "prodEmptyDerived")}` : "",
     ]
       .filter((line) => line !== "")
       .join("\n"),
     rows: [
-      row({ text: t(locale, "btnDeleteProduct"), action: "pdel", args: [product.id] }),
-      backTo(locale, "prod", [product.businessId]),
+      ...products.slice(0, LIST_LIMIT).map((entry) =>
+        row({
+          text: `${entry.edited ? "\u270F " : ""}${
+            entry.price.length > 0 ? `${entry.name} - ${entry.price}` : entry.name
+          }`,
+          action: "p",
+          args: [business.id, entry.key],
+        }),
+      ),
+      row({ text: t(locale, "btnAddProduct"), action: "prodadd", args: [business.id] }),
+      row({ text: t(locale, "btnRescanProducts"), action: "prodscan", args: [business.id] }),
+      backTo(locale, "biz", [business.id]),
     ],
   };
 }
@@ -706,11 +698,6 @@ async function customerFor(env: Env, userId: number, customerId: string): Promis
   return customer;
 }
 
-async function productFor(env: Env, userId: number, productId: string): Promise<Product> {
-  const product = await getProduct(env, productId);
-  await requireAccess(env, userId, product.businessId);
-  return product;
-}
 
 async function businessDetail(env: Env, locale: Locale, userId: number, businessId: string): Promise<Screen> {
   await requireAccess(env, userId, businessId);
@@ -721,7 +708,7 @@ async function businessDetail(env: Env, locale: Locale, userId: number, business
     todayUsage(env, businessId),
     listDocuments(env, businessId, 100),
     listCustomers(env, businessId, 100),
-    listProducts(env, businessId),
+    productsView(env, businessId),
   ]);
   return businessScreen(
     locale,
@@ -1126,89 +1113,124 @@ async function screenFor(
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
       await setContext(env, userId, businessId);
-      const [business, products] = await Promise.all([
+      const [business, view, scanning] = await Promise.all([
         getBusiness(env, businessId),
-        listProducts(env, businessId),
+        productsView(env, businessId),
+        hasPendingExtraction(env, businessId),
       ]);
-      return productsScreen(locale, business, products);
+      return productsScreen(locale, business, view, scanning);
+    }
+
+    case "p": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const key = requireArg(args, 1);
+      const entry = (await productsView(env, businessId)).find((item) => item.key === key);
+      if (entry === undefined) {
+        return screenFor(env, locale, userId, "prod", [businessId]);
+      }
+      return {
+        text: [
+          `<b>${escapeHtml(entry.name)}</b>`,
+          entry.price.length > 0 ? escapeHtml(entry.price) : "",
+          entry.description.length > 0 ? escapeHtml(entry.description) : "",
+          "",
+          entry.source.length > 0
+            ? `<i>${t(locale, "prodSource", { name: escapeHtml(entry.source) })}</i>`
+            : `<i>${t(locale, "prodTyped")}</i>`,
+          entry.edited ? `<i>${t(locale, "prodEditedNote")}</i>` : "",
+        ]
+          .filter((line) => line !== "")
+          .join("\n"),
+        rows: [
+          row({ text: t(locale, "btnFixProduct"), action: "pfix", args: [businessId, entry.key] }),
+          row({ text: t(locale, "btnRemoveProduct"), action: "prem", args: [businessId, entry.key] }),
+          backTo(locale, "prod", [businessId]),
+        ],
+      };
+    }
+
+    case "pfix": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const key = requireArg(args, 1);
+      const entry = (await productsView(env, businessId)).find((item) => item.key === key);
+      if (entry === undefined) {
+        return screenFor(env, locale, userId, "prod", [businessId]);
+      }
+      await setPending(env, userId, { kind: "product_fix", businessId, productKey: key });
+      return {
+        text: `<b>${t(locale, "btnFixProduct")}</b>\n\n${t(locale, "prodFixBody", {
+          name: escapeHtml(entry.name),
+          price: escapeHtml(entry.price.length > 0 ? entry.price : "-"),
+        })}`,
+        rows: [row({ text: t(locale, "cancel"), action: "p", args: [businessId, key] })],
+      };
+    }
+
+    case "prem": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const key = requireArg(args, 1);
+      const entry = (await productsView(env, businessId)).find((item) => item.key === key);
+      if (entry === undefined) {
+        return screenFor(env, locale, userId, "prod", [businessId]);
+      }
+      return confirmScreen(
+        locale,
+        t(locale, "prodRemoveConfirm", { name: escapeHtml(entry.name) }),
+        { action: "premy", args: [businessId, key] },
+        { action: "p", args: [businessId, key] },
+      );
+    }
+
+    case "premy": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const key = requireArg(args, 1);
+      const entry = (await productsView(env, businessId)).find((item) => item.key === key);
+      if (entry !== undefined) {
+        // The data learns it first, then the view shows it: a removal the
+        // customer could still be quoted is not a removal.
+        await upsertCorrection(env, {
+          businessId,
+          name: entry.name,
+          price: "",
+          description: "",
+          removed: true,
+        });
+        await syncOwnerUpdates(env, businessId);
+      }
+      return screenFor(env, locale, userId, "prod", [businessId]);
     }
 
     case "prodadd": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      await setPending(env, userId, { kind: "product_line", businessId });
+      await setPending(env, userId, { kind: "manual_product", businessId });
       return {
         text: `<b>${t(locale, "prodAddTitle")}</b>\n\n${t(locale, "prodAddBody")}`,
         rows: [row({ text: t(locale, "cancel"), action: "prod", args: [businessId] })],
       };
     }
 
-    case "prodclr": {
+    case "prodscan": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
-      const [business, products] = await Promise.all([
-        getBusiness(env, businessId),
-        listProducts(env, businessId),
-      ]);
-      return confirmScreen(
-        locale,
-        t(locale, "prodClearConfirm", {
-          count: String(products.length),
-          name: escapeHtml(business.name),
-        }),
-        { action: "prodclry", args: [businessId] },
-        { action: "prod", args: [businessId] },
-      );
-    }
-
-    case "prodclry": {
-      const businessId = requireArg(args, 0);
-      await requireAccess(env, userId, businessId);
-      const removed = await deleteAllProducts(env, businessId);
-      // Re-synced so the assistant stops answering from a catalogue that is no
-      // longer there.
-      await syncProductCatalogue(env, businessId);
-      const emptied = await screenFor(env, locale, userId, "prod", [businessId]);
-      return {
-        ...emptied,
-        text: `${t(locale, "prodCleared", { count: String(removed) })}\n\n${emptied.text}`,
-      };
-    }
-
-    case "prodbulk": {
-      const businessId = requireArg(args, 0);
-      await requireAccess(env, userId, businessId);
-      await setPending(env, userId, { kind: "product_file", businessId });
-      return {
-        text: [
-          `<b>${t(locale, "btnBulkProducts")}</b>`,
-          "",
-          t(locale, "dataAddBody"),
-          "",
-          t(locale, "prodAddBody"),
-        ].join("\n"),
-        rows: [row({ text: t(locale, "cancel"), action: "prod", args: [businessId] })],
-      };
-    }
-
-    case "p":
-      return productScreen(locale, await productFor(env, userId, requireArg(args, 0)));
-
-    case "pdel": {
-      const product = await productFor(env, userId, requireArg(args, 0));
-      return confirmScreen(
-        locale,
-        t(locale, "prodDeleteConfirm", { name: escapeHtml(product.name) }),
-        { action: "pdely", args: [product.id] },
-        { action: "p", args: [product.id] },
-      );
-    }
-
-    case "pdely": {
-      const product = await productFor(env, userId, requireArg(args, 0));
-      await deleteProduct(env, product.id);
-      await syncProductCatalogue(env, product.businessId);
-      return screenFor(env, locale, userId, "prod", [product.businessId]);
+      const documents = await listDocuments(env, businessId, 100);
+      for (const document of documents) {
+        if (document.filename !== OWNER_UPDATES_FILENAME) {
+          await markExtractionPending(env, { businessId, documentId: document.id });
+        }
+      }
+      // One document is read now so the button visibly did something; the
+      // scheduled run works through whatever remains.
+      const [next] = await pendingExtractions(env, 1);
+      if (next !== undefined) {
+        const business = await getBusiness(env, businessId);
+        await runExtraction(env, { ...next, model: business.model }).catch(() => undefined);
+      }
+      return screenFor(env, locale, userId, "prod", [businessId]);
     }
 
     // Instructions ------------------------------------------------------------
@@ -1598,6 +1620,19 @@ async function handleDataUpload(
         chunks: result.chunkCount,
       }),
     });
+
+    // The products view reads what this file says. Attempted now for
+    // immediate feedback; the scheduled run finishes it if this invocation
+    // runs out of road.
+    if (file.filename !== OWNER_UPDATES_FILENAME) {
+      await markExtractionPending(env, { businessId, documentId: result.documentId });
+      const business = await getBusiness(env, businessId);
+      await runExtraction(env, {
+        businessId,
+        documentId: result.documentId,
+        model: business.model,
+      }).catch(() => undefined);
+    }
   } catch (error) {
     console.error("data upload failed", {
       businessId,
@@ -1751,49 +1786,51 @@ async function handlePendingInput(
     return;
   }
 
-  if (pending.kind === "product_line" || pending.kind === "product_file") {
+  if (pending.kind === "manual_product") {
     const businessId = pending.businessId;
     if (businessId === undefined) {
       return;
     }
     await requireAccess(env, userId, businessId);
-
-    let source = text;
-    if (input.message.document !== undefined) {
-      try {
-        const file = await download(client, input.message);
-        source = await readUpload(env, {
-          businessId,
-          filename: file.filename,
-          contentType: file.contentType,
-          body: file.body,
-        });
-      } catch (error) {
-        await client.sendMessage({
-          chatId,
-          text: t(locale, "dataFailed", {
-            reason: escapeHtml(error instanceof Error ? error.message : "unknown error"),
-          }),
-        });
-        return;
-      }
-    }
-
-    const parsed = parseProductLines(source);
-    if (parsed.length === 0) {
-      // A file that produced nothing usable gets the long explanation, because
-      // the person is holding a document and needs to know which door it goes
-      // through. A typed line just needs to be typed again.
-      await client.sendMessage({
-        chatId,
-        text: t(locale, input.message.document === undefined ? "prodAddInvalid" : "prodNotAList"),
-      });
+    const item = parseProductLines(text)[0];
+    if (item === undefined) {
+      await client.sendMessage({ chatId, text: t(locale, "prodAddInvalid") });
       return;
     }
-    await createProducts(env, businessId, parsed);
-    const total = await syncProductCatalogue(env, businessId);
-    await client.sendMessage({ chatId, text: t(locale, "prodSynced", { count: total }) });
+    // A typed item is a correction with nothing underneath it. It reaches the
+    // assistant through the owner-updates document, like every other fact.
+    await upsertCorrection(env, { businessId, ...item, removed: false });
+    await syncOwnerUpdates(env, businessId);
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "prod", [businessId]));
+    return;
+  }
+
+  if (pending.kind === "product_fix") {
+    const businessId = pending.businessId;
+    const key = pending.productKey;
+    if (businessId === undefined || key === undefined) {
+      return;
+    }
+    await requireAccess(env, userId, businessId);
+    const entry = (await productsView(env, businessId)).find((item) => item.key === key);
+    if (entry === undefined) {
+      await render(env, client, { chatId }, await screenFor(env, locale, userId, "prod", [businessId]));
+      return;
+    }
+    const [price = "", description = ""] = text.split("|").map((part) => part.trim());
+    if (price.length === 0) {
+      await client.sendMessage({ chatId, text: t(locale, "prodAddInvalid") });
+      return;
+    }
+    await upsertCorrection(env, {
+      businessId,
+      name: entry.name,
+      price,
+      description: description.length > 0 ? description : entry.description,
+      removed: false,
+    });
+    await syncOwnerUpdates(env, businessId);
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "p", [businessId, key]));
     return;
   }
 

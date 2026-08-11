@@ -19,10 +19,11 @@ import {
   deleteDocument,
   findDocumentByName,
   insertChunks,
-  listProducts,
   setDocumentStatus,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
+import { listCorrections, renderOwnerUpdates } from "../products.js";
+import { OWNER_UPDATES_FILENAME } from "./extract.js";
 import { extractPdfText } from "./pdf.js";
 
 /** Largest upload accepted. Telegram itself caps bot downloads at 20 MB. */
@@ -38,7 +39,7 @@ const EMBED_BATCH = 25;
 const MIN_CONTENT_CHARS = 40;
 
 /** Name of the document generated from hand entered products. */
-export const CATALOGUE_FILENAME = "Product catalogue";
+// The retired synthetic catalogue. Migration 8 removes it from the data.
 
 export interface IngestInput {
   readonly businessId: string;
@@ -397,36 +398,30 @@ export async function removeDocument(
 }
 
 /**
- * Rebuilds the knowledge entry for hand entered products.
+ * Rebuilds the document that carries the owner's corrections into RAG.
  *
- * Products are stored structurally so a single price can be corrected, but
- * retrieval only understands documents. Regenerating the whole catalogue on
- * every change keeps the two in step without tracking which vector belongs to
- * which row, and a shop has tens of products rather than thousands.
+ * Corrections are stored structurally so the products view can apply them, but
+ * the assistant only reads documents, so they are rendered into one and
+ * ingested through the same door as everything else. Regenerated wholesale on
+ * every change: a shop has tens of corrections, not thousands, and tracking
+ * which vector belongs to which row would buy nothing.
  */
-export async function syncProductCatalogue(env: Env, businessId: string): Promise<number> {
-  const existing = await findDocumentByName(env, businessId, CATALOGUE_FILENAME);
+export async function syncOwnerUpdates(env: Env, businessId: string): Promise<void> {
+  const existing = await findDocumentByName(env, businessId, OWNER_UPDATES_FILENAME);
   if (existing !== null) {
     await removeDocument(env, businessId, existing);
   }
 
-  const products = await listProducts(env, businessId);
-  if (products.length === 0) {
-    return 0;
+  const text = renderOwnerUpdates(await listCorrections(env, businessId));
+  if (text.length === 0) {
+    return;
   }
-
-  const text = products
-    .map((product) =>
-      [product.name, product.price, product.description].filter((part) => part.length > 0).join(" - "),
-    )
-    .join("\n");
 
   await indexText(env, {
     businessId,
-    filename: CATALOGUE_FILENAME,
+    filename: OWNER_UPDATES_FILENAME,
     contentType: "text/plain",
     byteSize: text.length,
     text,
   });
-  return products.length;
 }
