@@ -17,6 +17,9 @@
 > အောင်မြင်စွာ deploy ဖြစ်ခဲ့သော commit အတိအကျပင် ယနေ့ ပျက်နေပြီး၊ Cloudflare ၏
 > ကိုယ်ပိုင် `hello-world-do-template` ပင် သီးခြား account နှစ်ခုတွင် တူညီသော error
 > ဖြင့် ပျက်နေသဖြင့် ဤ flow သည် repository တိုင်းအတွက် ချွတ်ယွင်းနေခြင်း ဖြစ်ပါသည်။
+> Cloudflare သို့
+> [workers-sdk#15147](https://github.com/cloudflare/workers-sdk/issues/15147)
+> အဖြစ် တင်ပြထားပြီး ပြင်ဆင်မှုကို ထိုနေရာတွင် စောင့်ကြည့်နိုင်ပါသည်။
 >
 > ယင်းအစား [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) ဖြင့် တင်ပါ။ command
 > တစ်ကြောင်းသာ လိုအပ်ပြီး GitHub လုံးဝ မပါဝင်ဘဲ တူညီသော deployment ကို ရရှိပါသည်။

@@ -15,7 +15,10 @@ price list and policies, running entirely inside your own Cloudflare account.
 > says cannot be set from a repository. The same commit that deployed cleanly
 > on 11 August fails today, unchanged, and Cloudflare's own
 > `hello-world-do-template` fails with the identical error on two unrelated
-> accounts, so the flow is broken for every repository, not this one.
+> accounts, so the flow is broken for every repository, not this one. Reported
+> to Cloudflare as
+> [workers-sdk#15147](https://github.com/cloudflare/workers-sdk/issues/15147),
+> where you can watch for the fix.
 >
 > Install with [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) instead. It
 > takes one command, skips GitHub entirely, and produces exactly the same
