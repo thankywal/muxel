@@ -83,7 +83,19 @@ describe("the configuration a hand install deploys", () => {
     expect(config.triggers).toEqual(original.triggers);
     expect(config.vars).toEqual(original.vars);
     expect(config.observability).toEqual(original.observability);
-    expect(config.workers_dev).toBe(true);
+  });
+
+  it("states neither workers_dev nor preview_urls", () => {
+    // Not a style preference. Stating preview_urls stops Cloudflare's one click
+    // form filling in the preview configuration it nonetheless validates, and
+    // its own submit handler then throws on
+    // previews_base_config.deploy_command being undefined. The submission
+    // aborts half finished and the operator is left with a two file repository
+    // and a placeholder Worker, while the dashboard reports success. Three
+    // deploys were lost to it and every deploy without the setting worked.
+    const original = JSON.parse(stripJsonComments(shipped));
+    expect(original.workers_dev).toBeUndefined();
+    expect(original.preview_urls).toBeUndefined();
   });
 
   it("drops the schema path, which does not resolve from a scratch directory", () => {

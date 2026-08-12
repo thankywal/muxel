@@ -12,20 +12,24 @@
 
   "placement": { "mode": "smart" },
 
-  // Stated rather than left to the default, so nothing has to infer them.
+  // There is deliberately no workers_dev or preview_urls setting here, and it
+  // is not an oversight. Stating preview_urls false reads as sensible, since a
+  // preview would be a second live copy of the same assistant answering the
+  // same customers out of the same database. It also breaks the deploy button
+  // outright.
   //
-  // A deployment is reached at its workers.dev address: the deploy script
-  // reads that address back out of wrangler's output to finish setup, and the
-  // console builds the web widget's URL from it. Preview URLs are off because
-  // a preview would be a second live copy of the same assistant answering the
-  // same customers from the same database, which is not a preview of anything.
+  // The dashboard's one click flow builds a preview configuration alongside
+  // the real one. Told that previews are off, it stops filling that
+  // configuration in but still validates it, and its own form then throws
+  // ZodError previews_base_config.deploy_command, expected string, received
+  // undefined, on submit. The submission aborts half finished: the operator's
+  // repository is created holding two files, no build is ever queued, and the
+  // placeholder Worker stays deployed while the dashboard reports success.
   //
-  // Leaving these unset also cost a deployment. The dashboard's one click flow
-  // builds a preview configuration alongside the real one and refused a repo
-  // that gave it nothing to build it from, failing validation on submit with
-  // no field on the form to correct.
-  "workers_dev": true,
-  "preview_urls": false,
+  // Three consecutive deploys failed that way. Every deploy before the setting
+  // was added succeeded. Cloudflare's form offers no field to correct it, so
+  // the only lever is to leave both unset and let the defaults stand, which is
+  // what worked. Do not add them back without a real deploy proving otherwise.
 
   // Periodic repair. A webhook Telegram has dropped, or an address that changed
   // when the deployment moved to a custom domain, both leave a bot that looks
