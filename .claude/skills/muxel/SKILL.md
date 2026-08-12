@@ -119,6 +119,7 @@ Check these before starting from first principles. Each one presented as
 | Update notice never arrived | The version check cached the upstream file for an hour | no cache override |
 | Build red, `/setup` answered 404 on every attempt | A brand new workers.dev address is not routable for a minute or two, and the edge answers 404. The Worker was fine. | `deploy.mjs` records the origin in KV first, waits ~3 min, exits 0 on unreachable; `finishSetup` completes it from cron |
 | Deploy reported success, the address answers `Hello world` | Cloudflare's source import failed and pushed only the parsed `wrangler.jsonc`, so no build was ever queued and its placeholder Worker stayed deployed. Not our code: none of it is present. | `docs/DEPLOY-RECOVERY.md`, `scripts/install.mjs` |
+| Deploy form throws `ZodError: previews_base_config.deploy_command` on submit | Broken in Cloudflare's dashboard since 2026-08-12, proven by a controlled experiment: the byte-exact tree that imported cleanly on 08-11, a copy with no deploy script, and Cloudflare's own `hello-world-do-template` all fail identically, across three accounts, two GitHub identities and two browsers. Decompiled `cf-ConfigureTemplate` shows the field is filled only from a dashboard form value with a hardcoded default; no repository content reaches it. Do not spend time on repo-side fixes. | `docs/DEPLOY-RECOVERY.md`, `scripts/install.mjs`, memory `muxel-deploy-button-outage` |
 
 Telling the two imports apart, which is the fastest way to settle whether a
 failed deploy is ours at all:

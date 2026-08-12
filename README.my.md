@@ -14,7 +14,9 @@
 > အကွက်မှာ repository မှ သတ်မှတ်၍ မရကြောင်း
 > [Cloudflare ၏ စာရွက်စာတမ်း](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
 > တွင် အတိအလင်း ဖော်ပြထားသော build setting တစ်ခု ဖြစ်ပါသည်။ ဩဂုတ် ၁၁ ရက်တွင်
-> အောင်မြင်စွာ deploy ဖြစ်ခဲ့သော commit အတိအကျပင် ယနေ့ ပျက်နေပါသည်။
+> အောင်မြင်စွာ deploy ဖြစ်ခဲ့သော commit အတိအကျပင် ယနေ့ ပျက်နေပြီး၊ Cloudflare ၏
+> ကိုယ်ပိုင် `hello-world-do-template` ပင် သီးခြား account နှစ်ခုတွင် တူညီသော error
+> ဖြင့် ပျက်နေသဖြင့် ဤ flow သည် repository တိုင်းအတွက် ချွတ်ယွင်းနေခြင်း ဖြစ်ပါသည်။
 >
 > ယင်းအစား [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) ဖြင့် တင်ပါ။ command
 > တစ်ကြောင်းသာ လိုအပ်ပြီး GitHub လုံးဝ မပါဝင်ဘဲ တူညီသော deployment ကို ရရှိပါသည်။

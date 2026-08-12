@@ -13,7 +13,9 @@ price list and policies, running entirely inside your own Cloudflare account.
 > field it rejects belongs to a build setting that
 > [Cloudflare's own documentation](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
 > says cannot be set from a repository. The same commit that deployed cleanly
-> on 11 August fails today, unchanged.
+> on 11 August fails today, unchanged, and Cloudflare's own
+> `hello-world-do-template` fails with the identical error on two unrelated
+> accounts, so the flow is broken for every repository, not this one.
 >
 > Install with [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) instead. It
 > takes one command, skips GitHub entirely, and produces exactly the same
