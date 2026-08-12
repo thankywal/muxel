@@ -18,6 +18,15 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
+  # Also by hand, because a CI run that failed for a reason outside the code,
+  # an expired token being the one that has happened, is fixed by re-running
+  # the job, and a re-run does not fire workflow_run again. Without this main
+  # would sit behind a verified dev commit with nothing saying so.
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit on dev to promote. Defaults to the tip of dev.
+        required: false
 
 permissions:
   contents: read
@@ -32,15 +41,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: >
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'dev' &&
-      github.repository == 'thankywal/muxel'
+      github.repository == 'thankywal/muxel' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'dev'))
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: >-
+            ${{ github.event.workflow_run.head_sha || inputs.sha || 'dev' }}
           fetch-depth: 0
+
+      # A hand run must not promote something CI has not seen pass. The commit
+      # is checked here rather than trusted, because the whole point of this
+      # branch is that nothing reaches main unverified.
+      - name: Confirm CI passed for this commit
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          state=$(gh api "repos/${{ github.repository }}/commits/$sha/check-runs" --jq \
+            '[.check_runs[] | select(.name != "Fast forward main")]
+             | if length == 0 then "none"
+               elif all(.conclusion == "success" or .conclusion == "skipped") then "success"
+               else "failed" end')
+          echo "Checks on ${sha:0:8}: $state"
+          if [ "$state" != "success" ]; then
+            echo "Refusing to promote a commit whose checks are $state." >&2
+            exit 1
+          fi
 
       - name: Push the verified commit to main
         env:
