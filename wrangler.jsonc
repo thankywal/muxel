@@ -12,6 +12,21 @@
 
   "placement": { "mode": "smart" },
 
+  // Stated rather than left to the default, so nothing has to infer them.
+  //
+  // A deployment is reached at its workers.dev address: the deploy script
+  // reads that address back out of wrangler's output to finish setup, and the
+  // console builds the web widget's URL from it. Preview URLs are off because
+  // a preview would be a second live copy of the same assistant answering the
+  // same customers from the same database, which is not a preview of anything.
+  //
+  // Leaving these unset also cost a deployment. The dashboard's one click flow
+  // builds a preview configuration alongside the real one and refused a repo
+  // that gave it nothing to build it from, failing validation on submit with
+  // no field on the form to correct.
+  "workers_dev": true,
+  "preview_urls": false,
+
   // Periodic repair. A webhook Telegram has dropped, or an address that changed
   // when the deployment moved to a custom domain, both leave a bot that looks
   // configured and answers nothing. This checks quarter hourly.
