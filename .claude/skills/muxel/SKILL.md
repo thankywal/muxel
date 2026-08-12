@@ -118,6 +118,24 @@ Check these before starting from first principles. Each one presented as
 | A PDF became hundreds of junk products | PDF text arrives one fragment per line, nothing like a list | importer refuses input whose lines lack separators |
 | Update notice never arrived | The version check cached the upstream file for an hour | no cache override |
 | Build red, `/setup` answered 404 on every attempt | A brand new workers.dev address is not routable for a minute or two, and the edge answers 404. The Worker was fine. | `deploy.mjs` records the origin in KV first, waits ~3 min, exits 0 on unreachable; `finishSetup` completes it from cron |
+| Deploy reported success, the address answers `Hello world` | Cloudflare's source import failed and pushed only the parsed `wrangler.jsonc`, so no build was ever queued and its placeholder Worker stayed deployed. Not our code: none of it is present. | `docs/DEPLOY-RECOVERY.md`, `scripts/install.mjs` |
+
+Telling the two imports apart, which is the fastest way to settle whether a
+failed deploy is ours at all:
+
+| | Good | Failed |
+| ---- | ---- | ---- |
+| commit author | `cloudflare[bot]` | `cloudflare-workers-and-pages[bot]` |
+| commit message | `source repo import` | `Uploading template.` |
+| files in the copy | ~95, `.github/` stripped | 2, `README.md` and `wrangler.jsonc` |
+| `last_deployed_from` | `wrangler` | `dash_template` |
+
+`gh api repos/OWNER/muxel/commits --jq '.[].commit.message'` answers it in one
+call. The older app appears to be reused when it is already installed on the
+operator's GitHub account, which is why one account fails repeatedly while a
+fresh one succeeds first try. Uninstalling it at
+`github.com/settings/installations` is the fix; the hand install is the
+guarantee.
 
 ## Verifying a change
 
