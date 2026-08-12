@@ -85,9 +85,16 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
 ```
 
 フォームが表示される前に、Cloudflare は 3 つのことを尋ねます。まだサインインして
-いなければサインイン、GitHub アカウントの接続、そしてそこへの
-**Cloudflare Workers and Pages** アプリのインストールです。これは承認してください。
-Cloudflare がコードの写しを作り、更新のたびに作り直すための仕組みです。
+いなければサインイン、GitHub アカウントの接続、そしてそこへの Cloudflare の GitHub
+アプリのインストールです。これは承認してください。Cloudflare がコードの写しを作り、
+更新のたびに作り直すための仕組みです。
+
+以前のプロジェクトから **Cloudflare Workers and Pages** というアプリが GitHub
+アカウントに残っている場合は、先に
+[github.com/settings/installations](https://github.com/settings/installations)
+で削除し、この流れで現行のアプリを入れ直してください。古いアプリはリポジトリを
+不完全に写すことがあり、その場合デプロイは成功と表示されるのに何も動きません。
+対処は [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) にあります。
 
 フォームでは、KV の名前空間と D1 データベースについては提案された名前をそのまま
 受け入れ、4 つの項目を入力します。
@@ -123,6 +130,13 @@ Cloudflare がコードの写しを作り、更新のたびに作り直すため
 
 bot が黙ったままのときは、Cloudflare が表示した Worker のアドレスを開いてください。
 そのページがセットアップをもう一度実行し、どこが問題かを教えてくれます。
+
+**そのアドレスが `Hello world` と答える場合、デプロイは完了していません。**
+Cloudflare はビルドの前にこのリポジトリをあなたの GitHub アカウントへ写しますが、
+その写しがまれに失敗し、それでもダッシュボードは成功と表示します。Muxel は一切
+動いていないため、問題をあなたに知らせるものも存在しません。確認方法と、GitHub を
+まったく使わないものを含む 2 通りの導入方法を
+[docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) に書いてあります。
 
 <details>
 <summary>deploy のあとは、写しを非公開にしてください</summary>

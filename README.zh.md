@@ -83,9 +83,15 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
 ```
 
 在表单出现之前,Cloudflare 会先带你走三步。如果你还没有登录,它会请你登录;
-它会请你连接 GitHub 账户;它还会请你在上面安装 **Cloudflare Workers and
-Pages** 应用。请同意安装,因为 Cloudflare 正是靠它来创建你那份代码副本,并在
-你更新时重新构建。
+它会请你连接 GitHub 账户;它还会请你在上面安装 Cloudflare 的 GitHub 应用。请
+同意安装,因为 Cloudflare 正是靠它来创建你那份代码副本,并在你更新时重新构建。
+
+如果你的 GitHub 账户里还留着以前项目安装的 **Cloudflare Workers and Pages**
+应用,请先到
+[github.com/settings/installations](https://github.com/settings/installations)
+把它卸载,再让这一步安装当前的应用。旧的那个应用可能只复制仓库的一部分,结果
+就是 deploy 显示成功,但什么都跑不起来。处理方法见
+[docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md)。
 
 在表单里,KV 命名空间和 D1 数据库直接用它建议的名字就好,然后填写四个字段。
 
@@ -117,6 +123,12 @@ Pages** 应用。请同意安装,因为 Cloudflare 正是靠它来创建你那�
 
 如果 bot 一直没有反应,就打开 Cloudflare 显示给你的那个 Worker 地址。那个页面
 会重新执行一次设置,并告诉你问题出在哪里。
+
+**如果那个地址回答的是 `Hello world`,说明这次 deploy 并没有完成。**Cloudflare
+在构建之前会把这个仓库复制到你的 GitHub 账户,而这一步偶尔会失败,面板却仍然
+显示成功。此时 Muxel 没有任何部分在运行,也就没有任何东西能把问题告诉你。
+[docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) 说明了如何确认,并给出两种
+把安装做完的办法,其中一种完全不需要 GitHub。
 
 <details>
 <summary>deploy 之后,把你的副本设为 private</summary>

@@ -94,9 +94,15 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
 
 Cloudflare then takes you through three things before the form appears. It asks
 you to sign in if you are not already, it asks to connect your GitHub account,
-and it asks to install the **Cloudflare Workers and Pages** app on it. Approve
-that: it is how Cloudflare creates your copy of the code and rebuilds it when
-you update.
+and it asks to install its GitHub app on it. Approve that: it is how Cloudflare
+creates your copy of the code and rebuilds it when you update.
+
+If your GitHub account already has an app called **Cloudflare Workers and
+Pages** from an earlier project, remove it first at
+[github.com/settings/installations](https://github.com/settings/installations)
+and let this flow install the current one. The older app can copy the
+repository incompletely, which produces a deploy that reports success and
+serves nothing. [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) covers it.
 
 On the form, accept the suggested names for the KV namespace and the D1
 database, then fill in four fields.
@@ -132,6 +138,14 @@ your customers write to.
 
 If the bot stays silent, open the Worker address Cloudflare showed you. That
 page runs setup again and says what is wrong.
+
+**If that address answers `Hello world`, the deploy did not finish.** Cloudflare
+copies this repository into your GitHub account before building it, and that
+copy occasionally fails while the dashboard still reports success. It leaves a
+placeholder Worker behind, so no part of Muxel is running and nothing can report
+the problem to you. [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) tells you
+how to confirm it and gives two ways to finish the install, one of which does
+not involve GitHub at all.
 
 A brand new `workers.dev` address is not reachable for the first minute or two,
 so the deploy log may end with **the address is not serving yet**. Nothing is
