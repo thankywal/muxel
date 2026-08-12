@@ -93,6 +93,28 @@ async function teardown() {
 
 if (failures.length > 0) {
   await teardown();
+  // An expired credential and a broken Worker both arrive here as a red build,
+  // and they need opposite responses: one is fixed by replacing a secret, the
+  // other by fixing the code. Saying which has already cost two investigations,
+  // so the difference is stated rather than left to be rediscovered.
+  const authenticationFailed = [d1, kv, vec].some((response) =>
+    (response?.errors ?? []).some((error) => error?.code === 10000),
+  );
+  if (authenticationFailed) {
+    console.error(
+      [
+        "",
+        "smoke: Cloudflare rejected the credential, so nothing was tested.",
+        "",
+        "This is not a fault in the code under test. CLOUDFLARE_API_TOKEN has",
+        "expired or been revoked. Replace it with a token from the Cloudflare",
+        "account that exists for this purpose, not one borrowed from a user's",
+        "account, and rerun. Until then main cannot advance, which is the",
+        "intended behaviour: an untested commit must not become a release.",
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
   console.error("smoke: could not provision, failing.");
   process.exit(1);
 }
