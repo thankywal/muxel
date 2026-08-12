@@ -362,8 +362,13 @@ export async function replaceBotIdentity(
 
 export async function listBots(env: Env, businessId: string): Promise<Bot[]> {
   assertValidId(businessId, "businessId");
+  // The website channel owns a bot row so its conversations have something to
+  // reference, but it is not a bot anyone can write to on Telegram and must
+  // not appear where those are listed.
   const result = await env.DB.prepare(
-    "SELECT * FROM bot WHERE business_id = ? ORDER BY created_at",
+    `SELECT * FROM bot
+      WHERE business_id = ? AND id NOT IN (SELECT bot_id FROM hidden_bot)
+      ORDER BY created_at`,
   )
     .bind(businessId)
     .all<BotRow>();

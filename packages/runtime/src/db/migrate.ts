@@ -341,6 +341,58 @@ const MIGRATIONS: readonly Migration[] = [
       `DELETE FROM document WHERE filename = 'Product catalogue'`,
     ],
   },
+  {
+    version: 9,
+    statements: [
+      // The same assistant, reached from a website instead of Telegram.
+      //
+      // The key is public by nature: it sits in a script tag on a page anyone
+      // can read. It therefore identifies a business and nothing else, and the
+      // protections that matter are the origin allowlist and the daily cap,
+      // not secrecy. Colour and greeting live here so the operator can change
+      // how the widget looks without touching their site again.
+      `CREATE TABLE IF NOT EXISTS web_channel (
+         id              TEXT PRIMARY KEY,
+         business_id     TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         key             TEXT NOT NULL UNIQUE,
+         bot_id          TEXT NOT NULL,
+         title           TEXT NOT NULL DEFAULT '',
+         greeting        TEXT NOT NULL DEFAULT '',
+         accent          TEXT NOT NULL DEFAULT '#2563eb',
+         allowed_origins TEXT NOT NULL DEFAULT '',
+         daily_limit     INTEGER NOT NULL DEFAULT 500,
+         enabled         INTEGER NOT NULL DEFAULT 1,
+         created_at      TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS web_channel_business_idx ON web_channel (business_id)`,
+
+      // A visitor's browser holds a random session id in local storage. It is
+      // mapped to a stable negative number here, because a conversation and a
+      // customer are both keyed by a Telegram account id and Telegram never
+      // issues a negative one. Reusing those tables rather than adding a
+      // parallel pair is what lets the transcript, the customer list, memory
+      // and human takeover work on a web visitor with no changes at all.
+      `CREATE TABLE IF NOT EXISTS web_session (
+         id          TEXT PRIMARY KEY,
+         channel_id  TEXT NOT NULL REFERENCES web_channel (id) ON DELETE CASCADE,
+         business_id TEXT NOT NULL,
+         pseudo_id   INTEGER NOT NULL,
+         created_at  TEXT NOT NULL,
+         last_seen   TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS web_session_channel_idx ON web_session (channel_id, last_seen DESC)`,
+
+      // A web channel needs a row in `bot` because a conversation references
+      // one, but it is not a Telegram bot and must never appear where those
+      // are listed or be reachable on a webhook path. Naming it here keeps the
+      // bot table's shape untouched, which matters because its role column has
+      // a CHECK constraint that a migration cannot widen safely.
+      `CREATE TABLE IF NOT EXISTS hidden_bot (
+         bot_id TEXT PRIMARY KEY,
+         kind   TEXT NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

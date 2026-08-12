@@ -76,6 +76,12 @@ import {
   syncOwnerUpdates,
 } from "../rag/ingest.js";
 import { describeCustomer } from "../escalation.js";
+import {
+  createChannel,
+  getChannelForBusiness,
+  isWebBot,
+  updateChannel,
+} from "../web/channel.js";
 import { productsView, upsertCorrection, type ProductEntry } from "../products.js";
 import {
   hasPendingExtraction,
@@ -85,6 +91,7 @@ import {
   runExtraction,
 } from "../rag/extract.js";
 import { resolveMasterKey } from "../secrets.js";
+import { ORIGIN_KEY } from "../setup.js";
 import { findSkill, matchSkill, SKILLS } from "./skills.js";
 import { versionStatus } from "../updates.js";
 import { UPSTREAM_REPO } from "../version.js";
@@ -127,6 +134,23 @@ export const MODEL_PRESETS: readonly ModelPreset[] = [
   { label: "Claude Sonnet 4.5", id: "anthropic/claude-sonnet-4-5", requiresProviderKey: true },
 ];
 
+/**
+ * Colours offered for the widget.
+ *
+ * A list rather than a free text hex field, because a shop owner on a phone
+ * types a colour code wrong more often than right, and one that fails silently
+ * leaves a widget in the default blue with no explanation. Text on the bubble
+ * is derived from the choice, so no second question has to be asked.
+ */
+export const WIDGET_COLOURS: readonly { hex: string; label: string; swatch: string }[] = [
+  { hex: "#2563eb", label: "Blue", swatch: "\u{1F535}" },
+  { hex: "#16a34a", label: "Green", swatch: "\u{1F7E2}" },
+  { hex: "#dc2626", label: "Red", swatch: "\u{1F534}" },
+  { hex: "#ea580c", label: "Orange", swatch: "\u{1F7E0}" },
+  { hex: "#7c3aed", label: "Purple", swatch: "\u{1F7E3}" },
+  { hex: "#111827", label: "Black", swatch: "\u{26AB}" },
+];
+
 const STAGES: readonly CustomerStage[] = ["new", "lead", "customer", "blocked"];
 const STAGE_KEYS: Record<CustomerStage, MessageKey> = {
   new: "stageNew",
@@ -153,6 +177,8 @@ type PendingKind =
   | "customer_note"
   | "manual_product"
   | "product_fix"
+  | "web_greeting"
+  | "web_domains"
   | "data_file"
   | "human_reply";
 
@@ -280,6 +306,17 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Where this deployment answers, as recorded during setup.
+ *
+ * The console has no request of its own to read an address from: it is driven
+ * by Telegram callbacks. The address is written to KV on the first setup and
+ * kept there for exactly this kind of question.
+ */
+async function deploymentOrigin(env: Env): Promise<string> {
+  return (await env.STATE.get(ORIGIN_KEY)) ?? "https://your-worker.workers.dev";
+}
+
 function backTo(locale: Locale, action: string, args: string[] = []): readonly ButtonSpec[] {
   return row({ text: t(locale, "back"), action, args });
 }
@@ -401,6 +438,7 @@ function businessScreen(
         { text: t(locale, "btnBots"), action: "bots", args: [business.id] },
         { text: t(locale, "btnModel"), action: "mdl", args: [business.id] },
       ),
+      row({ text: t(locale, "btnWebAgent"), action: "web", args: [business.id] }),
       row({ text: t(locale, "btnDeleteBusiness"), action: "bizdel", args: [business.id] }),
       backTo(locale, "bizls"),
     ],
@@ -1397,6 +1435,132 @@ async function screenFor(
 
     // Bots and model ----------------------------------------------------------
 
+    case "web": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const [business, channel] = await Promise.all([
+        getBusiness(env, businessId),
+        getChannelForBusiness(env, businessId),
+      ]);
+
+      if (channel === null) {
+        return {
+          text: [
+            `<b>${t(locale, "webTitle", { name: escapeHtml(business.name) })}</b>`,
+            "",
+            t(locale, "webIntro"),
+          ].join("\n"),
+          rows: [
+            row({ text: t(locale, "btnGenerateWeb"), action: "webnew", args: [businessId] }),
+            backTo(locale, "biz", [businessId]),
+          ],
+        };
+      }
+
+      const base = await deploymentOrigin(env);
+      const preview = `${base}/w/${channel.key}`;
+      return {
+        text: [
+          `<b>${t(locale, "webTitle", { name: escapeHtml(business.name) })}</b>`,
+          "",
+          channel.enabled ? t(locale, "webLive") : `<i>${t(locale, "webOff")}</i>`,
+          "",
+          `<b>${t(locale, "webTry")}</b>`,
+          preview,
+          "",
+          `<b>${t(locale, "webEmbed")}</b>`,
+          `<pre>${escapeHtml(`<script src="${preview}/widget.js" async></script>`)}</pre>`,
+          "",
+          `${t(locale, "webColour")}: ${escapeHtml(channel.accent)}`,
+          `${t(locale, "webDomains")}: ${
+            channel.allowedOrigins.length > 0
+              ? escapeHtml(channel.allowedOrigins)
+              : t(locale, "webAnyDomain")
+          }`,
+        ].join("\n"),
+        rows: [
+          row({ text: t(locale, "btnWebColour"), action: "webcol", args: [businessId] }),
+          row({ text: t(locale, "btnWebGreeting"), action: "webgreet", args: [businessId] }),
+          row({ text: t(locale, "btnWebDomains"), action: "webdom", args: [businessId] }),
+          row({
+            text: t(locale, channel.enabled ? "btnWebDisable" : "btnWebEnable"),
+            action: "webtog",
+            args: [businessId],
+          }),
+          backTo(locale, "biz", [businessId]),
+        ],
+      };
+    }
+
+    case "webnew": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const business = await getBusiness(env, businessId);
+      const existing = await getChannelForBusiness(env, businessId);
+      if (existing === null) {
+        await createChannel(env, { businessId, title: business.name });
+      }
+      return screenFor(env, locale, userId, "web", [businessId]);
+    }
+
+    case "webcol": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      return {
+        text: `<b>${t(locale, "btnWebColour")}</b>\n\n${t(locale, "webColourBody")}`,
+        rows: [
+          ...WIDGET_COLOURS.map((colour) =>
+            row({
+              text: `${colour.swatch} ${colour.label}`,
+              action: "webcolset",
+              args: [businessId, colour.hex.slice(1)],
+            }),
+          ),
+          backTo(locale, "web", [businessId]),
+        ],
+      };
+    }
+
+    case "webcolset": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const channel = await getChannelForBusiness(env, businessId);
+      if (channel !== null) {
+        await updateChannel(env, channel.id, { accent: `#${requireArg(args, 1)}` });
+      }
+      return screenFor(env, locale, userId, "web", [businessId]);
+    }
+
+    case "webgreet": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setPending(env, userId, { kind: "web_greeting", businessId });
+      return {
+        text: `<b>${t(locale, "btnWebGreeting")}</b>\n\n${t(locale, "webGreetingBody")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "web", args: [businessId] })],
+      };
+    }
+
+    case "webdom": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setPending(env, userId, { kind: "web_domains", businessId });
+      return {
+        text: `<b>${t(locale, "btnWebDomains")}</b>\n\n${t(locale, "webDomainsBody")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "web", args: [businessId] })],
+      };
+    }
+
+    case "webtog": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const channel = await getChannelForBusiness(env, businessId);
+      if (channel !== null) {
+        await updateChannel(env, channel.id, { enabled: !channel.enabled });
+      }
+      return screenFor(env, locale, userId, "web", [businessId]);
+    }
+
     case "bots": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
@@ -1742,7 +1906,9 @@ async function handlePendingInput(
 
     // Sent through the business bot, not the console bot. The customer has
     // never seen the console bot and a message from it would look like a
-    // stranger joining the conversation.
+    // stranger joining the conversation. A website visitor has no Telegram at
+    // all: for them the reply is only stored, and their open widget collects
+    // it on its next poll.
     const bot = await getBotById(env, chat.botId);
     if (bot === null) {
       await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
@@ -1750,17 +1916,20 @@ async function handlePendingInput(
     }
 
     const reply = text.slice(0, 3500);
-    try {
-      const masterKey = await resolveMasterKey(env);
-      const asBusiness = new TelegramClient(await openSealed(masterKey, bot.tokenCiphertext));
-      await asBusiness.sendMessage({ chatId: chat.chatId, text: escapeHtml(reply) });
-    } catch (error) {
-      console.error("human reply failed", {
-        businessId: customer.businessId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
-      return;
+    const overWeb = await isWebBot(env, chat.botId);
+    if (!overWeb) {
+      try {
+        const masterKey = await resolveMasterKey(env);
+        const asBusiness = new TelegramClient(await openSealed(masterKey, bot.tokenCiphertext));
+        await asBusiness.sendMessage({ chatId: chat.chatId, text: escapeHtml(reply) });
+      } catch (error) {
+        console.error("human reply failed", {
+          businessId: customer.businessId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
+        return;
+      }
     }
 
     // Recorded as an ordinary assistant turn so the model reads it as context
@@ -1783,6 +1952,24 @@ async function handlePendingInput(
     await customerFor(env, userId, customerId);
     await setCustomerNote(env, customerId, text.slice(0, 1000));
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "cst", [customerId]));
+    return;
+  }
+
+  if (pending.kind === "web_greeting" || pending.kind === "web_domains") {
+    const businessId = pending.businessId;
+    if (businessId === undefined) {
+      return;
+    }
+    await requireAccess(env, userId, businessId);
+    const channel = await getChannelForBusiness(env, businessId);
+    if (channel !== null) {
+      await updateChannel(
+        env,
+        channel.id,
+        pending.kind === "web_greeting" ? { greeting: text } : { allowedOrigins: text },
+      );
+    }
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "web", [businessId]));
     return;
   }
 

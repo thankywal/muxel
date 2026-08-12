@@ -1,10 +1,10 @@
 /**
  * Worker entry point.
  *
- * Three routes are exposed. `/` and `/setup` complete first run configuration
- * and report status, `/health` answers monitoring, and `/tg/:path` receives
- * Telegram webhooks. Every other path returns 404 so the deployment presents no
- * other surface.
+ * `/` and `/setup` complete first run configuration and report status,
+ * `/health` answers monitoring, `/tg/:path` receives Telegram webhooks, and
+ * `/w/:key` serves the website widget and the requests it makes. Every other
+ * path returns 404 so the deployment presents no other surface.
  */
 
 import { isMuxelError, timingSafeEqual } from "@muxel/core";
@@ -20,6 +20,7 @@ import { checkForUpdate } from "./updates.js";
 import { TelegramClient, type TelegramUpdate } from "./telegram/api.js";
 import { handleAdminUpdate } from "./telegram/admin.js";
 import { handleReplyUpdate } from "./telegram/reply.js";
+import { handleWebRequest } from "./web/routes.js";
 
 const SECRET_HEADER = "x-telegram-bot-api-secret-token";
 
@@ -77,6 +78,13 @@ export default {
           500,
         );
       }
+    }
+
+    // The website channel. Public by nature, so it validates the origin and
+    // the daily allowance itself rather than relying on a secret path.
+    if (url.pathname.startsWith("/w/")) {
+      await ensureSchema(env);
+      return handleWebRequest(request, env, ctx, url.pathname.slice("/w/".length));
     }
 
     if (request.method === "POST" && url.pathname.startsWith("/tg/")) {

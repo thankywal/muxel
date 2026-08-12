@@ -165,6 +165,87 @@ const STRINGS = {
     my: "assistant မဖြေနိုင်တဲ့အခါ အကြောင်းရင်းကို ဤနေရာမှာ မှတ်ထားပါသည် — dashboard ဖွင့်စရာ မလိုပါ။",
   },
 
+  // Web agent ---------------------------------------------------------------------
+  btnWebAgent: { en: "Web agent", th: "เอเจนต์เว็บ", zh: "网页助手", my: "Web agent" },
+  webTitle: {
+    en: "Web agent for {name}",
+    th: "เอเจนต์เว็บของ {name}",
+    zh: "{name} 的网页助手",
+    my: "{name} အတွက် Web agent",
+  },
+  webIntro: {
+    en: "The same assistant, on your own website. Visitors get a small chat bubble in the corner, and their questions reach the same documents, the same customer list and the same handover queue as Telegram.\n\nGenerating it gives you a link to try it yourself first, and one line to paste into your site.",
+    th: "ผู้ช่วยตัวเดิม แต่อยู่บนเว็บไซต์ของคุณ ผู้เข้าชมจะเห็นปุ่มแชทเล็ก ๆ ที่มุมจอ และคำถามของพวกเขาจะไปถึงเอกสารชุดเดียวกัน รายชื่อลูกค้าชุดเดียวกัน และคิวส่งต่อเดียวกันกับ Telegram\n\nเมื่อสร้างแล้ว คุณจะได้ลิงก์สำหรับทดลองก่อน และโค้ดหนึ่งบรรทัดสำหรับวางในเว็บไซต์",
+    zh: "同一个助手，放到你自己的网站上。访客会在角落看到一个小聊天气泡，他们的问题会进入与 Telegram 完全相同的文档、客户列表和人工接管队列。\n\n生成后你会得到一个可以先自己试用的链接，以及一行粘贴到网站里的代码。",
+    my: "အတူတူ assistant ကို သင့်ကိုယ်ပိုင် website ပေါ်မှာ။ လာကြည့်သူတွေက ထောင့်မှာ chat ခလုတ်လေး တွေ့ရပြီး၊ သူတို့မေးခွန်းတွေက Telegram နဲ့ တူညီတဲ့ document, ဝယ်သူစာရင်း, handover queue ဆီ ရောက်ပါတယ်။\n\nဆောက်လိုက်ရင် ကိုယ်တိုင် အရင်စမ်းဖို့ link တစ်ခုနဲ့၊ website မှာ paste လုပ်ဖို့ တစ်ကြောင်းတည်း ရပါမယ်။",
+  },
+  btnGenerateWeb: {
+    en: "Generate web agent",
+    th: "สร้างเอเจนต์เว็บ",
+    zh: "生成网页助手",
+    my: "Web agent ဆောက်မည်",
+  },
+  webLive: {
+    en: "Live. Try it yourself at the link below, then paste the line into your site.",
+    th: "พร้อมใช้งานแล้ว ลองที่ลิงก์ด้านล่างก่อน จากนั้นวางโค้ดลงในเว็บไซต์ของคุณ",
+    zh: "已启用。先用下面的链接自己试试，然后把那行代码粘贴到你的网站里。",
+    my: "အသုံးပြုနိုင်ပါပြီ။ အောက်က link မှာ ကိုယ်တိုင် အရင်စမ်းပြီး၊ အဲဒီတစ်ကြောင်းကို သင့် website မှာ paste လုပ်ပါ။",
+  },
+  webOff: {
+    en: "Switched off. The bubble will not appear on your site and the link answers nothing.",
+    th: "ปิดอยู่ ปุ่มแชทจะไม่ปรากฏบนเว็บไซต์ และลิงก์จะไม่ตอบสนอง",
+    zh: "已关闭。气泡不会出现在你的网站上，链接也不会有响应。",
+    my: "ပိတ်ထားပါတယ်။ သင့် website မှာ ခလုတ် မပေါ်တော့ဘဲ link ကလည်း ဘာမှ ပြန်မဖြေပါ။",
+  },
+  webTry: { en: "Try it here", th: "ลองที่นี่", zh: "在这里试用", my: "ဒီမှာ စမ်းပါ" },
+  webEmbed: {
+    en: "Paste this into your website, just before </body>",
+    th: "วางโค้ดนี้ในเว็บไซต์ของคุณ ก่อน </body>",
+    zh: "把这行粘贴到你网站的 </body> 之前",
+    my: "ဒါကို သင့် website ရဲ့ </body> မတိုင်ခင် paste လုပ်ပါ",
+  },
+  webColour: { en: "Colour", th: "สี", zh: "颜色", my: "အရောင်" },
+  webDomains: { en: "Allowed sites", th: "เว็บไซต์ที่อนุญาต", zh: "允许的网站", my: "ခွင့်ပြုထားသော site များ" },
+  webAnyDomain: {
+    en: "any site (set one to be safe)",
+    th: "ทุกเว็บไซต์ (ควรกำหนดเพื่อความปลอดภัย)",
+    zh: "任何网站（建议设定以策安全）",
+    my: "site အားလုံး (လုံခြုံဖို့ သတ်မှတ်သင့်ပါတယ်)",
+  },
+  btnWebColour: { en: "Change colour", th: "เปลี่ยนสี", zh: "更改颜色", my: "အရောင် ပြောင်းမည်" },
+  btnWebGreeting: {
+    en: "Change greeting",
+    th: "เปลี่ยนข้อความทักทาย",
+    zh: "更改问候语",
+    my: "နှုတ်ဆက်စာ ပြောင်းမည်",
+  },
+  btnWebDomains: {
+    en: "Set allowed sites",
+    th: "กำหนดเว็บไซต์ที่อนุญาต",
+    zh: "设置允许的网站",
+    my: "ခွင့်ပြု site သတ်မှတ်မည်",
+  },
+  btnWebDisable: { en: "Switch off", th: "ปิด", zh: "关闭", my: "ပိတ်မည်" },
+  btnWebEnable: { en: "Switch on", th: "เปิด", zh: "开启", my: "ဖွင့်မည်" },
+  webColourBody: {
+    en: "Pick the colour of the chat bubble. Text on it is chosen for you so it stays readable.",
+    th: "เลือกสีของปุ่มแชท ระบบจะเลือกสีตัวอักษรให้เองเพื่อให้อ่านง่าย",
+    zh: "选择聊天气泡的颜色。上面的文字颜色会自动选取，以保证清晰可读。",
+    my: "Chat ခလုတ်ရဲ့ အရောင် ရွေးပါ။ အပေါ်က စာလုံးအရောင်ကို ဖတ်ရလွယ်အောင် အလိုအလျောက် ရွေးပေးပါတယ်။",
+  },
+  webGreetingBody: {
+    en: "Send the first line a visitor sees when they open the chat. Something like: Hello, ask me anything about our shop.\n\nSend a dash to have no greeting.",
+    th: "ส่งข้อความบรรทัดแรกที่ผู้เข้าชมจะเห็นเมื่อเปิดแชท เช่น สวัสดีค่ะ สอบถามเรื่องร้านได้เลย\n\nส่งเครื่องหมายขีดหากไม่ต้องการข้อความทักทาย",
+    zh: "发送访客打开聊天时看到的第一句话，例如：你好，有什么想了解的都可以问我。\n\n发送一个短横线表示不要问候语。",
+    my: "Chat ဖွင့်လိုက်တဲ့အခါ လာကြည့်သူ မြင်ရမယ့် ပထမစာကြောင်း ပို့ပါ။ ဥပမာ: မင်္ဂလာပါ၊ ဆိုင်အကြောင်း မေးလို့ရပါတယ်။\n\nနှုတ်ဆက်စာ မလိုချင်ရင် ဒင်းတစ်ခု ပို့ပါ။",
+  },
+  webDomainsBody: {
+    en: "Send the website addresses allowed to use this assistant, separated by commas. For example: myshop.com, www.myshop.com\n\nSubdomains are included. Until you set this, any site that copies your line can spend your daily allowance.",
+    th: "ส่งที่อยู่เว็บไซต์ที่อนุญาตให้ใช้ผู้ช่วยนี้ คั่นด้วยจุลภาค เช่น myshop.com, www.myshop.com\n\nรวมซับโดเมนด้วย หากยังไม่กำหนด เว็บไซต์ใดก็ตามที่คัดลอกโค้ดของคุณไปจะใช้โควตารายวันของคุณได้",
+    zh: "发送允许使用此助手的网站地址，用逗号分隔，例如：myshop.com, www.myshop.com\n\n子域名会一并包含。在你设定之前，任何复制了你那行代码的网站都能消耗你的每日额度。",
+    my: "ဒီ assistant ကို သုံးခွင့်ပြုမယ့် website လိပ်စာတွေကို ကော်မာခြားပြီး ပို့ပါ။ ဥပမာ: myshop.com, www.myshop.com\n\nSubdomain တွေပါ ပါဝင်ပါတယ်။ မသတ်မှတ်မချင်း သင့်ကုဒ်ကို ကူးယူသွားတဲ့ ဘယ် site မဆို သင့်နေ့စဉ်ခွင့်ပြုချက်ကို သုံးနိုင်ပါတယ်။",
+  },
+
   // Commands and instruction styles ----------------------------------------------
   cmdStart: { en: "Open the console", th: "เปิดคอนโซล", zh: "打开控制台", my: "Console ဖွင့်" },
   cmdInstruction: {

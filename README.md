@@ -31,6 +31,8 @@ you control.
 * A customer list with stages, notes and a delete that really deletes.
 * Instructions you write yourself, replaced from the console as text or a
   markdown file, with an undo when a change makes things worse.
+* A chat bubble for your own website, generated from the console, sharing the
+  same documents, customer list and handover queue as Telegram.
 * Any number of businesses in one deployment, each isolated from the others.
 
 ## Before you start
@@ -380,6 +382,39 @@ across all your businesses.
 A question the assistant could not answer does not mute it for the rest of the
 chat. It keeps answering everything else, because going silent after one hard
 question would be worse than the question.
+
+## Your own website
+
+The same assistant can answer on your site as well as on Telegram. In the
+console, open a business and choose **Web agent**, then **Generate web agent**.
+
+You get two things. The first is a link on your own Worker address that is
+nothing but the widget, so you can press the bubble and hold the conversation a
+visitor will have before it goes anywhere near your site. The second is one
+line to paste into your website, just before `</body>`:
+
+```html
+<script src="https://your-worker.workers.dev/w/YOUR-KEY/widget.js" async></script>
+```
+
+That is the whole installation. No account, no framework, no build step. The
+widget draws itself inside a shadow root, so your site's styling cannot reach
+into it and its styling cannot leak out onto your pages.
+
+From the same screen you can pick the bubble colour, write the first line a
+visitor sees, and switch the whole thing off. Text on the bubble is chosen for
+you from the colour, so a pale accent still reads.
+
+**Set your allowed sites.** Until you do, anyone who copies that line onto
+their own page can spend your daily allowance. Enter `myshop.com` and only that
+domain and its subdomains are served. There is a daily cap either way, because
+the widget faces the open internet and inference is the one thing here that
+costs money.
+
+A visitor is a customer like any other: they appear in the customer list, the
+assistant remembers them between visits, and a question it should not answer
+reaches the same **Waiting for a person** queue. When you take one over, your
+replies arrive in their open chat rather than in Telegram.
 
 ## Telling a bot how to behave
 

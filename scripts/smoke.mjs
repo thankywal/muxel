@@ -207,6 +207,11 @@ if (botToken && ownerId) {
 const probe = await get("/tg/not-a-real-path");
 check("webhook path stays closed", probe.status === 404, `status ${probe.status}`);
 
+// The website channel is public, so an unknown key must be indistinguishable
+// from a disabled one and neither may reach the assistant.
+const unknown = await get("/w/nosuchkey1234/widget.js");
+check("unknown web key is closed", unknown.status === 404, `status ${unknown.status}`);
+
 await teardown();
 rmSync(scratch, { recursive: true, force: true });
 
