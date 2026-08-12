@@ -5,6 +5,20 @@
 Self-hosted AI support agent. Answers your customers on Telegram from your own
 price list and policies, running entirely inside your own Cloudflare account.
 
+> **The one click deploy is broken at Cloudflare's end right now, 12 August
+> 2026.** Pressing Deploy on their setup form throws
+> `ZodError: previews_base_config.deploy_command` and stops, leaving a
+> repository holding two files and a Worker answering `Hello world`, while the
+> dashboard reports success. It is not something this project can fix: the
+> field it rejects belongs to a build setting that
+> [Cloudflare's own documentation](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+> says cannot be set from a repository. The same commit that deployed cleanly
+> on 11 August fails today, unchanged.
+>
+> Install with [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) instead. It
+> takes one command, skips GitHub entirely, and produces exactly the same
+> deployment. This notice will go once the button works again.
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
 New here? Read [Before you start](#before-you-start) first. It is four free

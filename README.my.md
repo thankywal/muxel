@@ -6,6 +6,20 @@
 ကိုယ်ပိုင် စျေးနှုန်းစာရင်းနှင့် မူဝါဒများအတိုင်း Telegram ပေါ်တွင် သင့်ဖောက်သည်များကို
 ဖြေကြားပေးပြီး သင့်ကိုယ်ပိုင် Cloudflare account အတွင်း၌သာ အပြည့်အဝ လည်ပတ်ပါသည်။
 
+> **၂၀၂၆ ဩဂုတ် ၁၂ ရက် — one click deploy သည် Cloudflare ဘက်တွင် ချွတ်ယွင်းနေပါသည်။**
+> သူတို့၏ setup form တွင် Deploy ကို နှိပ်လိုက်လျှင်
+> `ZodError: previews_base_config.deploy_command` တက်ပြီး ရပ်သွားကာ၊ ဖိုင်နှစ်ခုသာ
+> ပါသော repository နှင့် `Hello world` ဟု ပြန်ဖြေသော Worker ကျန်ရစ်ပါသည်။
+> Dashboard ကမူ အောင်မြင်သည်ဟု ပြနေပါသည်။ ဤ project ဘက်မှ ပြင်၍ မရပါ။ ငြင်းပယ်ခံရသော
+> အကွက်မှာ repository မှ သတ်မှတ်၍ မရကြောင်း
+> [Cloudflare ၏ စာရွက်စာတမ်း](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
+> တွင် အတိအလင်း ဖော်ပြထားသော build setting တစ်ခု ဖြစ်ပါသည်။ ဩဂုတ် ၁၁ ရက်တွင်
+> အောင်မြင်စွာ deploy ဖြစ်ခဲ့သော commit အတိအကျပင် ယနေ့ ပျက်နေပါသည်။
+>
+> ယင်းအစား [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) ဖြင့် တင်ပါ။ command
+> တစ်ကြောင်းသာ လိုအပ်ပြီး GitHub လုံးဝ မပါဝင်ဘဲ တူညီသော deployment ကို ရရှိပါသည်။
+> Button ပြန်ကောင်းလာလျှင် ဤအသိပေးချက်ကို ဖယ်ရှားပါမည်။
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
 အခုမှ စတင်မည်လား။ [မစတင်မီ ပြင်ဆင်ရန်](#မစတင်မီ-ပြင်ဆင်ရန်) ကို အရင် ဖတ်ပါ။ အခမဲ့
