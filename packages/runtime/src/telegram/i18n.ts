@@ -28,7 +28,13 @@ export function isLocale(value: string): value is Locale {
 
 type Entry = Record<Locale, string>;
 
-const STRINGS = {
+/**
+ * Every string the console and the bots can say.
+ *
+ * Exported so a test can hold the whole table to one rule at once, rather than
+ * catching a bad entry only when someone opens the screen that uses it.
+ */
+export const STRINGS = {
   // Shared ------------------------------------------------------------------
   back: { en: "Back", th: "ย้อนกลับ", zh: "返回", my: "နောက်သို့" },
   cancel: { en: "Cancel", th: "ยกเลิก", zh: "取消", my: "မလုပ်တော့ပါ" },
@@ -199,10 +205,34 @@ const STRINGS = {
   },
   webTry: { en: "Try it here", th: "ลองที่นี่", zh: "在这里试用", my: "ဒီမှာ စမ်းပါ" },
   webEmbed: {
-    en: "Paste this into your website, just before </body>",
-    th: "วางโค้ดนี้ในเว็บไซต์ของคุณ ก่อน </body>",
-    zh: "把这行粘贴到你网站的 </body> 之前",
-    my: "ဒါကို သင့် website ရဲ့ </body> မတိုင်ခင် paste လုပ်ပါ",
+    en: "Paste this into your website, just before the closing body tag",
+    th: "วางโค้ดนี้ในเว็บไซต์ของคุณ ก่อนแท็กปิด body",
+    zh: "把这行粘贴到你网站的 body 结束标签之前",
+    my: "ဒါကို သင့် website ရဲ့ body ပိတ်တဲ့ tag မတိုင်ခင် paste လုပ်ပါ",
+  },
+  webHowTitle: {
+    en: "How to add it",
+    th: "วิธีติดตั้ง",
+    zh: "如何安装",
+    my: "ဘယ်လို ထည့်မလဲ",
+  },
+  webHowBody: {
+    en: "1. Press the code above to copy it.\n2. Open your website editor and find the page template, the one used by every page.\n3. Paste the line at the very bottom, just above the closing body tag, and save.\n\nOn Wordpress use Appearance, Theme File Editor, footer.php. On Shopify use Online Store, Themes, Edit code, theme.liquid. On Wix or Squarespace look for Settings, Custom code. Anywhere else, paste it wherever the site lets you add HTML to every page.\n\nReload your site and the bubble appears in the corner. Set Allowed sites to your domain afterwards, so nobody else can put your assistant on their page.",
+    th: "1. กดที่โค้ดด้านบนเพื่อคัดลอก\n2. เปิดตัวแก้ไขเว็บไซต์ของคุณ แล้วหาไฟล์เทมเพลตที่ทุกหน้าใช้ร่วมกัน\n3. วางโค้ดไว้ล่างสุด ก่อนแท็กปิด body แล้วบันทึก\n\nบน Wordpress ใช้ Appearance, Theme File Editor, footer.php บน Shopify ใช้ Online Store, Themes, Edit code, theme.liquid บน Wix หรือ Squarespace ให้หา Settings, Custom code ที่อื่น ๆ ให้วางในที่ที่เว็บไซต์อนุญาตให้เพิ่ม HTML ลงทุกหน้า\n\nรีโหลดเว็บไซต์แล้วปุ่มแชทจะปรากฏที่มุมจอ จากนั้นตั้งค่าเว็บไซต์ที่อนุญาตเป็นโดเมนของคุณ เพื่อไม่ให้คนอื่นนำผู้ช่วยของคุณไปใช้",
+    zh: "1. 点击上面的代码即可复制。\n2. 打开你的网站编辑器，找到每个页面都会用到的模板文件。\n3. 把这行粘贴到最底部、body 结束标签之前，然后保存。\n\nWordpress 用 外观、主题文件编辑器、footer.php；Shopify 用 在线商店、模板、编辑代码、theme.liquid；Wix 或 Squarespace 找 设置、自定义代码。其他平台就粘贴到任何可以给所有页面添加 HTML 的地方。\n\n重新加载网站，气泡就会出现在角落。之后把「允许的网站」设为你的域名，别人就无法把你的助手放到他们的页面上。",
+    my: "၁။ အပေါ်က code ကို နှိပ်ပြီး ကူးယူပါ။\n၂။ သင့် website editor ကို ဖွင့်ပြီး စာမျက်နှာတိုင်း သုံးတဲ့ template ဖိုင်ကို ရှာပါ။\n၃။ အဲဒီတစ်ကြောင်းကို အောက်ဆုံးမှာ၊ body ပိတ်တဲ့ tag မတိုင်ခင် paste လုပ်ပြီး save လုပ်ပါ။\n\nWordpress ဆိုရင် Appearance, Theme File Editor, footer.php ကို သုံးပါ။ Shopify ဆိုရင် Online Store, Themes, Edit code, theme.liquid ကို သုံးပါ။ Wix သို့မဟုတ် Squarespace ဆိုရင် Settings, Custom code ကို ရှာပါ။ တခြားဟာဆိုရင် စာမျက်နှာတိုင်းမှာ HTML ထည့်လို့ရတဲ့ နေရာမှာ paste လုပ်ပါ။\n\nWebsite ကို ပြန် load လုပ်ရင် ထောင့်မှာ chat ခလုတ် ပေါ်လာပါမယ်။ ပြီးရင် ခွင့်ပြုထားသော site မှာ သင့် domain ကို သတ်မှတ်ပါ။ ဒါဆို တခြားသူတွေ သင့် assistant ကို သူတို့စာမျက်နှာမှာ တင်လို့ မရတော့ပါ။",
+  },
+  btnWebName: {
+    en: "Change web agent name",
+    th: "เปลี่ยนชื่อเอเจนต์เว็บ",
+    zh: "更改网页助手名称",
+    my: "Web agent အမည် ပြောင်းမည်",
+  },
+  webNameBody: {
+    en: "Send the name visitors should see at the top of the chat. One deployment can run a web agent for every business, so give each one a name you will recognise in this list, usually the shop's own name.",
+    th: "ส่งชื่อที่ผู้เข้าชมจะเห็นด้านบนของหน้าต่างแชท หนึ่ง deployment สามารถมีเอเจนต์เว็บของทุกธุรกิจได้ จึงควรตั้งชื่อที่คุณจำได้ในรายการนี้ ปกติคือชื่อร้าน",
+    zh: "发送访客会在聊天窗口顶部看到的名称。一个部署可以为每个业务运行网页助手，所以给每个助手起一个你在列表中能认出的名字，通常就是店铺名称。",
+    my: "စကားပြောခန်း အပေါ်မှာ လာကြည့်သူတွေ မြင်ရမယ့် အမည်ကို ပို့ပါ။ deployment တစ်ခုတည်းမှာ လုပ်ငန်းတိုင်းအတွက် web agent တစ်ခုစီ ရှိနိုင်လို့ ဒီစာရင်းထဲမှာ သင် မှတ်မိမယ့် အမည် — များသောအားဖြင့် ဆိုင်နာမည် — ပေးပါ။",
   },
   webColour: { en: "Colour", th: "สี", zh: "颜色", my: "အရောင်" },
   webDomains: { en: "Allowed sites", th: "เว็บไซต์ที่อนุญาต", zh: "允许的网站", my: "ခွင့်ပြုထားသော site များ" },

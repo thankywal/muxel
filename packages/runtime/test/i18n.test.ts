@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isLocale, LOCALE_NAMES, LOCALES, t } from "../src/telegram/i18n.js";
+import { isLocale, LOCALE_NAMES, LOCALES, STRINGS, t } from "../src/telegram/i18n.js";
 
 /**
  * The console is rendered entirely from this table, so a missing entry is a
@@ -97,5 +97,59 @@ describe("help text", () => {
       expect(help.length, locale).toBeGreaterThan(400);
       expect(help, locale).toContain("@BotFather");
     }
+  });
+});
+
+/**
+ * Console screens are sent with parse_mode HTML, and some translations are
+ * deliberately written as markup. Telegram accepts only a short list of tags
+ * and rejects the entire message on anything else, so a translation that
+ * mentions a tag in passing is a live hazard.
+ *
+ * One did exactly that. "just before </body>" was interpolated into a <b> and
+ * Telegram refused the whole screen, so the web agent arrived as plain text
+ * with its own <b> and <pre> on display, and the operator could not tell
+ * whether the feature had worked. Describe a tag in words, or escape it at the
+ * call site; never leave one loose in a string.
+ */
+describe("translated strings as HTML", () => {
+  const ALLOWED = new Set([
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "a", "code", "pre", "blockquote", "span", "tg-spoiler",
+  ]);
+
+  it("uses only tags Telegram can parse", () => {
+    const offenders: string[] = [];
+    for (const [key, translations] of Object.entries(STRINGS)) {
+      for (const [locale, value] of Object.entries(translations as Record<string, string>)) {
+        if (typeof value !== "string") {
+          continue;
+        }
+        for (const tag of value.matchAll(/<\/?([a-zA-Z-]*)[^>]*>/g)) {
+          if (!ALLOWED.has((tag[1] ?? "").toLowerCase())) {
+            offenders.push(`${key}.${locale}: ${tag[0]}`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("leaves no angle bracket outside a tag", () => {
+    // A bare < is enough on its own: Telegram reads it as the start of a tag
+    // and refuses the message.
+    const offenders: string[] = [];
+    for (const [key, translations] of Object.entries(STRINGS)) {
+      for (const [locale, value] of Object.entries(translations as Record<string, string>)) {
+        if (typeof value !== "string") {
+          continue;
+        }
+        const withoutTags = value.replace(/<\/?[a-zA-Z-]+[^>]*>/g, "");
+        if (/[<>]/.test(withoutTags)) {
+          offenders.push(`${key}.${locale}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

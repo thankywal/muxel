@@ -179,6 +179,7 @@ type PendingKind =
   | "product_fix"
   | "web_greeting"
   | "web_domains"
+  | "web_name"
   | "data_file"
   | "human_reply";
 
@@ -1459,26 +1460,40 @@ async function screenFor(
 
       const base = await deploymentOrigin(env);
       const preview = `${base}/w/${channel.key}`;
+      const snippet = `<script src="${preview}/widget.js" async></script>`;
       return {
+        // Every piece of translated text is escaped on the way in. These
+        // strings describe HTML to the reader, and one of them says "before
+        // </body>", which Telegram reads as a tag it does not support and
+        // rejects the whole message for. The screen then arrived as plain text
+        // with its own markup showing.
         text: [
-          `<b>${t(locale, "webTitle", { name: escapeHtml(business.name) })}</b>`,
+          `<b>${escapeHtml(t(locale, "webTitle", { name: business.name }))}</b>`,
+          `<i>${escapeHtml(channel.title)}</i>`,
           "",
-          channel.enabled ? t(locale, "webLive") : `<i>${t(locale, "webOff")}</i>`,
+          escapeHtml(channel.enabled ? t(locale, "webLive") : t(locale, "webOff")),
           "",
-          `<b>${t(locale, "webTry")}</b>`,
+          `<b>${escapeHtml(t(locale, "webTry"))}</b>`,
           preview,
           "",
-          `<b>${t(locale, "webEmbed")}</b>`,
-          `<pre>${escapeHtml(`<script src="${preview}/widget.js" async></script>`)}</pre>`,
+          `<b>${escapeHtml(t(locale, "webEmbed"))}</b>`,
+          // A code block rather than a quotation. Telegram gives these their
+          // own copy control, which is the only way to get this line onto a
+          // phone and into a website without retyping it.
+          `<pre><code class="language-html">${escapeHtml(snippet)}</code></pre>`,
           "",
-          `${t(locale, "webColour")}: ${escapeHtml(channel.accent)}`,
-          `${t(locale, "webDomains")}: ${
+          `<b>${escapeHtml(t(locale, "webHowTitle"))}</b>`,
+          escapeHtml(t(locale, "webHowBody")),
+          "",
+          `${escapeHtml(t(locale, "webColour"))}: ${escapeHtml(channel.accent)}`,
+          `${escapeHtml(t(locale, "webDomains"))}: ${escapeHtml(
             channel.allowedOrigins.length > 0
-              ? escapeHtml(channel.allowedOrigins)
-              : t(locale, "webAnyDomain")
-          }`,
+              ? channel.allowedOrigins
+              : t(locale, "webAnyDomain"),
+          )}`,
         ].join("\n"),
         rows: [
+          row({ text: t(locale, "btnWebName"), action: "webname", args: [businessId] }),
           row({ text: t(locale, "btnWebColour"), action: "webcol", args: [businessId] }),
           row({ text: t(locale, "btnWebGreeting"), action: "webgreet", args: [businessId] }),
           row({ text: t(locale, "btnWebDomains"), action: "webdom", args: [businessId] }),
@@ -1489,6 +1504,18 @@ async function screenFor(
           }),
           backTo(locale, "biz", [businessId]),
         ],
+      };
+    }
+
+    case "webname": {
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      await setPending(env, userId, { kind: "web_name", businessId });
+      return {
+        text: `<b>${escapeHtml(t(locale, "btnWebName"))}</b>\n\n${escapeHtml(
+          t(locale, "webNameBody"),
+        )}`,
+        rows: [row({ text: t(locale, "cancel"), action: "web", args: [businessId] })],
       };
     }
 
@@ -1955,7 +1982,11 @@ async function handlePendingInput(
     return;
   }
 
-  if (pending.kind === "web_greeting" || pending.kind === "web_domains") {
+  if (
+    pending.kind === "web_greeting" ||
+    pending.kind === "web_domains" ||
+    pending.kind === "web_name"
+  ) {
     const businessId = pending.businessId;
     if (businessId === undefined) {
       return;
@@ -1963,11 +1994,16 @@ async function handlePendingInput(
     await requireAccess(env, userId, businessId);
     const channel = await getChannelForBusiness(env, businessId);
     if (channel !== null) {
-      await updateChannel(
-        env,
-        channel.id,
-        pending.kind === "web_greeting" ? { greeting: text } : { allowedOrigins: text },
-      );
+      // The name is what a visitor reads at the top of the chat, so it is the
+      // one of the three an operator running several shops needs to tell them
+      // apart. It is stored per channel rather than taken from the business.
+      const patch =
+        pending.kind === "web_greeting"
+          ? { greeting: text }
+          : pending.kind === "web_name"
+            ? { title: text.slice(0, 60) }
+            : { allowedOrigins: text };
+      await updateChannel(env, channel.id, patch);
     }
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "web", [businessId]));
     return;
