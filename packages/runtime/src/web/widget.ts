@@ -165,6 +165,7 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
       if (polling) { clearInterval(polling); polling = null; }
       return;
     }
+    positionPanel();
     input.focus();
     if (!greeted) {
       greeted = true;
@@ -174,7 +175,105 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
     polling = setInterval(poll, 6000);
   }
 
-  bubble.onclick = function () { toggle(!panel.classList.contains("o")); };
+  // Dragging ------------------------------------------------------------------
+  //
+  // The corner the shop chose is not always the corner a visitor needs. The
+  // bubble sits over whatever the page put there, and on a phone that is often
+  // the checkout button. So it can be moved, and where it is moved to is
+  // remembered for next time.
+  //
+  // A press that moves less than a few pixels is still a press: fingers are not
+  // precise, and a bubble that opened nothing because the thumb slid two pixels
+  // would read as broken.
+  var POS = "muxel.pos." + C.api;
+  var DRAG_SLOP = 5;
+  var EDGE = 8;
+  var placed = null;
+  var drag = null;
+
+  function clampTo(x, y) {
+    var w = bubble.offsetWidth || 56;
+    var h = bubble.offsetHeight || 56;
+    return {
+      x: Math.max(EDGE, Math.min(x, window.innerWidth - w - EDGE)),
+      y: Math.max(EDGE, Math.min(y, window.innerHeight - h - EDGE)),
+    };
+  }
+
+  function placeAt(x, y) {
+    placed = clampTo(x, y);
+    bubble.style.left = placed.x + "px";
+    bubble.style.top = placed.y + "px";
+    bubble.style.right = "auto";
+    bubble.style.bottom = "auto";
+    positionPanel();
+  }
+
+  /** Keeps the panel beside the bubble, on whichever side has room. */
+  function positionPanel() {
+    if (!placed) { return; }
+    var w = bubble.offsetWidth || 56;
+    var h = bubble.offsetHeight || 56;
+    var pw = Math.min(360, window.innerWidth - 32);
+    var ph = panel.offsetHeight || Math.min(520, window.innerHeight - 120);
+    var left = placed.x + w / 2 - pw / 2;
+    left = Math.max(16, Math.min(left, window.innerWidth - pw - 16));
+    var above = placed.y > ph + 16;
+    var top = above ? placed.y - ph - 12 : placed.y + h + 12;
+    top = Math.max(16, Math.min(top, window.innerHeight - ph - 16));
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  }
+
+  try {
+    var saved = JSON.parse(localStorage.getItem(POS) || "null");
+    if (saved && typeof saved.x === "number" && typeof saved.y === "number") {
+      placeAt(saved.x, saved.y);
+    }
+  } catch (e) { /* a corrupt position is simply the default one */ }
+
+  bubble.addEventListener("pointerdown", function (event) {
+    if (event.button !== undefined && event.button !== 0) { return; }
+    var rect = bubble.getBoundingClientRect();
+    drag = { dx: event.clientX - rect.left, dy: event.clientY - rect.top, moved: false,
+             x0: event.clientX, y0: event.clientY };
+    try { bubble.setPointerCapture(event.pointerId); } catch (e) { /* older engines */ }
+  });
+
+  bubble.addEventListener("pointermove", function (event) {
+    if (!drag) { return; }
+    if (!drag.moved &&
+        Math.abs(event.clientX - drag.x0) < DRAG_SLOP &&
+        Math.abs(event.clientY - drag.y0) < DRAG_SLOP) { return; }
+    drag.moved = true;
+    // Only now is this a drag, so only now does the page stop scrolling.
+    event.preventDefault();
+    placeAt(event.clientX - drag.dx, event.clientY - drag.dy);
+  });
+
+  function endDrag(event) {
+    if (!drag) { return; }
+    var moved = drag.moved;
+    drag = null;
+    try { bubble.releasePointerCapture(event.pointerId); } catch (e) { /* ignored */ }
+    if (!moved) {
+      toggle(!panel.classList.contains("o"));
+      return;
+    }
+    try { localStorage.setItem(POS, JSON.stringify(placed)); } catch (e) { /* private mode */ }
+  }
+
+  bubble.addEventListener("pointerup", endDrag);
+  bubble.addEventListener("pointercancel", endDrag);
+  bubble.style.touchAction = "none";
+
+  // A window that shrinks below a bubble parked at its edge would strand it
+  // offscreen, where nothing can bring it back.
+  window.addEventListener("resize", function () {
+    if (placed) { placeAt(placed.x, placed.y); }
+  });
 
   form.onsubmit = function (event) {
     event.preventDefault();

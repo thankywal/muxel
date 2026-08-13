@@ -41,11 +41,29 @@ const MIN_CONTENT_CHARS = 40;
 /** Name of the document generated from hand entered products. */
 // The retired synthetic catalogue. Migration 8 removes it from the data.
 
+/**
+ * Where an upload has got to, reported while it happens.
+ *
+ * An upload takes long enough that a still message reading "wait a moment"
+ * leaves the operator with no way to tell a slow index from a broken one, so
+ * they either sit staring at a chat or test too early and conclude it failed.
+ * Embedding knows exactly how far along it is. The wait afterwards does not,
+ * because the index never says how close it is, so that one is reported
+ * against the time it is allowed rather than invented.
+ */
+export type IngestProgress =
+  | { readonly phase: "embedding"; readonly done: number; readonly total: number }
+  | { readonly phase: "settling"; readonly elapsedMs: number; readonly timeoutMs: number };
+
 export interface IngestInput {
   readonly businessId: string;
   readonly filename: string;
   readonly contentType: string;
   readonly body: ArrayBuffer;
+  /** Called as work proceeds. Anything it throws is ignored. */
+  readonly onProgress?: (progress: IngestProgress) => Promise<void> | void;
+  /** How long to wait for the index, when the caller can show the wait. */
+  readonly settleTimeoutMs?: number;
 }
 
 export interface IngestResult {
@@ -262,8 +280,10 @@ export async function waitUntilSearchable(
   probe: { id: string; values: number[] },
   timeoutMs: number = INDEX_VISIBLE_TIMEOUT_MS,
   pollMs: number = INDEX_POLL_MS,
+  onTick?: (elapsedMs: number, timeoutMs: number) => Promise<void> | void,
 ): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   for (;;) {
     try {
       const found = await env.KNOWLEDGE.query(probe.values, { topK: 5, namespace });
@@ -277,13 +297,34 @@ export async function waitUntilSearchable(
       return false;
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
+    try {
+      await onTick?.(Date.now() - started, timeoutMs);
+    } catch {
+      // Reporting the wait must never fail the upload.
+    }
   }
 }
 
 async function indexText(
   env: Env,
-  input: { businessId: string; filename: string; contentType: string; byteSize: number; text: string },
+  input: {
+    businessId: string;
+    filename: string;
+    contentType: string;
+    byteSize: number;
+    text: string;
+    onProgress?: (progress: IngestProgress) => Promise<void> | void;
+    settleTimeoutMs?: number;
+  },
 ): Promise<IngestResult> {
+  /** Reporting progress must never be able to fail an upload that worked. */
+  const report = async (progress: IngestProgress): Promise<void> => {
+    try {
+      await input.onProgress?.(progress);
+    } catch {
+      // Ignored deliberately.
+    }
+  };
   const document = await createDocument(env, {
     businessId: input.businessId,
     filename: input.filename,
@@ -327,10 +368,24 @@ async function indexText(
       for (let start = 0; start < payload.length; start += UPSERT_BATCH) {
         await env.KNOWLEDGE.upsert(payload.slice(start, start + UPSERT_BATCH));
       }
+      await report({
+        phase: "embedding",
+        done: Math.min(offset + EMBED_BATCH, records.length),
+        total: records.length,
+      });
     }
 
     const searchable =
-      probe === null ? false : await waitUntilSearchable(env, input.businessId, probe);
+      probe === null
+        ? false
+        : await waitUntilSearchable(
+            env,
+            input.businessId,
+            probe,
+            input.settleTimeoutMs ?? INDEX_VISIBLE_TIMEOUT_MS,
+            INDEX_POLL_MS,
+            (elapsedMs, timeoutMs) => report({ phase: "settling", elapsedMs, timeoutMs }),
+          );
 
     await setDocumentStatus(env, {
       documentId: document.id,
@@ -382,6 +437,8 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
     contentType: input.contentType,
     byteSize: input.body.byteLength,
     text,
+    ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
+    ...(input.settleTimeoutMs === undefined ? {} : { settleTimeoutMs: input.settleTimeoutMs }),
   });
 }
 

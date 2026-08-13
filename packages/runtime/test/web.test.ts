@@ -103,6 +103,31 @@ describe("originAllowed", () => {
 describe("widgetScript", () => {
   const script = widgetScript({ origin: "https://muxel.example.workers.dev", channel: channel() });
 
+  it("is valid JavaScript", () => {
+    // The widget is assembled as text, so nothing typechecks it and a stray
+    // bracket ships silently. It only ever runs on a stranger's website, where
+    // a syntax error is invisible to us and fatal to them.
+    expect(() => new Function(script)).not.toThrow();
+  });
+
+  it("can be dragged, and remembers where it was left", () => {
+    // The corner a shop picks is not always free on a visitor's screen, most
+    // often a phone where the bubble lands on the checkout button.
+    expect(script).toContain("pointerdown");
+    expect(script).toContain("pointermove");
+    expect(script).toContain("localStorage.setItem(POS");
+  });
+
+  it("still opens on a press that wobbles", () => {
+    // A finger is not precise. Treating a two pixel slide as a drag would
+    // leave a bubble that sometimes opens nothing.
+    expect(script).toContain("DRAG_SLOP");
+  });
+
+  it("keeps a dragged bubble on screen when the window changes size", () => {
+    expect(script).toContain('addEventListener("resize"');
+  });
+
   it("isolates itself from the host page", () => {
     // Without a shadow root the widget inherits whatever the site's CSS does
     // to a button, which is the difference between working everywhere and

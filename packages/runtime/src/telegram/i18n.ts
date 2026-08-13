@@ -559,6 +559,48 @@ export const STRINGS = {
     zh: "已添加 {name}，共 {chunks} 段。",
     my: "{name} ကို အပိုင်း {chunks} ခုအဖြစ် ထည့်ပြီးပါပြီ။",
   },
+  dataWorking: {
+    en: "Adding {name}",
+    th: "กำลังเพิ่ม {name}",
+    zh: "正在添加 {name}",
+    my: "{name} ကို ထည့်နေသည်",
+  },
+  dataStepIndexing: {
+    en: "Reading and indexing the contents",
+    th: "กำลังอ่านและจัดทำดัชนีเนื้อหา",
+    zh: "正在读取并建立内容索引",
+    my: "အကြောင်းအရာကို ဖတ်ပြီး index လုပ်နေသည်",
+  },
+  dataStepSettling: {
+    en: "Waiting for the search index to catch up",
+    th: "กำลังรอให้ดัชนีค้นหาพร้อมใช้งาน",
+    zh: "正在等待搜索索引同步",
+    my: "ရှာဖွေရေး index လိုက်မီအောင် စောင့်နေသည်",
+  },
+  dataCheckPrompt: {
+    en: "The index is still catching up. Press below to check whether the assistant can find it yet, rather than testing and being told nobody knows.",
+    th: "ดัชนียังไม่พร้อม กดด้านล่างเพื่อตรวจว่าผู้ช่วยค้นเจอแล้วหรือยัง จะได้ไม่ต้องลองแล้วได้คำตอบว่าไม่ทราบ",
+    zh: "索引还在同步。点击下面即可查看助手是否已经能找到它，不必先去测试却被告知不知道。",
+    my: "Index က လိုက်နေဆဲပါ။ စမ်းပြီးမှ \"မသိပါ\" ဆိုတဲ့ အဖြေ မရအောင်၊ assistant ရှာတွေ့ပြီလားဆိုတာ အောက်က ခလုတ်နဲ့ စစ်ကြည့်ပါ။",
+  },
+  btnDataCheck: {
+    en: "Check if it is ready",
+    th: "ตรวจว่าพร้อมหรือยัง",
+    zh: "检查是否就绪",
+    my: "အဆင်သင့် ဖြစ်ပြီလား စစ်မည်",
+  },
+  dataCheckReady: {
+    en: "Ready. The assistant can find your data now, so go ahead and test it.",
+    th: "พร้อมแล้ว ผู้ช่วยค้นข้อมูลของคุณเจอแล้ว ทดสอบได้เลย",
+    zh: "已就绪。助手现在可以找到你的数据了，可以开始测试。",
+    my: "အဆင်သင့် ဖြစ်ပါပြီ။ assistant က သင့် data ကို ရှာတွေ့ပါပြီ — စမ်းကြည့်လို့ ရပါပြီ။",
+  },
+  dataCheckWaiting: {
+    en: "Not yet. The index is still catching up, which usually takes under a minute in total. Press again in a moment.",
+    th: "ยังไม่พร้อม ดัชนียังตามอยู่ ปกติใช้เวลารวมไม่ถึงหนึ่งนาที กดอีกครั้งในอีกสักครู่",
+    zh: "还没有。索引仍在同步，通常总共不到一分钟。请稍后再点一次。",
+    my: "မဖြစ်သေးပါ။ Index က လိုက်နေဆဲပါ — စုစုပေါင်း တစ်မိနစ်အောက်သာ ကြာလေ့ရှိပါတယ်။ ခဏနေ ထပ်နှိပ်ကြည့်ပါ။",
+  },
   dataIndexing: {
     en: "Added {name} as {chunks} pieces. The search index needs about a minute to catch up, so the assistant will say it does not know until then. Wait a moment before you test it.",
     th: "เพิ่ม {name} แล้ว แบ่งเป็น {chunks} ส่วน ดัชนีค้นหาต้องใช้เวลาราวหนึ่งนาทีจึงจะพร้อม ระหว่างนี้ผู้ช่วยจะตอบว่าไม่ทราบ กรุณารอสักครู่ก่อนทดสอบ",

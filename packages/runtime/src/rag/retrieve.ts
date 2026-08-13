@@ -21,6 +21,34 @@ export interface RetrieveOptions {
   readonly minScore?: number;
 }
 
+/**
+ * Whether anything a business has uploaded is findable yet.
+ *
+ * Vectorize accepts a write and makes it searchable a little later, so a
+ * document can be stored and invisible at the same time. The console offers to
+ * check on demand rather than leaving the operator to guess, and this is that
+ * check: it asks the index the same way retrieval does, and cares only that
+ * something comes back at all. Score is deliberately ignored, because the
+ * question is whether the index has caught up, not whether a particular
+ * question can be answered.
+ */
+export async function knowledgeReady(env: Env, businessId: string): Promise<boolean> {
+  assertValidId(businessId, "businessId");
+  try {
+    const vector = await embed(env, "product price list");
+    const matches = await env.KNOWLEDGE.query(vector, {
+      topK: 1,
+      namespace: businessId,
+      returnMetadata: "none",
+    });
+    return matches.matches.length > 0;
+  } catch {
+    // An index that cannot be queried yet is exactly the state being asked
+    // about, and reads as not ready rather than as a fault.
+    return false;
+  }
+}
+
 export async function retrieve(
   env: Env,
   businessId: string,

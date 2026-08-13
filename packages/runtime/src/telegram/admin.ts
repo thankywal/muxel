@@ -75,6 +75,7 @@ import {
   removeDocument,
   syncOwnerUpdates,
 } from "../rag/ingest.js";
+import { knowledgeReady } from "../rag/retrieve.js";
 import { describeCustomer } from "../escalation.js";
 import {
   createChannel,
@@ -103,6 +104,35 @@ import {
   type TelegramUpdate,
 } from "./api.js";
 import { buildKeyboard, resolveSpilled, row, type ButtonSpec } from "./keyboard.js";
+
+/**
+ * How long the console will sit watching the index catch up.
+ *
+ * A newly written vector became queryable after about twenty seconds against a
+ * live index. The runtime allows thirty for work after a response and reading,
+ * embedding and writing have already spent some of it, so this takes most of
+ * what is left and reports honestly if the index is still behind at the end.
+ */
+const SETTLE_BUDGET_MS = 18_000;
+
+/** Shortest gap between redraws of the progress message. */
+const PROGRESS_REDRAW_MS = 2_000;
+
+/** Cells in the progress bar. */
+const PROGRESS_CELLS = 12;
+
+/**
+ * Draws a progress bar for a chat.
+ *
+ * Blocks rather than an animation, because Telegram has no spinner and an
+ * edited message is the only moving part available. Wide enough to read as
+ * movement on a phone, short enough not to wrap.
+ */
+function progressBar(fraction: number): string {
+  const safe = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0));
+  const filled = Math.round(safe * PROGRESS_CELLS);
+  return `${"█".repeat(filled)}${"░".repeat(PROGRESS_CELLS - filled)}  ${Math.round(safe * 100)}%`;
+}
 
 export interface ModelPreset {
   readonly label: string;
@@ -1507,6 +1537,24 @@ async function screenFor(
       };
     }
 
+    case "datachk": {
+      // Asks the index directly rather than guessing from a clock. The
+      // assistant's own retrieval is the thing being waited on, so the honest
+      // check is to run it.
+      const businessId = requireArg(args, 0);
+      await requireAccess(env, userId, businessId);
+      const ready = await knowledgeReady(env, businessId);
+      return {
+        text: escapeHtml(t(locale, ready ? "dataCheckReady" : "dataCheckWaiting")),
+        rows: ready
+          ? [backTo(locale, "biz", [businessId])]
+          : [
+              row({ text: t(locale, "btnDataCheck"), action: "datachk", args: [businessId] }),
+              backTo(locale, "biz", [businessId]),
+            ],
+      };
+    }
+
     case "webname": {
       const businessId = requireArg(args, 0);
       await requireAccess(env, userId, businessId);
@@ -1792,25 +1840,78 @@ async function handleDataUpload(
   }
 
   const notice = await client.sendMessage({ chatId, text: t(locale, "dataReading") });
+
+  // The whole upload runs inside one invocation, and an edit per poll would
+  // spend the budget on Telegram rather than on the work. One redraw every
+  // couple of seconds is enough to read as movement.
+  let lastDrawn = 0;
+  const show = async (text: string, force = false): Promise<void> => {
+    if (!force && Date.now() - lastDrawn < PROGRESS_REDRAW_MS) {
+      return;
+    }
+    lastDrawn = Date.now();
+    await client
+      .editMessageText({ chatId, messageId: notice.message_id, text })
+      .catch(() => undefined);
+  };
+
   try {
     const file = await download(client, input.message);
+    const name = escapeHtml(file.filename);
+
     const result = await ingestDocument(env, {
       businessId,
       filename: file.filename,
       contentType: file.contentType,
       body: file.body,
+      settleTimeoutMs: SETTLE_BUDGET_MS,
+      onProgress: async (progress) => {
+        // Reading and embedding is real progress and reported as itself.
+        // Waiting for the index is not: it reports against the time it has,
+        // because the index never says how far along it is. Both are honest,
+        // and either beats a still line of text while the operator wonders
+        // whether anything is happening at all.
+        const [fraction, label] =
+          progress.phase === "embedding"
+            ? [
+                progress.total === 0 ? 1 : progress.done / progress.total,
+                t(locale, "dataStepIndexing"),
+              ]
+            : [
+                Math.min(progress.elapsedMs / progress.timeoutMs, 0.97),
+                t(locale, "dataStepSettling"),
+              ];
+        await show(
+          `${escapeHtml(t(locale, "dataWorking", { name }))}\n\n` +
+            `${progressBar(fraction)}\n${escapeHtml(label)}`,
+        );
+      },
     });
-    await client.editMessageText({
-      chatId,
-      messageId: notice.message_id,
+
+    await show(
       // The index lags the write by around half a minute. Saying "added" while
       // the assistant still cannot find it is what makes a working upload look
       // like a broken one.
-      text: t(locale, result.searchable ? "dataAdded" : "dataIndexing", {
-        name: escapeHtml(file.filename),
+      t(locale, result.searchable ? "dataAdded" : "dataIndexing", {
+        name,
         chunks: result.chunkCount,
       }),
-    });
+      true,
+    );
+
+    // Still behind when the budget ran out. Rather than leave the operator
+    // guessing for a minute, the console offers to look again on demand.
+    if (!result.searchable) {
+      await client
+        .sendMessage({
+          chatId,
+          text: escapeHtml(t(locale, "dataCheckPrompt")),
+          replyMarkup: await buildKeyboard(env, [
+            row({ text: t(locale, "btnDataCheck"), action: "datachk", args: [businessId] }),
+          ]),
+        })
+        .catch(() => undefined);
+    }
 
     // The products view reads what this file says. Attempted now for
     // immediate feedback; the scheduled run finishes it if this invocation
