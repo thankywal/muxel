@@ -219,10 +219,10 @@ export const STRINGS = {
    * offers help rather than announcing a robot.
    */
   webTeaser: {
-    en: "Hi! Ask me anything about {name} — prices, stock, delivery. How can I help?",
+    en: "Hi! Ask me anything about {name}: prices, stock, delivery. How can I help?",
     th: "สวัสดีค่ะ! สอบถามเกี่ยวกับ {name} ได้เลย ทั้งราคา สินค้า และการจัดส่ง มีอะไรให้ช่วยไหมคะ",
     zh: "你好！关于 {name} 的任何问题都可以问我，价格、库存、配送都行。有什么可以帮您？",
-    my: "မင်္ဂလာပါ! {name} အကြောင်း — စျေးနှုန်း၊ ပစ္စည်းရှိမရှိ၊ ပို့ဆောင်မှု — ဘာမဆို မေးလို့ရပါတယ်။ ဘာကူညီပေးရမလဲ?",
+    my: "မင်္ဂလာပါ! {name} အကြောင်း စျေးနှုန်း၊ ပစ္စည်းရှိမရှိ၊ ပို့ဆောင်မှု စတာတွေ ဘာမဆို မေးလို့ရပါတယ်။ ဘာကူညီပေးရမလဲ?",
   },
   webHowTitle: {
     en: "How to add it",

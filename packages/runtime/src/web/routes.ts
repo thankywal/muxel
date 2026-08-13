@@ -32,6 +32,7 @@ import {
 } from "./channel.js";
 import { previewPage, widgetScript } from "./widget.js";
 import { isLocale, type Locale } from "../telegram/i18n.js";
+import { toPlainText } from "../telegram/format.js";
 
 /** A business locale is stored as free text, so it is checked before use. */
 function asLocale(value: string): Locale {
@@ -88,7 +89,13 @@ async function messagesAfter(
   )
     .bind(conversationId, after)
     .all<{ seq: number; role: string; content: string }>();
-  return rows.results.map((row) => ({ seq: row.seq, role: row.role, text: row.content }));
+  // Stored as the model wrote it, shown as a person should read it. The widget
+  // prints text, so anything the model marked up would arrive as punctuation.
+  return rows.results.map((row) => ({
+    seq: row.seq,
+    role: row.role,
+    text: row.role === "user" ? row.content : toPlainText(row.content),
+  }));
 }
 
 /** Resolves the conversation and customer behind a browser session. */
@@ -320,7 +327,7 @@ async function handleSend(
     })().catch(() => undefined),
   );
 
-  return json({ session, seq, reply: answer.text }, 200, origin);
+  return json({ session, seq, reply: toPlainText(answer.text) }, 200, origin);
 }
 
 async function latestSeq(env: Env, conversationId: string): Promise<number> {

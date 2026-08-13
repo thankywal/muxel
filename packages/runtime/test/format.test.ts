@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toTelegramHtml } from "../src/telegram/format.js";
+import { toPlainText, toTelegramHtml } from "../src/telegram/format.js";
 
 /**
  * Telegram renders none of Markdown, so anything the converter misses reaches
@@ -99,5 +99,42 @@ describe("toTelegramHtml", () => {
     for (const sample of samples) {
       expect(toTelegramHtml(sample)).not.toMatch(/[*#]/);
     }
+  });
+});
+
+/**
+ * The website widget prints replies as text, so a model writing **bold** or a
+ * dash bulleted list puts its punctuation straight in front of a customer.
+ * Same fault Telegram had, same fix, deliberately routed through the same
+ * converter so the two channels cannot format one answer two ways.
+ */
+describe("toPlainText", () => {
+  it("removes the markers a model writes and leaves the words", () => {
+    expect(toPlainText("**Price** is *low*")).toBe("Price is low");
+  });
+
+  it("turns a dash list into bullets", () => {
+    expect(toPlainText("- one\n- two")).toBe("• one\n• two");
+  });
+
+  it("keeps a heading as a line rather than hashes", () => {
+    expect(toPlainText("## Delivery\nWe ship daily.")).toBe("Delivery\nWe ship daily.");
+  });
+
+  it("leaves no asterisk or leading dash behind", () => {
+    const answer = toPlainText("### Menu\n- *Latte* 2500\n- **Mocha** 3000\n\n---\n");
+    expect(answer).not.toMatch(/\*/);
+    expect(answer).not.toMatch(/^\s*-\s/m);
+    expect(answer).toContain("Latte 2500");
+  });
+
+  it("gives a comparison back as the model wrote it", () => {
+    // The converter escapes on the way in, so this has to come back unescaped
+    // rather than as &lt;.
+    expect(toPlainText("price < 300 & rising")).toBe("price < 300 & rising");
+  });
+
+  it("flattens a table into readable columns", () => {
+    expect(toPlainText("| Item | Price |\n| --- | --- |\n| Tea | 900 |")).toContain("Tea  900");
   });
 });

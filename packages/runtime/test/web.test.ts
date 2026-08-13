@@ -129,9 +129,19 @@ describe("widgetScript", () => {
     expect(burmese).not.toContain("Ask me anything about");
   });
 
-  it("stops offering itself once it has been answered or dismissed", () => {
-    expect(script).toContain("localStorage.setItem(SEEN");
-    expect(script).toContain("hideTeaser(true)");
+  it("offers itself again on the next page, however it was closed", () => {
+    // The operator wants the invitation in front of every visitor, and a
+    // customer who waved it away while browsing may have a question by the
+    // time they reach the next page. Dismissing closes it here, not for good.
+    expect(script).not.toContain("localStorage.setItem(SEEN");
+    expect(script).not.toContain("localStorage.getItem(SEEN");
+  });
+
+  it("shrinks to fit a phone", () => {
+    // A 360 pixel panel and a 56 pixel button were drawn for a desktop corner.
+    // On a handset they cover the page the visitor came to read.
+    expect(script).toContain("@media (max-width:480px)");
+    expect(script).toContain("function narrow()");
   });
 
   it("waits before appearing, rather than interrupting the page", () => {

@@ -87,7 +87,24 @@ export function widgetScript(input: {
     ".t button{position:absolute;top:3px;right:5px;background:transparent;border:0;color:#9ca3af;",
     "font-size:17px;line-height:1;cursor:pointer;padding:2px 4px}",
     ".t span{cursor:pointer;display:block}",
-    "@media (max-width:420px){.t{max-width:min(72vw,256px)}}",
+    // Compact on a phone. A 360 pixel panel and a 56 pixel button were drawn
+    // for a desktop corner; on a handset they cover the page the visitor is
+    // trying to read, and a teaser sized for a laptop pushes the bubble off
+    // the screen entirely.
+    "@media (max-width:480px){",
+    ".b{width:48px;height:48px;bottom:16px;right:16px}",
+    ".b svg{width:22px;height:22px}",
+    ".p{width:auto;left:10px;right:10px;bottom:74px;max-width:none;",
+    "height:auto;top:12px;max-height:none;border-radius:12px;font-size:14px}",
+    ".h{padding:11px 13px}",
+    ".m{padding:11px;gap:8px}",
+    ".r{max-width:90%;padding:8px 11px}",
+    ".f{padding:8px}",
+    ".f input{padding:9px 11px}",
+    ".t{max-width:min(66vw,220px);font-size:13px;line-height:1.4;",
+    "padding:9px 26px 9px 12px;bottom:22px;right:74px}",
+    ".t button{font-size:16px}",
+    "}",
     ".p{position:fixed;bottom:88px;right:20px;width:360px;max-width:calc(100vw - 32px);",
     "height:520px;max-height:calc(100vh - 120px);background:#fff;color:#111827;border-radius:14px;",
     "box-shadow:0 12px 48px rgba(0,0,0,.24);display:none;flex-direction:column;overflow:hidden;",
@@ -193,8 +210,8 @@ export function widgetScript(input: {
       if (polling) { clearInterval(polling); polling = null; }
       return;
     }
-    // Opening the chat answers the invitation, so it stops being offered.
-    hideTeaser(true);
+    // Opening the chat answers the invitation, so it gets out of the way.
+    hideTeaser();
     positionPanel();
     input.focus();
     if (!greeted) {
@@ -211,19 +228,19 @@ export function widgetScript(input: {
   // it. A line that names the shop and offers help is an invitation. It arrives
   // a few seconds in rather than on load, so it does not compete with the page
   // the visitor came to read, and once dismissed it stays dismissed.
-  var SEEN = "muxel.teaser." + C.api;
+  // Offered again on every visit. A dismissal closes it for this page, not for
+  // good: the operator wants the invitation in front of every visitor, and a
+  // customer who waved it away while browsing may well have a question by the
+  // time they reach the next page.
   var TEASER_DELAY_MS = 4000;
   var teaserText = root.querySelector(".t span");
   var teaserTimer = null;
   teaserText.textContent = C.teaser || "";
 
-  function hideTeaser(remember) {
+  function hideTeaser() {
     if (teaserTimer) { clearTimeout(teaserTimer); teaserTimer = null; }
     teaser.classList.remove("v");
     setTimeout(function () { teaser.classList.remove("s"); }, 280);
-    if (remember) {
-      try { localStorage.setItem(SEEN, "1"); } catch (e) { /* private mode */ }
-    }
   }
 
   function showTeaser() {
@@ -248,17 +265,15 @@ export function widgetScript(input: {
     teaser.style.bottom = "auto";
   }
 
-  var alreadySeen = false;
-  try { alreadySeen = localStorage.getItem(SEEN) === "1"; } catch (e) { alreadySeen = false; }
-  if (C.teaser && !alreadySeen) {
+  if (C.teaser) {
     teaserTimer = setTimeout(showTeaser, TEASER_DELAY_MS);
   }
 
   // Reading the line and then having to find the button is a step too many.
-  teaserText.onclick = function () { hideTeaser(true); toggle(true); };
+  teaserText.onclick = function () { hideTeaser(); toggle(true); };
   root.querySelector(".t button").onclick = function (event) {
     event.stopPropagation();
-    hideTeaser(true);
+    hideTeaser();
   };
 
   // Dragging ------------------------------------------------------------------
@@ -296,8 +311,20 @@ export function widgetScript(input: {
     placeTeaser();
   }
 
+  /** True on a handset, where the panel fills the screen from the stylesheet. */
+  function narrow() { return window.innerWidth <= 480; }
+
   /** Keeps the panel beside the bubble, on whichever side has room. */
   function positionPanel() {
+    if (narrow()) {
+      // The stylesheet already gives the panel the whole screen here. Placing
+      // it from script would shrink it back to a desktop card on a phone.
+      panel.style.left = "";
+      panel.style.top = "";
+      panel.style.right = "";
+      panel.style.bottom = "";
+      return;
+    }
     if (!placed) { return; }
     var w = bubble.offsetWidth || 56;
     var h = bubble.offsetHeight || 56;
