@@ -12,6 +12,7 @@
  */
 
 import { t, type Locale } from "../telegram/i18n.js";
+import { MUXEL_VERSION } from "../version.js";
 import type { WebChannel } from "./channel.js";
 
 function escapeJson(value: unknown): string {
@@ -434,7 +435,7 @@ export function previewPage(input: { origin: string; channel: WebChannel }): str
   <p>Nothing here is public: this page is not indexed, and it is only reachable
   by anyone you give the address to.</p>
 </main>
-<script src="${input.origin}/w/${input.channel.key}/widget.js"></script>
+<script src="${input.origin}/w/${input.channel.key}/widget.js?v=${encodeURIComponent(MUXEL_VERSION)}"></script>
 </body>
 </html>`;
 }

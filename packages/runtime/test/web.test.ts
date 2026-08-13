@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { normaliseSession, originAllowed, pseudoIdFor, type WebChannel } from "../src/web/channel.js";
-import { widgetScript } from "../src/web/widget.js";
+import { previewPage, widgetScript } from "../src/web/widget.js";
 
 /**
  * The web channel is the only part of Muxel reachable without a secret. What
@@ -102,6 +102,14 @@ describe("originAllowed", () => {
 
 describe("widgetScript", () => {
   const script = widgetScript({ origin: "https://muxel.example.workers.dev", channel: channel() });
+
+  it("busts the cache on its own preview", () => {
+    // The preview answers "did my change work". Served from a fifteen minute
+    // cache it answered the previous question instead, and an operator who
+    // changed the colour concluded the button did nothing.
+    const page = previewPage({ origin: "https://x.dev", channel: channel() });
+    expect(page).toMatch(/widget\.js\?v=\d+\.\d+\.\d+/);
+  });
 
   it("invites the visitor by naming the shop", () => {
     // A bubble in the corner is scenery. A line that names the shop and offers

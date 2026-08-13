@@ -150,9 +150,14 @@ export async function handleWebRequest(
       {
         headers: {
           "content-type": "text/javascript; charset=utf-8",
-          // Short, so a colour change reaches visitors within the hour without
-          // making every page load pay for the script again.
-          "cache-control": "public, max-age=900",
+          // A minute, then served stale while it refreshes behind the request.
+          // Fifteen minutes was here first, and it meant an operator who
+          // changed the colour, the name or the greeting saw nothing happen
+          // and reasonably concluded the change had not worked. Nobody waits a
+          // quarter of an hour to find out whether they pressed the right
+          // button. stale-while-revalidate keeps the cost of the shorter
+          // window off the visitor, who is served immediately either way.
+          "cache-control": "public, max-age=60, stale-while-revalidate=86400",
           ...corsHeaders(origin),
         },
       },
@@ -164,6 +169,9 @@ export async function handleWebRequest(
       headers: {
         "content-type": "text/html; charset=utf-8",
         "x-robots-tag": "noindex",
+        // This page exists to answer "did my change work". A cached copy of it
+        // answers the previous question.
+        "cache-control": "no-store",
       },
     });
   }
