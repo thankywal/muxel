@@ -65,6 +65,23 @@ function isEntityParseFailure(error: unknown): boolean {
 }
 
 /**
+ * Telegram refuses an edit that would change nothing.
+ *
+ * The console is one message the operator keeps pressing buttons on, so a
+ * screen that redraws itself is ordinary: opening a screen that is already
+ * open, or an action that turns out to be a no-op. Treating that refusal as a
+ * failure loses the whole callback, and the operator sees a button that does
+ * nothing at all.
+ */
+function isUnchangedEdit(error: unknown): boolean {
+  return (
+    isMuxelError(error) &&
+    typeof error.details.description === "string" &&
+    error.details.description.includes("message is not modified")
+  );
+}
+
+/**
  * One button. Telegram requires exactly one of the optional fields: a
  * callback button answers back into the bot, a url button opens a page.
  */
@@ -297,20 +314,40 @@ export class TelegramClient {
     }
   }
 
-  editMessageText(input: {
+  /**
+   * Redraws the console message.
+   *
+   * This carries every screen the operator ever sees, so it is held to the same
+   * standard as sending: a screen Telegram cannot parse is sent as plain text
+   * rather than lost, and an edit that changes nothing is a success rather than
+   * an error. Both used to throw, and because the callback has already been
+   * acknowledged by then, the throw reached the operator as a button that did
+   * nothing whatsoever.
+   */
+  async editMessageText(input: {
     chatId: number;
     messageId: number;
     text: string;
     replyMarkup?: InlineKeyboardMarkup;
   }): Promise<unknown> {
-    return this.#call<unknown>("editMessageText", {
+    const body = {
       chat_id: input.chatId,
       message_id: input.messageId,
       text: input.text,
-      parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
       ...(input.replyMarkup ? { reply_markup: input.replyMarkup } : {}),
-    });
+    };
+    try {
+      return await this.#call<unknown>("editMessageText", { ...body, parse_mode: "HTML" });
+    } catch (error) {
+      if (isUnchangedEdit(error)) {
+        return undefined;
+      }
+      if (isEntityParseFailure(error)) {
+        return this.#call<unknown>("editMessageText", body);
+      }
+      throw error;
+    }
   }
 
   /**

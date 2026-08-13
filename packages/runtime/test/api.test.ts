@@ -159,3 +159,89 @@ describe("TelegramClient.sendMessage", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The console is a single message the operator presses buttons on, redrawn by
+ * editMessageText on every press. It used to be strictly less robust than
+ * sending: it had no fallback for HTML Telegram would not parse, and it treated
+ * a redraw that changed nothing as an error. Either one threw after the button
+ * press had already been acknowledged, and since Telegram accepts only one
+ * answer per callback query, the failure reached the operator as a button that
+ * did nothing at all. No screen, no error, nothing.
+ */
+describe("TelegramClient.editMessageText", () => {
+  it("redraws without formatting when Telegram rejects the HTML", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        telegramJson(
+          {
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: can't parse entities: Unsupported start tag",
+          },
+          400,
+        ),
+      )
+      .mockResolvedValueOnce(telegramJson({ ok: true, result: SENT_MESSAGE }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new TelegramClient("token");
+    await client.editMessageText({ chatId: 42, messageId: 7, text: "size < 3" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    const second = JSON.parse(fetchMock.mock.calls[1][1].body as string);
+    expect(first.parse_mode).toBe("HTML");
+    expect(second.parse_mode).toBeUndefined();
+    expect(second.text).toBe("size < 3");
+  });
+
+  it("accepts a redraw that changes nothing", async () => {
+    // Reopening the screen already on display is ordinary use, not a fault.
+    const fetchMock = vi.fn().mockResolvedValue(
+      telegramJson(
+        {
+          ok: false,
+          error_code: 400,
+          description:
+            "Bad Request: message is not modified: specified new message content and reply markup are exactly the same",
+        },
+        400,
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new TelegramClient("token");
+    await expect(
+      client.editMessageText({ chatId: 42, messageId: 7, text: "same" }),
+    ).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the keyboard on the redraw", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(telegramJson({ ok: true, result: SENT_MESSAGE }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const keyboard = { inline_keyboard: [[{ text: "ok", callback_data: "x" }]] };
+    const client = new TelegramClient("token");
+    await client.editMessageText({ chatId: 42, messageId: 7, text: "hi", replyMarkup: keyboard });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.reply_markup).toEqual(keyboard);
+  });
+
+  it("still surfaces a failure that is not recoverable", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      telegramJson({ ok: false, error_code: 400, description: "Bad Request: MESSAGE_ID_INVALID" }, 400),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new TelegramClient("token");
+    await expect(
+      client.editMessageText({ chatId: 42, messageId: 7, text: "hi" }),
+    ).rejects.toThrow("Telegram editMessageText failed");
+  });
+});

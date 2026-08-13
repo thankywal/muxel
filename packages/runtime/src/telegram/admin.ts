@@ -2237,6 +2237,13 @@ async function handleCallback(
       code: isMuxelError(error) ? error.code : "unknown",
       error: error instanceof Error ? error.message : String(error),
     });
-    await client.answerCallbackQuery({ id: callback.id, text: t(locale, "failed") });
+    // Not a second answerCallbackQuery. Telegram accepts exactly one answer per
+    // query, and the acknowledgement above has already spent it, so a second
+    // call is discarded without a word. That is how a failure here became a
+    // button that did nothing: the operator saw no screen, no error, nothing.
+    // A new message is the only channel still open.
+    await client
+      .sendMessage({ chatId: callback.message.chat.id, text: t(locale, "failed") })
+      .catch(() => undefined);
   }
 }
