@@ -11,6 +11,7 @@
  * widget that works on any site and one that works on the sites we tested.
  */
 
+import { t, type Locale } from "../telegram/i18n.js";
 import type { WebChannel } from "./channel.js";
 
 function escapeJson(value: unknown): string {
@@ -30,12 +31,20 @@ function palette(accent: string): { accent: string; onAccent: string } {
   return { accent: hex, onAccent: luminance > 0.6 ? "#111827" : "#ffffff" };
 }
 
-export function widgetScript(input: { origin: string; channel: WebChannel }): string {
+export function widgetScript(input: {
+  origin: string;
+  channel: WebChannel;
+  locale?: Locale;
+}): string {
   const { accent, onAccent } = palette(input.channel.accent);
+  const title = input.channel.title.length > 0 ? input.channel.title : "Chat with us";
   const config = {
     api: `${input.origin}/w/${input.channel.key}`,
-    title: input.channel.title.length > 0 ? input.channel.title : "Chat with us",
+    title,
     greeting: input.channel.greeting,
+    // Written in the business's own language rather than the visitor's,
+    // because a shop knows who it serves and a browser setting does not.
+    teaser: t(input.locale ?? "en", "webTeaser", { name: title }),
     accent,
     onAccent,
   };
@@ -63,6 +72,21 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
     "background:", C.accent, ";color:", C.onAccent, ";cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.28);",
     "display:flex;align-items:center;justify-content:center}",
     ".b svg{width:26px;height:26px;fill:currentColor}",
+    // The teaser. A speech bubble beside the launcher, with a tail pointing at
+    // it, so it reads as the assistant speaking rather than as an advert.
+    ".t{position:fixed;bottom:30px;right:88px;max-width:256px;background:#fff;color:#111827;",
+    "padding:11px 30px 11px 14px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.18);",
+    "font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:none;",
+    "opacity:0;transform:translateY(6px);transition:opacity .28s ease,transform .28s ease}",
+    ".t.s{display:block}",
+    ".t.v{opacity:1;transform:none}",
+    ".t:after{content:'';position:absolute;right:-6px;bottom:16px;width:12px;height:12px;",
+    "background:inherit;transform:rotate(45deg)}",
+    ".t.l:after{right:auto;left:-6px}",
+    ".t button{position:absolute;top:3px;right:5px;background:transparent;border:0;color:#9ca3af;",
+    "font-size:17px;line-height:1;cursor:pointer;padding:2px 4px}",
+    ".t span{cursor:pointer;display:block}",
+    "@media (max-width:420px){.t{max-width:min(72vw,256px)}}",
     ".p{position:fixed;bottom:88px;right:20px;width:360px;max-width:calc(100vw - 32px);",
     "height:520px;max-height:calc(100vh - 120px);background:#fff;color:#111827;border-radius:14px;",
     "box-shadow:0 12px 48px rgba(0,0,0,.24);display:none;flex-direction:column;overflow:hidden;",
@@ -88,8 +112,10 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
     "@media (prefers-color-scheme:dark){",
     ".p{background:#1f2225;color:#e8eaed}.r.a{background:#2f3336;color:#e8eaed}",
     ".f{background:#1f2225;border-top-color:#3c4043}",
+    ".t{background:#1f2225;color:#e8eaed}",
     ".f input{background:#2f3336;border-color:#3c4043;color:#e8eaed}}",
     "</style>",
+    '<aside class="t"><span></span><button aria-label="Dismiss">&times;</button></aside>',
     '<button class="b" part="button" aria-label="', C.title, '">',
     '<svg viewBox="0 0 24 24"><path d="M12 3C6.5 3 2 6.8 2 11.5c0 2.4 1.2 4.6 3.1 6.1L4 22l4.7-2.2c1 .3 2.1.4 3.3.4 5.5 0 10-3.8 10-8.7S17.5 3 12 3z"/></svg>',
     "</button>",
@@ -101,6 +127,7 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
   ].join("");
 
   var bubble = root.querySelector(".b");
+  var teaser = root.querySelector(".t");
   var panel = root.querySelector(".p");
   var list = root.querySelector(".m");
   var form = root.querySelector(".f");
@@ -165,6 +192,8 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
       if (polling) { clearInterval(polling); polling = null; }
       return;
     }
+    // Opening the chat answers the invitation, so it stops being offered.
+    hideTeaser(true);
     positionPanel();
     input.focus();
     if (!greeted) {
@@ -174,6 +203,62 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
     if (session) { poll(); }
     polling = setInterval(poll, 6000);
   }
+
+  // The teaser ----------------------------------------------------------------
+  //
+  // A bubble in the corner is scenery, and a visitor with a question walks past
+  // it. A line that names the shop and offers help is an invitation. It arrives
+  // a few seconds in rather than on load, so it does not compete with the page
+  // the visitor came to read, and once dismissed it stays dismissed.
+  var SEEN = "muxel.teaser." + C.api;
+  var TEASER_DELAY_MS = 4000;
+  var teaserText = root.querySelector(".t span");
+  var teaserTimer = null;
+  teaserText.textContent = C.teaser || "";
+
+  function hideTeaser(remember) {
+    if (teaserTimer) { clearTimeout(teaserTimer); teaserTimer = null; }
+    teaser.classList.remove("v");
+    setTimeout(function () { teaser.classList.remove("s"); }, 280);
+    if (remember) {
+      try { localStorage.setItem(SEEN, "1"); } catch (e) { /* private mode */ }
+    }
+  }
+
+  function showTeaser() {
+    if (!C.teaser || panel.classList.contains("o")) { return; }
+    placeTeaser();
+    teaser.classList.add("s");
+    // A frame between display and opacity, or the transition never runs.
+    requestAnimationFrame(function () { teaser.classList.add("v"); });
+  }
+
+  /** Keeps the teaser beside the bubble, flipping sides when it would overflow. */
+  function placeTeaser() {
+    if (!placed) { return; }
+    var w = bubble.offsetWidth || 56;
+    var tw = teaser.offsetWidth || 256;
+    var left = placed.x - tw - 12;
+    var flip = left < 8;
+    teaser.classList.toggle("l", flip);
+    teaser.style.left = (flip ? placed.x + w + 12 : left) + "px";
+    teaser.style.top = Math.max(8, placed.y - 6) + "px";
+    teaser.style.right = "auto";
+    teaser.style.bottom = "auto";
+  }
+
+  var alreadySeen = false;
+  try { alreadySeen = localStorage.getItem(SEEN) === "1"; } catch (e) { alreadySeen = false; }
+  if (C.teaser && !alreadySeen) {
+    teaserTimer = setTimeout(showTeaser, TEASER_DELAY_MS);
+  }
+
+  // Reading the line and then having to find the button is a step too many.
+  teaserText.onclick = function () { hideTeaser(true); toggle(true); };
+  root.querySelector(".t button").onclick = function (event) {
+    event.stopPropagation();
+    hideTeaser(true);
+  };
 
   // Dragging ------------------------------------------------------------------
   //
@@ -207,6 +292,7 @@ export function widgetScript(input: { origin: string; channel: WebChannel }): st
     bubble.style.right = "auto";
     bubble.style.bottom = "auto";
     positionPanel();
+    placeTeaser();
   }
 
   /** Keeps the panel beside the bubble, on whichever side has room. */

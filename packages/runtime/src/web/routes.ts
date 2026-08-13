@@ -31,6 +31,12 @@ import {
   type WebChannel,
 } from "./channel.js";
 import { previewPage, widgetScript } from "./widget.js";
+import { isLocale, type Locale } from "../telegram/i18n.js";
+
+/** A business locale is stored as free text, so it is checked before use. */
+function asLocale(value: string): Locale {
+  return isLocale(value) ? value : "en";
+}
 
 /** How long a browser may wait for an answer before being told to retry. */
 const ANSWER_DEADLINE_MS = 24_000;
@@ -136,15 +142,21 @@ export async function handleWebRequest(
   const url = new URL(request.url);
 
   if (action === "widget.js") {
-    return new Response(widgetScript({ origin: url.origin, channel }), {
-      headers: {
-        "content-type": "text/javascript; charset=utf-8",
-        // Short, so a colour change reaches visitors within the hour without
-        // making every page load pay for the script again.
-        "cache-control": "public, max-age=900",
-        ...corsHeaders(origin),
+    // The teaser speaks to the shop's customers, so it is written in the
+    // language the shop answers in rather than the visitor's browser setting.
+    const owner = await getBusiness(env, channel.businessId);
+    return new Response(
+      widgetScript({ origin: url.origin, channel, locale: asLocale(owner.locale) }),
+      {
+        headers: {
+          "content-type": "text/javascript; charset=utf-8",
+          // Short, so a colour change reaches visitors within the hour without
+          // making every page load pay for the script again.
+          "cache-control": "public, max-age=900",
+          ...corsHeaders(origin),
+        },
       },
-    });
+    );
   }
 
   if (action === "") {

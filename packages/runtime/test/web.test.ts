@@ -103,6 +103,33 @@ describe("originAllowed", () => {
 describe("widgetScript", () => {
   const script = widgetScript({ origin: "https://muxel.example.workers.dev", channel: channel() });
 
+  it("invites the visitor by naming the shop", () => {
+    // A bubble in the corner is scenery. A line that names the shop and offers
+    // help is the difference between a visitor asking and a visitor leaving.
+    expect(script).toContain("teaser");
+    expect(script).toContain("Ask me anything about");
+  });
+
+  it("speaks the shop's language, not the browser's", () => {
+    const burmese = widgetScript({
+      origin: "https://x.dev",
+      channel: channel({ title: "Myat Aye Shop" }),
+      locale: "my",
+    });
+    expect(burmese).toContain("Myat Aye Shop");
+    expect(burmese).toContain("မင်္ဂလာပါ");
+    expect(burmese).not.toContain("Ask me anything about");
+  });
+
+  it("stops offering itself once it has been answered or dismissed", () => {
+    expect(script).toContain("localStorage.setItem(SEEN");
+    expect(script).toContain("hideTeaser(true)");
+  });
+
+  it("waits before appearing, rather than interrupting the page", () => {
+    expect(script).toContain("TEASER_DELAY_MS");
+  });
+
   it("is valid JavaScript", () => {
     // The widget is assembled as text, so nothing typechecks it and a stray
     // bracket ships silently. It only ever runs on a stranger's website, where
