@@ -41,6 +41,50 @@ what stays deployed.
 Nothing you did causes this, and nothing in the configuration prevents it. It
 depends on which app your GitHub account already has installed.
 
+## A different failure that reads like ours: the rate limit
+
+If the setup form says
+
+> There was a problem parsing the Wrangler configuration file. Please raise an
+> issue in the Workers SDK repo.
+
+**check the browser console before believing it.** In the case we saw, the
+console held this instead:
+
+```
+GET https://raw.githubusercontent.com/thankywal/muxel/main/wrangler.jsonc
+429 (Too Many Requests)
+```
+
+The setup form reads `wrangler.jsonc` straight from `raw.githubusercontent.com`
+in your browser, on every load of the page. GitHub rate limits anonymous
+requests per address, so reloading the deploy page repeatedly, or sharing an
+address with many other people as most mobile networks in Asia do, is enough to
+be refused. Nothing was parsed because nothing arrived, and the message names
+the wrong cause. It will also send you to file a bug about a configuration file
+that is fine.
+
+The same rate limit shows up elsewhere as **"Cannot retrieve latest commit at
+this time"** on the repository page. Both are the one cause.
+
+What to do:
+
+* Wait. These limits reset on their own, usually within the hour.
+* Try from another network. A phone hotspot is a different address and is the
+  quickest way to confirm this is the cause rather than guess at it.
+* Stop reloading the deploy page while you wait, since each load spends another
+  request against the same limit.
+* Or install with fix two below, which never fetches anything from GitHub in
+  your browser and so cannot hit this at all.
+
+You can confirm the file itself is fine from any other machine:
+
+```sh
+curl -sI https://raw.githubusercontent.com/thankywal/muxel/main/wrangler.jsonc
+```
+
+A `200` there while your browser sees `429` is the whole diagnosis.
+
 ## Fix one: deploy again without the old app
 
 This is the shorter route and it needs no tools.
