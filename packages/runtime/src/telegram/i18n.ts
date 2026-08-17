@@ -218,6 +218,71 @@ export const STRINGS = {
    * "Chat with us" on a page full of products is asking to be ignored, and
    * offers help rather than announcing a robot.
    */
+  // Choosing a channel ------------------------------------------------------------
+  bizNewTitle: {
+    en: "Where will your customers talk to you?",
+    th: "ลูกค้าจะคุยกับคุณที่ไหน",
+    zh: "你的客户会在哪里和你聊天？",
+    my: "သင့် customer တွေ ဘယ်ကနေ စကားပြောမလဲ?",
+  },
+  bizNewBody: {
+    en: "Pick where this business answers. This is only where the conversation happens: the documents, the customer list and the assistant itself are the same either way.",
+    th: "เลือกช่องทางที่ธุรกิจนี้จะตอบลูกค้า นี่คือแค่ที่ที่การสนทนาเกิดขึ้น เอกสาร รายชื่อลูกค้า และตัวผู้ช่วยเหมือนกันทั้งสองทาง",
+    zh: "选择这个业务在哪里回复客户。这只是对话发生的地方，文档、客户列表和助手本身两边完全相同。",
+    my: "ဒီလုပ်ငန်းက ဘယ်ကနေ ဖြေမလဲ ရွေးပါ။ ဒါက စကားပြောတဲ့ နေရာပဲ ဖြစ်ပြီး၊ စာရွက်စာတမ်း၊ ဝယ်သူစာရင်းနဲ့ assistant ကိုယ်တိုင်က နှစ်ဖက်လုံး အတူတူပါ။",
+  },
+  btnRouteTelegram: {
+    en: "Telegram agent",
+    th: "เอเจนต์ Telegram",
+    zh: "Telegram 助手",
+    my: "Telegram agent",
+  },
+  routeTelegramBody: {
+    en: "Customers write to a Telegram bot. You will need to create one with @BotFather, which is free and takes a minute.",
+    th: "ลูกค้าส่งข้อความไปที่บอท Telegram คุณต้องสร้างบอทด้วย @BotFather ซึ่งฟรีและใช้เวลาราวหนึ่งนาที",
+    zh: "客户向一个 Telegram bot 发消息。你需要用 @BotFather 创建一个，免费，约一分钟。",
+    my: "Customer တွေက Telegram bot ဆီ စာပို့မယ်။ @BotFather မှာ တစ်ခု ဆောက်ရမယ် — အခမဲ့ဖြစ်ပြီး တစ်မိနစ်ခန့်ပဲ ကြာပါတယ်။",
+  },
+  btnRouteWeb: {
+    en: "Web agent",
+    th: "เอเจนต์เว็บ",
+    zh: "网页助手",
+    my: "Web agent",
+  },
+  routeWebBody: {
+    en: "Customers use a chat bubble on your own website. No Telegram bot is needed. You get a link to try it and one line to paste into your site.",
+    th: "ลูกค้าใช้ปุ่มแชทบนเว็บไซต์ของคุณเอง ไม่ต้องมีบอท Telegram คุณจะได้ลิงก์สำหรับทดลองและโค้ดหนึ่งบรรทัดสำหรับวางในเว็บไซต์",
+    zh: "客户使用你自己网站上的聊天气泡。不需要 Telegram bot。你会得到一个试用链接和一行粘贴到网站的代码。",
+    my: "Customer တွေက သင့်ကိုယ်ပိုင် website ပေါ်က chat ခလုတ်ကနေ သုံးမယ်။ Telegram bot မလိုပါဘူး။ စမ်းဖို့ link တစ်ခုနဲ့ website မှာ paste လုပ်ဖို့ တစ်ကြောင်း ရပါမယ်။",
+  },
+  bizNewBoth: {
+    en: "You can add the other one later. Nothing here is final.",
+    th: "คุณเพิ่มอีกช่องทางภายหลังได้ ไม่มีอะไรที่เปลี่ยนไม่ได้",
+    zh: "另一个可以之后再添加，这里没有不可更改的选择。",
+    my: "နောက်တစ်ခုကို နောက်မှ ထပ်ထည့်လို့ရပါတယ်။ ဒီမှာ အပြီးသတ် ဆုံးဖြတ်ချက် မဟုတ်ပါဘူး။",
+  },
+  bizWebTitle: {
+    en: "Name this business",
+    th: "ตั้งชื่อธุรกิจนี้",
+    zh: "给这个业务起名",
+    my: "ဒီလုပ်ငန်းကို အမည်ပေးပါ",
+  },
+  bizWebBody: {
+    en: "Send the shop's name. Visitors see it at the top of the chat, and you will see it in your list of businesses. You can change it afterwards.",
+    th: "ส่งชื่อร้าน ผู้เข้าชมจะเห็นชื่อนี้ด้านบนของหน้าต่างแชท และคุณจะเห็นในรายการธุรกิจ เปลี่ยนภายหลังได้",
+    zh: "发送店铺名称。访客会在聊天窗口顶部看到它，你也会在业务列表中看到它。之后可以修改。",
+    my: "ဆိုင်နာမည် ပို့ပါ။ လာကြည့်သူတွေက စကားပြောခန်း အပေါ်မှာ မြင်ရပြီး၊ သင်လည်း လုပ်ငန်းစာရင်းထဲမှာ မြင်ရပါမယ်။ နောက်မှ ပြောင်းလို့ရပါတယ်။",
+  },
+  bizTelegram: { en: "Telegram", th: "Telegram", zh: "Telegram", my: "Telegram" },
+  bizWebsite: { en: "Website", th: "เว็บไซต์", zh: "网站", my: "Website" },
+  bizChannelLive: { en: "live", th: "พร้อมใช้งาน", zh: "已启用", my: "အသုံးပြုနိုင်ပါပြီ" },
+  bizChannelOff: { en: "switched off", th: "ปิดอยู่", zh: "已关闭", my: "ပိတ်ထားပါတယ်" },
+  bizChannelAbsent: {
+    en: "not set up",
+    th: "ยังไม่ได้ตั้งค่า",
+    zh: "尚未设置",
+    my: "မဆောက်ရသေးပါ",
+  },
   webTeaser: {
     en: "Hi! Ask me anything about {name}: prices, stock, delivery. How can I help?",
     th: "สวัสดีค่ะ! สอบถามเกี่ยวกับ {name} ได้เลย ทั้งราคา สินค้า และการจัดส่ง มีอะไรให้ช่วยไหมคะ",
@@ -522,7 +587,6 @@ export const STRINGS = {
   },
   bizModel: { en: "Model", th: "โมเดล", zh: "模型", my: "Model" },
   bizLanguage: { en: "Reply language", th: "ภาษาที่ตอบ", zh: "回复语言", my: "ဖြေမည့် ဘာသာစကား" },
-  bizBots: { en: "Bots", th: "บอท", zh: "机器人", my: "Bot" },
   bizDocuments: { en: "Data files", th: "ไฟล์ข้อมูล", zh: "数据文件", my: "ဒေတာ ဖိုင်" },
   bizProducts: { en: "Products", th: "สินค้า", zh: "商品", my: "ကုန်ပစ္စည်း" },
   bizCustomers: { en: "Customers", th: "ลูกค้า", zh: "客户", my: "customer" },

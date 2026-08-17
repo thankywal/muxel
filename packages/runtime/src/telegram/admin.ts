@@ -202,6 +202,7 @@ const LIST_LIMIT = 12;
 
 type PendingKind =
   | "new_business"
+  | "new_business_name"
   | "console_bot"
   | "instructions"
   | "customer_note"
@@ -375,7 +376,7 @@ function homeScreen(locale: Locale): Screen {
     text: `<b>${t(locale, "homeTitle")}</b>\n\n${t(locale, "homeBody")}`,
     rows: [
       row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
-      row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+      row({ text: t(locale, "btnAddBusiness"), action: "biznew" }),
       row({ text: t(locale, "btnNeedsPerson"), action: "wait" }),
       row(
         { text: t(locale, "btnConsoleBot"), action: "console" },
@@ -412,7 +413,7 @@ function businessListScreen(locale: Locale, businesses: readonly Business[]): Sc
     return {
       text: `<b>${t(locale, "bizListTitle")}</b>\n\n${t(locale, "bizListEmpty")}`,
       rows: [
-        row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+        row({ text: t(locale, "btnAddBusiness"), action: "biznew" }),
         backTo(locale, "home"),
       ],
     };
@@ -423,7 +424,7 @@ function businessListScreen(locale: Locale, businesses: readonly Business[]): Sc
       ...businesses
         .slice(0, LIST_LIMIT)
         .map((business) => row({ text: business.name, action: "biz", args: [business.id] })),
-      row({ text: t(locale, "btnAddBusiness"), action: "bizadd" }),
+      row({ text: t(locale, "btnAddBusiness"), action: "biznew" }),
       backTo(locale, "home"),
     ],
   };
@@ -432,7 +433,13 @@ function businessListScreen(locale: Locale, businesses: readonly Business[]): Sc
 function businessScreen(
   locale: Locale,
   business: Business,
-  counts: { bots: number; documents: number; products: number; customers: number },
+  counts: {
+    documents: number;
+    products: number;
+    customers: number;
+    telegram: string | null;
+    web: "live" | "off" | "absent";
+  },
   usage: { messages: number; inputTokens: number; outputTokens: number },
 ): Screen {
   const modelLabel =
@@ -443,8 +450,21 @@ function businessScreen(
       "",
       `${t(locale, "bizModel")}: ${escapeHtml(modelLabel)}`,
       `${t(locale, "bizLanguage")}: ${escapeHtml(business.locale)}`,
-      `${t(locale, "bizDocuments")}: ${counts.documents}   ${t(locale, "bizProducts")}: ${counts.products}`,
-      `${t(locale, "bizBots")}: ${counts.bots}   ${t(locale, "bizCustomers")}: ${counts.customers}`,
+      `${t(locale, "bizDocuments")}: ${counts.documents}   ${t(locale, "bizProducts")}: ${counts.products}   ${t(locale, "bizCustomers")}: ${counts.customers}`,
+      "",
+      `${t(locale, "bizTelegram")}: ${
+        counts.telegram === null
+          ? t(locale, "bizChannelAbsent")
+          : `@${escapeHtml(counts.telegram)}`
+      }`,
+      `${t(locale, "bizWebsite")}: ${t(
+        locale,
+        counts.web === "live"
+          ? "bizChannelLive"
+          : counts.web === "off"
+            ? "bizChannelOff"
+            : "bizChannelAbsent",
+      )}`,
       `${t(locale, "bizInstructions")}: ${
         business.systemPrompt.length > 0
           ? `${business.systemPrompt.length}`
@@ -772,21 +792,27 @@ async function businessDetail(env: Env, locale: Locale, userId: number, business
   await requireAccess(env, userId, businessId);
   await setContext(env, userId, businessId);
   const business = await getBusiness(env, businessId);
-  const [bots, usage, documents, customers, products] = await Promise.all([
+  const [bots, usage, documents, customers, products, channel] = await Promise.all([
     listBots(env, businessId),
     todayUsage(env, businessId),
     listDocuments(env, businessId, 100),
     listCustomers(env, businessId, 100),
     productsView(env, businessId),
+    getChannelForBusiness(env, businessId),
   ]);
+  const telegram = bots.find((bot) => bot.enabled) ?? bots[0];
   return businessScreen(
     locale,
     business,
     {
-      bots: bots.length,
       documents: documents.length,
       products: products.length,
       customers: customers.length,
+      // Named rather than counted. "Bots: 0" is what a website only business
+      // used to show, which reads as something being broken rather than as a
+      // channel simply not being in use.
+      telegram: telegram === undefined ? null : telegram.username,
+      web: channel === null ? "absent" : channel.enabled ? "live" : "off",
     },
     usage,
   );
@@ -821,11 +847,52 @@ async function screenFor(
     case "bizls":
       return businessListScreen(locale, await listBusinesses(env, userId));
 
+    // Which channel a business answers on is the first real decision, and it
+    // used to be made for the operator: adding a business meant handing over a
+    // Telegram bot token, so anyone who wanted a chat bubble on their website
+    // had to go to BotFather and create a bot they would never use, then find
+    // the web agent buried inside a screen they could only reach afterwards.
+    case "biznew":
+      return {
+        text: [
+          `<b>${escapeHtml(t(locale, "bizNewTitle"))}</b>`,
+          "",
+          escapeHtml(t(locale, "bizNewBody")),
+          "",
+          `📱 <b>${escapeHtml(t(locale, "btnRouteTelegram"))}</b>`,
+          escapeHtml(t(locale, "routeTelegramBody")),
+          "",
+          `🌐 <b>${escapeHtml(t(locale, "btnRouteWeb"))}</b>`,
+          escapeHtml(t(locale, "routeWebBody")),
+          "",
+          escapeHtml(t(locale, "bizNewBoth")),
+        ].join("\n"),
+        rows: [
+          row({ text: `📱 ${t(locale, "btnRouteTelegram")}`, action: "bizadd" }),
+          row({ text: `🌐 ${t(locale, "btnRouteWeb")}`, action: "bizaddweb" }),
+          backTo(locale, "home"),
+        ],
+      };
+
     case "bizadd":
       await setPending(env, userId, { kind: "new_business" });
       return {
         text: `<b>${t(locale, "bizAddTitle")}</b>\n\n${t(locale, "bizAddBody")}`,
-        rows: [row({ text: t(locale, "cancel"), action: "home" })],
+        rows: [row({ text: t(locale, "cancel"), action: "biznew" })],
+      };
+
+    // The website route has no bot to take a name from, so it asks. That is one
+    // more step than the Telegram route, and still fewer than creating a bot
+    // that exists only to be ignored.
+    case "bizaddweb":
+      await setPending(env, userId, { kind: "new_business_name" });
+      return {
+        text: [
+          `<b>${escapeHtml(t(locale, "bizWebTitle"))}</b>`,
+          "",
+          escapeHtml(t(locale, "bizWebBody")),
+        ].join("\n"),
+        rows: [row({ text: t(locale, "cancel"), action: "biznew" })],
       };
 
     case "diag": {
@@ -2069,6 +2136,35 @@ async function handlePendingInput(
       content: reply,
     });
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "conv", [customerId]));
+    return;
+  }
+
+  // A business whose only channel is its website. Nothing else in the product
+  // needed changing for this to work: the web channel already creates its own
+  // hidden bot row, the reply path answers from that rather than from Telegram,
+  // and a Telegram bot can be attached later through the same handler that
+  // attaches a second one, which already accepts an existing business.
+  if (pending.kind === "new_business_name") {
+    const name = text.trim().slice(0, 80);
+    if (name.length === 0) {
+      return;
+    }
+    const business = await createBusiness(env, {
+      name,
+      locale: env.BUSINESS_LOCALE?.trim() || "en",
+      model: env.DEFAULT_MODEL,
+    });
+    await createChannel(env, { businessId: business.id, title: name });
+    await setContext(env, userId, business.id);
+    // Lands on the web agent screen rather than the business screen, because
+    // the embed line and the preview link are the two things this operator came
+    // for and they are both there.
+    await render(
+      env,
+      client,
+      { chatId },
+      await screenFor(env, locale, userId, "web", [business.id]),
+    );
     return;
   }
 
