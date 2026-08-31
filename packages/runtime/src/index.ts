@@ -38,6 +38,8 @@ function html(body: string, status = 200): Response {
   });
 }
 
+import { handleConsoleRequest } from "./web/console.js";
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -78,6 +80,14 @@ export default {
           500,
         );
       }
+    }
+
+    // The web console. Bearer authenticated against a code the owner got from
+    // the console bot, so the same operator checks apply as on Telegram.
+    if (url.pathname.startsWith("/admin/")) {
+      await ensureSchema(env);
+      const handled = await handleConsoleRequest(env, request, url.pathname.slice("/admin".length));
+      if (handled !== null) return handled;
     }
 
     // The website channel. Public by nature, so it validates the origin and

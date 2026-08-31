@@ -86,6 +86,25 @@ app.post("/api/connect", async (req, res) => {
   }
 });
 
+/** Trades the code the console bot showed for a token from that deployment. */
+app.post("/api/pair", async (req, res) => {
+  try {
+    const base = await assertSafeWorkerUrl(String(req.body?.worker ?? ""));
+    const r = await fetch(`${base}/admin/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: String(req.body?.code ?? "") }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    res.status(r.status).type("application/json").send(await r.text());
+  } catch (error) {
+    res.status(400).json({
+      error: "unreachable",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 /** The single door onto the console. */
 app.post("/api/screen", async (req, res) => {
   const target = String(req.body?.worker ?? DEFAULT_WORKER ?? "");

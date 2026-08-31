@@ -140,11 +140,21 @@
 
       <div class="card connect">
         <h3>Already deployed? Connect it.</h3>
-        <p>Your deployment's address. This console talks to it straight from your browser and stores nothing.</p>
+        <p id="step1Hint">Your deployment's address. This console talks to it straight from your browser and stores nothing.</p>
         <form class="field" id="connectForm">
           <input id="workerUrl" placeholder="https://muxel.your-name.workers.dev" autocomplete="off" spellcheck="false">
-          <button class="btn btn-primary" type="submit" id="connectBtn">Connect</button>
+          <button class="btn btn-primary" type="submit" id="connectBtn">Continue</button>
         </form>
+
+        <div id="step2" hidden style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
+          <p>Open your console bot in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
+          <form class="field" id="pairForm">
+            <input id="pairCode" placeholder="ABCD2345" autocomplete="off" spellcheck="false"
+                   style="text-transform:uppercase;letter-spacing:.14em;font-weight:700">
+            <button class="btn btn-primary" type="submit" id="pairBtn">Open console</button>
+          </form>
+        </div>
+
         <div class="err" id="connectErr"></div>
       </div>
     </section>
@@ -172,7 +182,9 @@
    only; the server that served this page never learns it. */
 const $ = (id) => document.getElementById(id);
 const KEY = "muxel.worker";
+const TOK = "muxel.token";
 let worker = localStorage.getItem(KEY) || "";
+let token = localStorage.getItem(TOK) || "";
 let busy = false;
 
 function showConsole(on) {
@@ -182,10 +194,13 @@ function showConsole(on) {
   $("connUrl").textContent = worker.replace(/^https:\/\//, "");
 }
 
-async function post(path, body) {
+async function post(path, body, auth) {
   const r = await fetch(path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(auth && token ? { authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   });
   return { ok: r.ok, data: await r.json().catch(() => ({})) };
@@ -206,6 +221,26 @@ $("connectForm").addEventListener("submit", async (e) => {
   }
   worker = data.base;
   localStorage.setItem(KEY, worker);
+  // Reaching it is not the same as being allowed into it, so the code comes next.
+  $("step2").hidden = false;
+  $("pairCode").focus();
+});
+
+$("pairForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const code = $("pairCode").value.trim().toUpperCase();
+  if (!code) return;
+  $("pairBtn").disabled = true;
+  $("connectErr").classList.remove("on");
+  const { ok, data } = await post("/api/pair", { worker, code });
+  $("pairBtn").disabled = false;
+  if (!ok) {
+    $("connectErr").textContent = data.message || "That code did not work.";
+    $("connectErr").classList.add("on");
+    return;
+  }
+  token = data.token;
+  localStorage.setItem(TOK, token);
   showConsole(true);
   go("home", []);
 });
@@ -213,7 +248,8 @@ $("connectForm").addEventListener("submit", async (e) => {
 $("disconnect").addEventListener("click", (e) => {
   e.preventDefault();
   localStorage.removeItem(KEY);
-  worker = "";
+  localStorage.removeItem(TOK);
+  worker = ""; token = "";
   showConsole(false);
 });
 
@@ -238,10 +274,10 @@ function renderScreen(s) {
 }
 
 async function go(action, args = [], answer) {
-  if (busy || !worker) return;
+  if (busy || !worker || !token) return;
   busy = true;
   document.querySelectorAll(".sbtn").forEach((b) => (b.disabled = true));
-  const { ok, data } = await post("/api/screen", { worker, action, args, answer });
+  const { ok, data } = await post("/api/screen", { worker, action, args, answer }, true);
   busy = false;
   $("answer").value = "";
   if (!ok) {
@@ -264,7 +300,7 @@ $("compose").addEventListener("submit", (e) => {
   if (v) go("answer", [], v);
 });
 
-if (worker) { showConsole(true); go("home", []); } else { showConsole(false); }
+if (worker && token) { showConsole(true); go("home", []); } else { showConsole(false); }
 </script>
 </body>
 </html>

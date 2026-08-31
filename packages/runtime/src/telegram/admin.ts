@@ -69,6 +69,7 @@ import {
   updateBusinessModel,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
+import { issuePairingCode } from "../web/console.js";
 import {
   ingestDocument,
   MAX_DOCUMENT_BYTES,
@@ -265,7 +266,7 @@ function getContext(env: Env, userId: number): Promise<string | null> {
   return env.STATE.get(`${CONTEXT_PREFIX}${userId}`);
 }
 
-async function localeFor(env: Env, userId: number): Promise<Locale> {
+export async function localeFor(env: Env, userId: number): Promise<Locale> {
   const stored = await getOperatorLocale(env, userId);
   return stored !== null && isLocale(stored) ? stored : "en";
 }
@@ -394,6 +395,7 @@ function homeScreen(locale: Locale): Screen {
       row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
       row({ text: t(locale, "btnAddBusiness"), action: "biznew" }),
       row({ text: t(locale, "btnNeedsPerson"), action: "wait" }),
+      row({ text: t(locale, "btnWebConsole"), action: "webcon" }),
       row(
         { text: t(locale, "btnConsoleBot"), action: "console" },
         { text: t(locale, "btnDiagnostics"), action: "diag" },
@@ -834,7 +836,14 @@ async function businessDetail(env: Env, locale: Locale, userId: number, business
   );
 }
 
-async function screenFor(
+/**
+ * The console, as data.
+ *
+ * Exported because Telegram is no longer the only front end. The web console
+ * renders whatever this returns, so both surfaces show the same screens and a
+ * screen added here appears in both without being written twice.
+ */
+export async function screenFor(
   env: Env,
   locale: Locale,
   userId: number,
@@ -910,6 +919,19 @@ async function screenFor(
         ].join("\n"),
         rows: [row({ text: t(locale, "cancel"), action: "biznew" })],
       };
+
+    case "webcon": {
+      // Issued here because this is the one place that already knows, on
+      // Telegram's word, who is asking.
+      const code = await issuePairingCode(env, userId);
+      return {
+        text: `<b>${t(locale, "webConTitle")}</b>\n\n${t(locale, "webConBody")}\n\n<code>${code}</code>\n\n${t(locale, "webConExpiry")}`,
+        rows: [
+          row({ text: t(locale, "btnWebConNew"), action: "webcon" }),
+          row({ text: t(locale, "back"), action: "home" }),
+        ],
+      };
+    }
 
     case "diag": {
       const events = await listEvents(env, 10);

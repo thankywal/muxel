@@ -43,6 +43,37 @@ export const STRINGS = {
   none: { en: "none", th: "ไม่มี", zh: "无", my: "မရှိပါ" },
   saved: { en: "Saved.", th: "บันทึกแล้ว", zh: "已保存", my: "သိမ်းပြီးပါပြီ" },
 
+  btnWebConsole: {
+    en: "Web console",
+    th: "คอนโซลบนเว็บ",
+    zh: "网页控制台",
+    my: "ဝဘ် console",
+  },
+  btnWebConNew: {
+    en: "New code",
+    th: "รหัสใหม่",
+    zh: "新的代码",
+    my: "ကုဒ်အသစ်",
+  },
+  webConTitle: {
+    en: "Open the console on a computer",
+    th: "เปิดคอนโซลบนคอมพิวเตอร์",
+    zh: "在电脑上打开控制台",
+    my: "ကွန်ပျူတာမှာ console ဖွင့်ရန်",
+  },
+  webConBody: {
+    en: "Go to app.muxel.site, paste your deployment address, then type this code.",
+    th: "ไปที่ app.muxel.site ใส่ที่อยู่ระบบของคุณ แล้วพิมพ์รหัสนี้",
+    zh: "打开 app.muxel.site，填入你的部署地址，然后输入此代码。",
+    my: "app.muxel.site ကို ဖွင့်ပြီး သင့် deployment လိပ်စာ ထည့်၊ ပြီးရင် ဤကုဒ်ကို ရိုက်ထည့်ပါ။",
+  },
+  webConExpiry: {
+    en: "It works once, for ten minutes.",
+    th: "ใช้ได้ครั้งเดียว ภายในสิบนาที",
+    zh: "仅可使用一次，有效期十分钟。",
+    my: "တစ်ကြိမ်သာ၊ ဆယ်မိနစ်အတွင်း အသုံးပြုနိုင်ပါသည်။",
+  },
+
   private: {
     en: "This console is private. Ask the owner to grant you access.",
     th: "คอนโซลนี้เป็นส่วนตัว โปรดขอสิทธิ์จากเจ้าของ",
