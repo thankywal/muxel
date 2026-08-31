@@ -11,7 +11,8 @@
  * about the owner is stored anywhere outside their own deployment.
  */
 
-import { localeFor, screenFor } from "../telegram/admin.js";
+import { handleAdminUpdate, hasPending, localeFor, screenFor } from "../telegram/admin.js";
+import { CapturingClient } from "./capture.js";
 import { sha256Hex } from "../crypto.js";
 import { findOperator } from "../db/queries.js";
 import type { Env } from "../env.js";
@@ -113,8 +114,33 @@ export async function handleConsoleRequest(
     const body = (await request.json().catch(() => ({}))) as {
       action?: string;
       args?: string[];
+      answer?: string;
     };
     const locale = await localeFor(env, userId);
+    const origin = new URL(request.url).origin;
+
+    // A typed reply runs the same handler Telegram runs, with a client that
+    // answers into memory. One code path, so the two consoles cannot drift.
+    if (typeof body.answer === "string" && body.answer.length > 0) {
+      const client = new CapturingClient();
+      await handleAdminUpdate(
+        env,
+        client,
+        {
+          message: {
+            message_id: 0,
+            date: Math.floor(Date.now() / 1000),
+            chat: { id: userId, type: "private" },
+            from: { id: userId, is_bot: false, first_name: "web" },
+            text: body.answer,
+          },
+        } as never,
+        origin,
+      );
+      const captured = client.result();
+      return json({ ...captured, pending: await hasPending(env, userId) });
+    }
+
     const screen = await screenFor(
       env,
       locale,
@@ -122,7 +148,7 @@ export async function handleConsoleRequest(
       String(body.action ?? "home"),
       Array.isArray(body.args) ? body.args.map(String) : [],
     );
-    return json({ text: screen.text, rows: screen.rows });
+    return json({ text: screen.text, rows: screen.rows, pending: await hasPending(env, userId) });
   }
 
   return null;

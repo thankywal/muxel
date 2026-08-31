@@ -70,6 +70,7 @@ import {
 } from "../db/queries.js";
 import type { Env } from "../env.js";
 import { issuePairingCode } from "../web/console.js";
+import { CapturingClient } from "../web/capture.js";
 import {
   ingestDocument,
   MAX_DOCUMENT_BYTES,
@@ -244,6 +245,16 @@ async function setPending(env: Env, userId: number, pending: Pending): Promise<v
   await env.STATE.put(`${PENDING_PREFIX}${userId}`, JSON.stringify(pending), {
     expirationTtl: PENDING_TTL_SECONDS,
   });
+}
+
+/**
+ * Whether a screen is waiting for something typed.
+ *
+ * Telegram needs no such question: the next message is the answer. A browser
+ * has to be told to put an input box on the screen, so it asks.
+ */
+export async function hasPending(env: Env, userId: number): Promise<boolean> {
+  return (await env.STATE.get(`${PENDING_PREFIX}${userId}`)) !== null;
 }
 
 async function takePending(env: Env, userId: number): Promise<Pending | null> {
@@ -772,6 +783,14 @@ async function render(
   target: { chatId: number; messageId?: number },
   screen: Screen,
 ): Promise<void> {
+  // The web console runs this same code with a client that answers into memory.
+  // Handing it the screen here, before the keyboard is built, keeps the buttons
+  // as actions and arguments rather than as callback payloads that would have
+  // to be encoded and then decoded again on the way out.
+  if (client instanceof CapturingClient) {
+    client.captureScreen(screen);
+    return;
+  }
   const replyMarkup = await buildKeyboard(env, screen.rows);
   if (target.messageId === undefined) {
     await client.sendMessage({ chatId: target.chatId, text: screen.text, replyMarkup });
