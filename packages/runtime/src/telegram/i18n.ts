@@ -43,6 +43,71 @@ export const STRINGS = {
   none: { en: "none", th: "ไม่มี", zh: "无", my: "မရှိပါ" },
   saved: { en: "Saved.", th: "บันทึกแล้ว", zh: "已保存", my: "သိမ်းပြီးပါပြီ" },
 
+  btnUpdateNow: {
+    en: "Update now",
+    th: "อัปเดตตอนนี้",
+    zh: "立即更新",
+    my: "ယခု update လုပ်ရန်",
+  },
+  btnSecrets: { en: "Secrets", th: "ความลับ", zh: "密钥", my: "လျှို့ဝှက်ချက်" },
+  btnSecAdd: { en: "Add GitHub token", th: "เพิ่มโทเค็น GitHub", zh: "添加 GitHub 令牌", my: "GitHub token ထည့်ရန်" },
+  btnSecReplace: { en: "Replace GitHub token", th: "เปลี่ยนโทเค็น GitHub", zh: "更换 GitHub 令牌", my: "GitHub token လဲရန်" },
+  btnSecRemove: { en: "Remove it", th: "ลบออก", zh: "移除", my: "ဖယ်ရှားရန်" },
+  secTitle: {
+    en: "Secrets",
+    th: "ความลับ",
+    zh: "密钥",
+    my: "လျှို့ဝှက်ချက်များ",
+  },
+  secBody: {
+    en: "Kept sealed in your own deployment. Nobody else can read them, including whoever published this code.",
+    th: "เก็บแบบเข้ารหัสไว้ในระบบของคุณเอง ไม่มีใครอ่านได้ รวมถึงผู้เผยแพร่โค้ดนี้",
+    zh: "以加密形式保存在你自己的部署中。任何人都无法读取，包括发布这份代码的人。",
+    my: "သင့်ကိုယ်ပိုင် deployment ထဲမှာ encrypt လုပ်ပြီး သိမ်းထားပါသည်။ ဤကုဒ်ကို ထုတ်ဝေသူအပါအဝင် မည်သူမျှ ဖတ်၍မရပါ။",
+  },
+  secGithubSet: {
+    en: "GitHub token: set. One click updates are available.",
+    th: "โทเค็น GitHub: ตั้งค่าแล้ว อัปเดตด้วยคลิกเดียวได้",
+    zh: "GitHub 令牌：已设置。可一键更新。",
+    my: "GitHub token: ထည့်ပြီး။ တစ်ချက်နှိပ် update လုပ်နိုင်ပါပြီ။",
+  },
+  secGithubUnset: {
+    en: "GitHub token: not set. Add one and updates apply from here, with no visit to GitHub and no redeploy.",
+    th: "โทเค็น GitHub: ยังไม่ได้ตั้ง เพิ่มแล้วอัปเดตได้จากที่นี่ ไม่ต้องเข้า GitHub และไม่ต้อง deploy ใหม่",
+    zh: "GitHub 令牌：未设置。添加后即可在此更新，无需前往 GitHub，也无需重新部署。",
+    my: "GitHub token: မထည့်ရသေးပါ။ ထည့်လိုက်ရင် GitHub ကို မသွားရဘဲ redeploy မလုပ်ရဘဲ ဒီကနေ update လုပ်နိုင်ပါသည်။",
+  },
+  secAddTitle: {
+    en: "Create a token for your own repository",
+    th: "สร้างโทเค็นสำหรับที่เก็บโค้ดของคุณ",
+    zh: "为你自己的仓库创建一个令牌",
+    my: "သင့်ကိုယ်ပိုင် repository အတွက် token ဆောက်ပါ",
+  },
+  secAddSteps: {
+    en: "1. Open github.com/settings/personal-access-tokens/new\n2. Repository access: only the copy this deployment came from\n3. Permissions: Contents, Read and write\n4. Create it, then send the token here.\n\nIt is checked before it is kept, and never shown again.",
+    th: "1. เปิด github.com/settings/personal-access-tokens/new\n2. สิทธิ์ที่เก็บ: เฉพาะสำเนาที่ระบบนี้มาจาก\n3. สิทธิ์: Contents อ่านและเขียน\n4. สร้างแล้วส่งโทเค็นมาที่นี่\n\nระบบจะตรวจสอบก่อนบันทึก และจะไม่แสดงอีก",
+    zh: "1. 打开 github.com/settings/personal-access-tokens/new\n2. 仓库权限：仅限本部署来源的那个副本\n3. 权限：Contents，读写\n4. 创建后把令牌发到这里。\n\n保存前会先验证，之后不再显示。",
+    my: "၁. github.com/settings/personal-access-tokens/new ကို ဖွင့်ပါ\n၂. Repository access: ဤ deployment လာရာ မိတ္တူတစ်ခုတည်း\n၃. Permissions: Contents, Read and write\n၄. ဆောက်ပြီး token ကို ဒီမှာ ပို့ပါ။\n\nမသိမ်းခင် စစ်ပါသည်၊ ပြီးရင် ထပ်မပြတော့ပါ။",
+  },
+  secTokenBad: {
+    en: "GitHub refused that token, so nothing was saved. Check it was copied whole.",
+    th: "GitHub ปฏิเสธโทเค็นนี้ จึงไม่ได้บันทึก ตรวจว่าคัดลอกครบหรือไม่",
+    zh: "GitHub 拒绝了该令牌，未保存。请检查是否完整复制。",
+    my: "GitHub က ဤ token ကို ငြင်းလိုက်၍ မသိမ်းထားပါ။ အပြည့်အစုံ ကူးမိမမိ စစ်ပါ။",
+  },
+  secTokenSaved: {
+    en: "Saved and sealed. You can update from the console now.",
+    th: "บันทึกและเข้ารหัสแล้ว อัปเดตจากคอนโซลได้เลย",
+    zh: "已保存并加密。现在可以从控制台更新。",
+    my: "သိမ်းပြီး encrypt လုပ်ပြီးပါပြီ။ ယခု console ကနေ update လုပ်နိုင်ပါပြီ။",
+  },
+  secUpdTitle: {
+    en: "Update",
+    th: "อัปเดต",
+    zh: "更新",
+    my: "အပ်ဒိတ်",
+  },
+
   btnWebConsole: {
     en: "Web console",
     th: "คอนโซลบนเว็บ",

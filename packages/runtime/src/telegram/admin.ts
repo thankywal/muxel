@@ -71,6 +71,8 @@ import {
 import type { Env } from "../env.js";
 import { issuePairingCode } from "../web/console.js";
 import { CapturingClient } from "../web/capture.js";
+import { clearSecret, hasSecret, putSecret } from "../web/secrets-vault.js";
+import { runSelfUpdate } from "../web/self-update.js";
 import {
   ingestDocument,
   MAX_DOCUMENT_BYTES,
@@ -230,6 +232,7 @@ type PendingKind =
   | "web_domains"
   | "web_name"
   | "data_file"
+  | "github_token"
   | "human_reply";
 
 interface Pending {
@@ -406,7 +409,10 @@ function homeScreen(locale: Locale): Screen {
       row({ text: t(locale, "btnBusinesses"), action: "bizls" }),
       row({ text: t(locale, "btnAddBusiness"), action: "biznew" }),
       row({ text: t(locale, "btnNeedsPerson"), action: "wait" }),
-      row({ text: t(locale, "btnWebConsole"), action: "webcon" }),
+      row(
+        { text: t(locale, "btnWebConsole"), action: "webcon" },
+        { text: t(locale, "btnSecrets"), action: "secrets" },
+      ),
       row(
         { text: t(locale, "btnConsoleBot"), action: "console" },
         { text: t(locale, "btnDiagnostics"), action: "diag" },
@@ -939,6 +945,44 @@ export async function screenFor(
         rows: [row({ text: t(locale, "cancel"), action: "biznew" })],
       };
 
+    case "secrets": {
+      const set = await hasSecret(env, "github_token");
+      return {
+        text: `<b>${t(locale, "secTitle")}</b>\n\n${t(locale, "secBody")}\n\n${
+          set ? t(locale, "secGithubSet") : t(locale, "secGithubUnset")
+        }`,
+        rows: [
+          row({ text: t(locale, set ? "btnSecReplace" : "btnSecAdd"), action: "secadd" }),
+          ...(set ? [row({ text: t(locale, "btnSecRemove"), action: "secdel" })] : []),
+          row({ text: t(locale, "back"), action: "home" }),
+        ],
+      };
+    }
+
+    case "secadd": {
+      await setPending(env, userId, { kind: "github_token" });
+      return {
+        text: `<b>${t(locale, "secAddTitle")}</b>\n\n${t(locale, "secAddSteps")}`,
+        rows: [row({ text: t(locale, "cancel"), action: "secrets" })],
+      };
+    }
+
+    case "secdel": {
+      await clearSecret(env, "github_token");
+      return screenFor(env, locale, userId, "secrets", []);
+    }
+
+    case "selfupd": {
+      const outcome = await runSelfUpdate(env);
+      return {
+        text: `<b>${t(locale, "secUpdTitle")}</b>\n\n${escapeHtml(outcome.message)}`,
+        rows: [
+          row({ text: t(locale, "btnCheckAgain"), action: "upd" }),
+          row({ text: t(locale, "back"), action: "home" }),
+        ],
+      };
+    }
+
     case "webcon": {
       // Issued here because this is the one place that already knows, on
       // Telegram's word, who is asking.
@@ -1180,7 +1224,18 @@ export async function screenFor(
           headline,
           ...(status.behind ? ["", t(locale, "updHow", { repo: UPSTREAM_REPO })] : []),
         ].join("\n"),
-        rows: [row({ text: t(locale, "btnCheckAgain"), action: "upd" }), backTo(locale, "home")],
+        rows: [
+          // Offered only when there is something to apply and a token to apply
+          // it with, so the button is never a dead end.
+          ...(status.behind && (await hasSecret(env, "github_token"))
+            ? [row({ text: t(locale, "btnUpdateNow"), action: "selfupd" })]
+            : []),
+          ...(status.behind && !(await hasSecret(env, "github_token"))
+            ? [row({ text: t(locale, "btnSecAdd"), action: "secadd" })]
+            : []),
+          row({ text: t(locale, "btnCheckAgain"), action: "upd" }),
+          backTo(locale, "home"),
+        ],
       };
     }
 
@@ -2140,6 +2195,27 @@ async function handlePendingInput(
     return;
   }
 
+
+  if (pending.kind === "github_token") {
+    // Checked before it is kept, so a mistyped token fails here rather than at
+    // the moment the owner is trying to apply an update.
+    const probe = await fetch("https://api.github.com/user", {
+      headers: {
+        authorization: `Bearer ${text}`,
+        "user-agent": "muxel-self-update",
+        accept: "application/vnd.github+json",
+      },
+    });
+    if (!probe.ok) {
+      await client.sendMessage({ chatId, text: t(locale, "secTokenBad") });
+      await render(env, client, { chatId }, await screenFor(env, locale, userId, "secrets", []));
+      return;
+    }
+    await putSecret(env, "github_token", text);
+    await client.sendMessage({ chatId, text: t(locale, "secTokenSaved") });
+    await render(env, client, { chatId }, await screenFor(env, locale, userId, "secrets", []));
+    return;
+  }
 
   if (pending.kind === "human_reply") {
     const customerId = pending.customerId;
