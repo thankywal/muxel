@@ -562,12 +562,14 @@ export async function appendMessage(
     role: "user" | "assistant";
     content: string;
   },
-): Promise<void> {
+): Promise<string> {
+  const id = generateId();
   await env.DB.prepare(
     "INSERT INTO message (id, conversation_id, business_id, role, content, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   )
-    .bind(generateId(), input.conversationId, input.businessId, input.role, input.content, now())
+    .bind(id, input.conversationId, input.businessId, input.role, input.content, now())
     .run();
+  return id;
 }
 
 /**
@@ -588,7 +590,7 @@ export async function deleteAllProducts(env: Env, businessId: string): Promise<n
 export async function appendHumanMessage(
   env: Env,
   input: { conversationId: string; businessId: string; content: string },
-): Promise<void> {
+): Promise<string> {
   const id = generateId();
   await env.DB.batch([
     env.DB.prepare(
@@ -598,6 +600,7 @@ export async function appendHumanMessage(
     // still reads it as an ordinary turn from the business.
     env.DB.prepare("INSERT INTO message_author (message_id, sent_by) VALUES (?, 'human')").bind(id),
   ]);
+  return id;
 }
 
 /**
@@ -616,7 +619,7 @@ export async function appendMessageWithMedia(
     content: string;
     media: { kind: string; fileId: string; label: string } | null;
   },
-): Promise<void> {
+): Promise<string> {
   const id = generateId();
   const statements = [
     env.DB.prepare(
@@ -631,6 +634,7 @@ export async function appendMessageWithMedia(
     );
   }
   await env.DB.batch(statements);
+  return id;
 }
 
 export interface StoredMedia {
@@ -680,6 +684,112 @@ export interface TranscriptTurn {
  * feeds a prompt and must stay small, this one is read by an operator deciding
  * whether to step in.
  */
+/**
+ * Notes that a stored turn is also a message in a Telegram chat.
+ *
+ * Written in the same breath as the send, never inferred later. A turn with no
+ * row here is one nobody can reach on the other side: the console's own web
+ * widget, a message Telegram has since dropped, or anything stored before this
+ * table existed. Every caller reads the absence the same way, so "delete for
+ * everyone" degrades to "delete for me" instead of pretending.
+ */
+export async function recordWire(
+  env: Env,
+  input: { messageId: string; botId: string; chatId: number; wireMessageId: number },
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO message_wire (message_id, bot_id, chat_id, wire_message_id) VALUES (?, ?, ?, ?)",
+  )
+    .bind(input.messageId, input.botId, input.chatId, input.wireMessageId)
+    .run();
+}
+
+export interface WireRef {
+  messageId: string;
+  botId: string;
+  chatId: number;
+  wireMessageId: number;
+}
+
+export async function wireFor(env: Env, messageId: string): Promise<WireRef | null> {
+  const row = await env.DB.prepare("SELECT * FROM message_wire WHERE message_id = ?")
+    .bind(messageId)
+    .first<{ message_id: string; bot_id: string; chat_id: number; wire_message_id: number }>();
+  return row === null
+    ? null
+    : {
+        messageId: row.message_id,
+        botId: row.bot_id,
+        chatId: row.chat_id,
+        wireMessageId: row.wire_message_id,
+      };
+}
+
+export interface StoredMessage {
+  id: string;
+  conversationId: string;
+  businessId: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+}
+
+export async function getMessageRow(env: Env, messageId: string): Promise<StoredMessage | null> {
+  assertValidId(messageId, "messageId");
+  const row = await env.DB.prepare("SELECT * FROM message WHERE id = ?")
+    .bind(messageId)
+    .first<{
+      id: string;
+      conversation_id: string;
+      business_id: string;
+      role: string;
+      content: string;
+      created_at: string;
+    }>();
+  return row === null
+    ? null
+    : {
+        id: row.id,
+        conversationId: row.conversation_id,
+        businessId: row.business_id,
+        role: row.role as "user" | "assistant",
+        content: row.content,
+        createdAt: row.created_at,
+      };
+}
+
+/** Rewrites the console's copy of a turn. The wire copy is a separate act. */
+export async function updateMessageContent(
+  env: Env,
+  messageId: string,
+  content: string,
+): Promise<void> {
+  assertValidId(messageId, "messageId");
+  await env.DB.prepare("UPDATE message SET content = ? WHERE id = ?")
+    .bind(content, messageId)
+    .run();
+}
+
+/** Drops the console's copy of a turn. Cascades take the author and media rows. */
+export async function deleteMessageRow(env: Env, messageId: string): Promise<void> {
+  assertValidId(messageId, "messageId");
+  await env.DB.prepare("DELETE FROM message WHERE id = ?").bind(messageId).run();
+}
+
+/**
+ * Drops a whole conversation and every turn in it.
+ *
+ * The handover flag goes with it, because a queue entry pointing at a
+ * conversation that no longer exists is an item of work nobody can do.
+ */
+export async function deleteConversationById(env: Env, conversationId: string): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM handover WHERE conversation_id = ?").bind(conversationId),
+    env.DB.prepare("DELETE FROM message WHERE conversation_id = ?").bind(conversationId),
+    env.DB.prepare("DELETE FROM conversation WHERE id = ?").bind(conversationId),
+  ]);
+}
+
 export async function transcript(
   env: Env,
   conversationId: string,

@@ -54,7 +54,6 @@ import {
   setCustomerNote,
   setCustomerStage,
   setOperatorLocale,
-  appendHumanMessage,
   conversationForCustomer,
   endHandover,
   getBotById,
@@ -81,10 +80,10 @@ import {
 } from "../rag/ingest.js";
 import { knowledgeReady } from "../rag/retrieve.js";
 import { describeCustomer } from "../escalation.js";
+import { sendHumanReply } from "../human-reply.js";
 import {
   createChannel,
   getChannelForBusiness,
-  isWebBot,
   updateChannel,
 } from "../web/channel.js";
 import { productsView, upsertCorrection, type ProductEntry } from "../products.js";
@@ -2223,51 +2222,17 @@ async function handlePendingInput(
       return;
     }
     const customer = await customerFor(env, userId, customerId);
-    const chat = await conversationForCustomer(env, {
-      businessId: customer.businessId,
-      chatId: customer.chatId,
-    });
-    if (chat === null) {
-      await client.sendMessage({ chatId, text: t(locale, "convNoChat") });
+
+    // Delivery and the record are one act, and they live in one function that
+    // the web console calls too. See src/human-reply.ts for why.
+    const sent = await sendHumanReply(env, { customer, text });
+    if (!sent.ok) {
+      await client.sendMessage({
+        chatId,
+        text: t(locale, sent.reason === "no_chat" ? "convNoChat" : "convSendFailed"),
+      });
       return;
     }
-
-    // Sent through the business bot, not the console bot. The customer has
-    // never seen the console bot and a message from it would look like a
-    // stranger joining the conversation. A website visitor has no Telegram at
-    // all: for them the reply is only stored, and their open widget collects
-    // it on its next poll.
-    const bot = await getBotById(env, chat.botId);
-    if (bot === null) {
-      await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
-      return;
-    }
-
-    const reply = text.slice(0, 3500);
-    const overWeb = await isWebBot(env, chat.botId);
-    if (!overWeb) {
-      try {
-        const masterKey = await resolveMasterKey(env);
-        const asBusiness = new TelegramClient(await openSealed(masterKey, bot.tokenCiphertext));
-        await asBusiness.sendMessage({ chatId: chat.chatId, text: escapeHtml(reply) });
-      } catch (error) {
-        console.error("human reply failed", {
-          businessId: customer.businessId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        await client.sendMessage({ chatId, text: t(locale, "convSendFailed") });
-        return;
-      }
-    }
-
-    // Recorded as an ordinary assistant turn so the model reads it as context
-    // if the chat is handed back, and marked as human so the transcript can
-    // show who actually said it.
-    await appendHumanMessage(env, {
-      conversationId: chat.id,
-      businessId: customer.businessId,
-      content: reply,
-    });
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "conv", [customerId]));
     return;
   }

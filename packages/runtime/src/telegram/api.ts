@@ -461,13 +461,51 @@ export class TelegramClient {
     kind: MediaKind;
     source: string;
     caption?: string;
-  }): Promise<unknown> {
+  }): Promise<TelegramMessage> {
     const spec = SEND_METHOD[input.kind];
-    return this.#call<unknown>(spec.method, {
+    return this.#call<TelegramMessage>(spec.method, {
       chat_id: input.chatId,
       [spec.field]: input.source,
       ...(spec.caption && input.caption ? { caption: input.caption.slice(0, 1024) } : {}),
     });
+  }
+
+  /**
+   * Sends a file the operator picked off their own disk.
+   *
+   * `sendMedia` hands Telegram a link or an id it already knows, which cannot
+   * serve a browser upload: those bytes exist nowhere Telegram can reach. This
+   * posts them, which means multipart rather than JSON, so it goes around
+   * `#call` and reads the envelope itself. The bytes are never stored: they
+   * pass through this worker into the chat and that is the end of them.
+   */
+  async sendMediaUpload(input: {
+    chatId: number;
+    kind: MediaKind;
+    file: Blob;
+    filename: string;
+    caption?: string;
+  }): Promise<TelegramMessage> {
+    const spec = SEND_METHOD[input.kind];
+    const form = new FormData();
+    form.set("chat_id", String(input.chatId));
+    form.set(spec.field, input.file, input.filename);
+    if (spec.caption && input.caption) {
+      form.set("caption", input.caption.slice(0, 1024));
+    }
+    const response = await fetch(`${API_ROOT}/bot${this.#token}/${spec.method}`, {
+      method: "POST",
+      body: form,
+    });
+    const payload = (await response.json()) as TelegramResponse<TelegramMessage>;
+    if (!payload.ok || payload.result === undefined) {
+      throw new MuxelError("upstream_failure", `Telegram ${spec.method} failed`, {
+        method: spec.method,
+        status: response.status,
+        description: payload.description ?? null,
+      });
+    }
+    return payload.result;
   }
 
   async getFileLink(fileId: string): Promise<string> {

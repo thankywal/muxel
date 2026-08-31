@@ -393,6 +393,26 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 10,
+    statements: [
+      // Where a stored turn is also sitting on someone's phone.
+      //
+      // The transcript row and the Telegram copy were two facts with one
+      // record between them, so the console could rewrite its own history and
+      // the customer would still be reading the original. This is the missing
+      // half: with a row here a message can be edited or withdrawn on both
+      // sides, and without one the console can only change its own copy, which
+      // is exactly what "delete for me" means. No consumer decides that for
+      // itself; every one of them reads this.
+      `CREATE TABLE IF NOT EXISTS message_wire (
+         message_id      TEXT PRIMARY KEY REFERENCES message (id) ON DELETE CASCADE,
+         bot_id          TEXT NOT NULL,
+         chat_id         INTEGER NOT NULL,
+         wire_message_id INTEGER NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

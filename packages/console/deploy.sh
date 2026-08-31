@@ -9,7 +9,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p "$TARGET/public/assets"
 cp "$HERE/server.mjs" "$HERE/package.json" "$TARGET/"
-cp "$HERE/public/"*.html "$HERE/public/styles.css" "$TARGET/public/"
+cp "$HERE/public/"*.html "$HERE/public/"*.css "$HERE/public/"*.js "$TARGET/public/"
 cp "$HERE/public/assets/"* "$TARGET/public/assets/"
 
 cd "$TARGET"

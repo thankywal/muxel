@@ -13,6 +13,7 @@ import { answerQuestion, handoverReply, MAX_INPUT_CHARS } from "../answer.js";
 import {
   appendMessage,
   appendMessageWithMedia,
+  recordWire,
   getHandover,
   openHandover,
   recordEvent,
@@ -172,13 +173,19 @@ export async function handleReplyUpdate(
 
     if (forHuman) {
       stopTyping();
-      await appendMessageWithMedia(env, {
+      const storedId = await appendMessageWithMedia(env, {
         conversationId,
         businessId: business.id,
         botId: bot.id,
         content: question.length > 0 ? question : describeAttachment(attachment),
         media: attachment,
       });
+      await recordWire(env, {
+        messageId: storedId,
+        botId: bot.id,
+        chatId,
+        wireMessageId: message.message_id,
+      }).catch(() => undefined);
       if (handover?.state !== "human") {
         await openHandover(env, {
           conversationId,
@@ -246,10 +253,12 @@ export async function handleReplyUpdate(
     }).catch(() => undefined);
   }
 
+  let sentWireId: number | null = null;
   try {
     // The transcript keeps the model's own words. Only the copy the customer
     // reads is converted, so the next turn is not fed its own markup back.
-    await client.sendMessage({ chatId, text: toTelegramHtml(answer) });
+    const sent = await client.sendMessage({ chatId, text: toTelegramHtml(answer) });
+    sentWireId = sent.message_id;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error("reply delivery failed", {
@@ -274,13 +283,28 @@ export async function handleReplyUpdate(
       businessId: business.id,
       role: "user",
       content: question,
-    }),
+    }).then((id) =>
+      recordWire(env, {
+        messageId: id,
+        botId: bot.id,
+        chatId,
+        wireMessageId: message.message_id,
+      }),
+    ),
     appendMessage(env, {
       conversationId,
       businessId: business.id,
       role: "assistant",
       content: answer,
-    }),
+    }).then((id) =>
+      // Long answers are split across several Telegram messages and only the
+      // last id comes back. The console can withdraw that one; the earlier
+      // pieces stay, which is honest about what actually happened rather than
+      // reporting a clean removal that did not occur.
+      sentWireId === null
+        ? undefined
+        : recordWire(env, { messageId: id, botId: bot.id, chatId, wireMessageId: sentWireId }),
+    ),
   ]).catch((error: unknown) => {
     // The customer already has their answer. Bookkeeping failure is the
     // operator's problem and must not read as a failed update.

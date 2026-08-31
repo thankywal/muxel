@@ -28,7 +28,8 @@ const DEFAULT_WORKER = (process.env.MUXEL_WORKER_URL ?? "").replace(/\/$/, "");
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "1mb" }));
+/** Scoped rather than global: the data proxy carries file bytes, not JSON. */
+const asJson = express.json({ limit: "1mb" });
 
 /**
  * The browser hands us a URL and we make a request to it, so this is the one
@@ -66,7 +67,7 @@ app.get("/healthz", (_req, res) => {
 });
 
 /** Checks a deployment before the console commits to it. */
-app.post("/api/connect", async (req, res) => {
+app.post("/api/connect", asJson, async (req, res) => {
   try {
     const base = await assertSafeWorkerUrl(String(req.body?.worker ?? ""));
     const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(12_000) });
@@ -87,7 +88,7 @@ app.post("/api/connect", async (req, res) => {
 });
 
 /** Trades the code the console bot showed for a token from that deployment. */
-app.post("/api/pair", async (req, res) => {
+app.post("/api/pair", asJson, async (req, res) => {
   try {
     const base = await assertSafeWorkerUrl(String(req.body?.worker ?? ""));
     const r = await fetch(`${base}/admin/pair`, {
@@ -106,7 +107,7 @@ app.post("/api/pair", async (req, res) => {
 });
 
 /** The single door onto the console. */
-app.post("/api/screen", async (req, res) => {
+app.post("/api/screen", asJson, async (req, res) => {
   const target = String(req.body?.worker ?? DEFAULT_WORKER ?? "");
   if (!target) {
     return res.status(503).json({
@@ -134,6 +135,59 @@ app.post("/api/screen", async (req, res) => {
       .status(upstream.status)
       .type(upstream.headers.get("content-type") ?? "application/json")
       .send(body);
+  } catch (error) {
+    res.status(502).json({
+      error: "upstream_unreachable",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+/**
+ * The data API, forwarded as it stands.
+ *
+ * The console asks the deployment for facts and lays itself out; this only
+ * carries the question and the answer. The path is rebuilt through `new URL`
+ * and then checked, so a `..` in it normalises before the check rather than
+ * after, and nothing outside `/admin/api/` can be reached through this door
+ * whatever the browser sends.
+ *
+ * Bytes pass straight through for a file an operator sends into a chat. They
+ * are not written to disk here and nothing about them is kept.
+ */
+const asBytes = express.raw({ type: () => true, limit: "25mb" });
+app.all(/^\/api\/w\/(.*)$/, asBytes, async (req, res) => {
+  const target = String(req.get("x-muxel-worker") || DEFAULT_WORKER || "");
+  if (!target) {
+    return res.status(503).json({ error: "not_connected", message: "No deployment is connected." });
+  }
+  try {
+    const base = await assertSafeWorkerUrl(target);
+    const suffix = req.params[0] ?? "";
+    const query = req.originalUrl.includes("?")
+      ? req.originalUrl.slice(req.originalUrl.indexOf("?"))
+      : "";
+    const url = new URL(`${base}/admin/api/${suffix}${query}`);
+    if (!url.pathname.startsWith("/admin/api/") || url.origin !== new URL(base).origin) {
+      return res.status(400).json({ error: "bad_path" });
+    }
+
+    const headers = {};
+    for (const name of ["authorization", "content-type", "x-filename", "x-caption"]) {
+      const value = req.get(name);
+      if (value) headers[name] = value;
+    }
+    const hasBody = req.method !== "GET" && req.method !== "HEAD";
+    const upstream = await fetch(url, {
+      method: req.method,
+      headers,
+      ...(hasBody && Buffer.isBuffer(req.body) && req.body.length > 0 ? { body: req.body } : {}),
+      signal: AbortSignal.timeout(60_000),
+    });
+    res
+      .status(upstream.status)
+      .type(upstream.headers.get("content-type") ?? "application/json")
+      .send(Buffer.from(await upstream.arrayBuffer()));
   } catch (error) {
     res.status(502).json({
       error: "upstream_unreachable",
