@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muxel console</title>
+<link rel="icon" href="/assets/logo.jpg">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  /* ---- shell ---- */
+  #app { min-height: 100vh; }
+  #app.connected { display: grid; grid-template-columns: 268px 1fr; }
+  aside { display: none; background: #fff; border-right: 1px solid var(--line);
+          padding: 22px 16px; flex-direction: column; gap: 6px; }
+  #app.connected aside { display: flex; }
+  aside .brand { padding: 0 8px 18px; }
+  aside .brand small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+  .nav-item { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 11px;
+              cursor: pointer; color: #334155; font-weight: 550; font-size: 14.5px; border: 1px solid transparent; }
+  .nav-item:hover { background: var(--paper); }
+  .nav-item.on { background: #fff7ed; color: var(--orange-ink); border-color: #fed7aa; }
+  .nav-item i { width: 18px; text-align: center; font-style: normal; }
+  .spacer { flex: 1; }
+  .conn { font-size: 12px; color: var(--muted); padding: 10px 12px; border-top: 1px solid var(--line); margin-top: 8px; }
+  .conn b { display: block; color: var(--ink); font-weight: 600; word-break: break-all; font-size: 11.5px; }
+  main { padding: 34px; }
+  #app.connected main { max-width: 940px; }
+
+  /* ---- onboarding ---- */
+  .ob { max-width: 780px; margin: 0 auto; }
+  .ob header { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 34px; }
+  .ob h1 { font-size: 42px; line-height: 1.12; letter-spacing: -.03em; margin: 0 0 16px; font-weight: 800; }
+  .ob h1 span { background: linear-gradient(92deg, var(--orange), var(--blue) 70%);
+                -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .ob .lede { font-size: 19px; color: #334155; margin: 0 0 30px; }
+  .sec { margin: 38px 0; }
+  .sec h2 { font-size: 15px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+            margin: 0 0 16px; font-weight: 700; }
+  .flow { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
+  .flow .card { padding: 18px; }
+  .flow b { display: block; margin-bottom: 5px; font-size: 15px; }
+  .flow p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
+  ol.steps li { counter-increment: s; position: relative; padding: 0 0 20px 46px; }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 0; top: -1px; width: 30px; height: 30px;
+    border-radius: 50%; background: var(--orange); color: #fff; font-weight: 700; font-size: 14px;
+    display: grid; place-items: center;
+  }
+  ol.steps li::after { content: ""; position: absolute; left: 14.5px; top: 32px; bottom: 4px; width: 1px; background: var(--line); }
+  ol.steps li:last-child::after { display: none; }
+  ol.steps b { display: block; margin-bottom: 3px; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  ol.steps code { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+  .connect { padding: 26px; margin-top: 10px; }
+  .connect h3 { margin: 0 0 6px; font-size: 18px; }
+  .connect p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
+  .field { display: flex; gap: 10px; flex-wrap: wrap; }
+  .field input { flex: 1 1 320px; padding: 12px 15px; border: 1px solid var(--line); border-radius: 12px; font: inherit; }
+  .field input:focus { outline: none; border-color: var(--blue); }
+  .err { margin-top: 12px; color: #b91c1c; font-size: 14px; display: none; }
+  .err.on { display: block; }
+
+  /* ---- screen renderer ---- */
+  .status { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted);
+            padding: 9px 13px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex: none; }
+  .screen { margin-top: 20px; padding: 28px 30px; }
+  .screen-text { font-size: 15.5px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .screen-text code { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13.5px; }
+  .rows { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sbtn { flex: 1 1 auto; min-width: 132px; padding: 12px 16px; border-radius: 12px;
+          border: 1px solid var(--line); background: #fff; color: var(--ink);
+          font: inherit; font-weight: 600; font-size: 14.5px; cursor: pointer; }
+  .sbtn:hover { border-color: var(--orange); color: var(--orange-ink); background: #fff7ed; }
+  .sbtn:disabled { opacity: .5; cursor: default; }
+  .compose { margin-top: 18px; display: none; gap: 10px; }
+  .compose.on { display: flex; }
+  .compose input { flex: 1; padding: 12px 15px; border: 1px solid var(--line); border-radius: 12px; font: inherit; }
+  @media (max-width: 860px) { #app.connected { grid-template-columns: 1fr; } aside { display: none !important; } .ob h1 { font-size: 32px; } }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <aside>
+    <div class="brand"><img src="/assets/logo.jpg" alt=""><div><b>Muxel</b><small>CONSOLE</small></div></div>
+    <div class="nav-item on" data-action="home"><i>◇</i> Home</div>
+    <div class="nav-item" data-action="bizls"><i>▤</i> Businesses</div>
+    <div class="nav-item" data-action="biznew"><i>＋</i> Add business</div>
+    <div class="nav-item" data-action="usg"><i>◔</i> Usage</div>
+    <div class="nav-item" data-action="diag"><i>⚠</i> Problems</div>
+    <div class="nav-item" data-action="upd"><i>↻</i> Updates</div>
+    <div class="nav-item" data-action="console"><i>◎</i> Console bot</div>
+    <div class="spacer"></div>
+    <div class="nav-item" data-action="lang"><i>⌾</i> Language</div>
+    <div class="nav-item" data-action="help"><i>?</i> Help</div>
+    <div class="conn">Connected to<b id="connUrl"></b><a href="#" id="disconnect">Disconnect</a></div>
+  </aside>
+
+  <main>
+    <!-- ===== onboarding ===== -->
+    <section class="ob" id="onboarding">
+      <header>
+        <div class="brand"><img src="/assets/logo.jpg" alt=""><b>Muxel</b></div>
+        <a class="muted" href="https://github.com/thankywal/muxel">GitHub</a>
+      </header>
+
+      <h1>An assistant for your business,<br><span>running in your own cloud.</span></h1>
+      <p class="lede">
+        Muxel answers your customers on Telegram and on your website, from your own price
+        list and your own policies. It runs inside your own Cloudflare account, so there is
+        no hosted backend in the middle and nothing to trust anyone else with.
+      </p>
+
+      <div class="sec">
+        <h2>How it works</h2>
+        <div class="flow">
+          <div class="card"><b>1 · Deploy</b><p>One click puts Muxel in your Cloudflare account, on the free plan.</p></div>
+          <div class="card"><b>2 · Teach</b><p>Send it your price list or policy. It answers from that, not from a guess.</p></div>
+          <div class="card"><b>3 · Connect</b><p>Point a Telegram bot at it, or paste one line into your website.</p></div>
+          <div class="card"><b>4 · Watch</b><p>It answers on its own. Step in whenever you want, hand it back when done.</p></div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <h2>Deploy it, step by step</h2>
+        <ol class="steps">
+          <li><b>Create a Cloudflare account</b><p>The free plan is enough. Confirm the email it sends you.</p></li>
+          <li><b>Create a GitHub account</b><p>You never write code there. It keeps the copy your deployment updates from.</p></li>
+          <li><b>Make two bots with @BotFather</b><p>Send <code>/newbot</code> twice. The first is your private console, the second is the one customers write to.</p></li>
+          <li><b>Get your Telegram id</b><p>Send <code>/start</code> to <code>@userinfobot</code> and copy the number it replies with.</p></li>
+          <li><b>Press deploy</b><p>On the form set <code>ADMIN_BOT_TOKEN</code> to the console bot's token and <code>OWNER_TELEGRAM_ID</code> to your number. Leave the rest alone.</p></li>
+          <li><b>Come back here</b><p>Cloudflare gives you a URL for your deployment. Paste it below and the console opens.</p></li>
+        </ol>
+        <a class="btn btn-primary" target="_blank" rel="noopener"
+           href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Get started · deploy to Cloudflare</a>
+      </div>
+
+      <div class="card connect">
+        <h3>Already deployed? Connect it.</h3>
+        <p>Your deployment's address. This console talks to it straight from your browser and stores nothing.</p>
+        <form class="field" id="connectForm">
+          <input id="workerUrl" placeholder="https://muxel.your-name.workers.dev" autocomplete="off" spellcheck="false">
+          <button class="btn btn-primary" type="submit" id="connectBtn">Connect</button>
+        </form>
+        <div class="err" id="connectErr"></div>
+      </div>
+    </section>
+
+    <!-- ===== console ===== -->
+    <section id="workspace" hidden>
+      <div class="status"><span class="dot"></span><span id="statusText">Connected</span></div>
+      <div class="card screen">
+        <div class="screen-text" id="text"></div>
+        <div class="rows" id="rows"></div>
+        <form class="compose" id="compose">
+          <input id="answer" autocomplete="off" placeholder="Type your answer and press enter">
+          <button class="btn btn-primary" type="submit">Send</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<script>
+/* The console is a renderer. Every screen and every one of its buttons is
+   whatever the owner's own Worker returns, so nothing here needs to know what
+   any particular button means. The deployment is remembered in this browser
+   only; the server that served this page never learns it. */
+const $ = (id) => document.getElementById(id);
+const KEY = "muxel.worker";
+let worker = localStorage.getItem(KEY) || "";
+let busy = false;
+
+function showConsole(on) {
+  $("app").classList.toggle("connected", on);
+  $("onboarding").hidden = on;
+  $("workspace").hidden = !on;
+  $("connUrl").textContent = worker.replace(/^https:\/\//, "");
+}
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { ok: r.ok, data: await r.json().catch(() => ({})) };
+}
+
+$("connectForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const url = $("workerUrl").value.trim();
+  if (!url) return;
+  $("connectBtn").disabled = true;
+  $("connectErr").classList.remove("on");
+  const { ok, data } = await post("/api/connect", { worker: url });
+  $("connectBtn").disabled = false;
+  if (!ok) {
+    $("connectErr").textContent = data.message || "Could not reach that deployment.";
+    $("connectErr").classList.add("on");
+    return;
+  }
+  worker = data.base;
+  localStorage.setItem(KEY, worker);
+  showConsole(true);
+  go("home", []);
+});
+
+$("disconnect").addEventListener("click", (e) => {
+  e.preventDefault();
+  localStorage.removeItem(KEY);
+  worker = "";
+  showConsole(false);
+});
+
+function renderScreen(s) {
+  $("text").innerHTML = s.text ?? "";
+  const rows = $("rows");
+  rows.innerHTML = "";
+  for (const row of s.rows ?? []) {
+    const el = document.createElement("div");
+    el.className = "row";
+    for (const b of row) {
+      const btn = document.createElement("button");
+      btn.className = "sbtn";
+      btn.textContent = b.text;
+      btn.onclick = () => go(b.action, b.args ?? []);
+      el.appendChild(btn);
+    }
+    rows.appendChild(el);
+  }
+  $("compose").classList.toggle("on", Boolean(s.pending));
+  if (s.pending) $("answer").focus();
+}
+
+async function go(action, args = [], answer) {
+  if (busy || !worker) return;
+  busy = true;
+  document.querySelectorAll(".sbtn").forEach((b) => (b.disabled = true));
+  const { ok, data } = await post("/api/screen", { worker, action, args, answer });
+  busy = false;
+  $("answer").value = "";
+  if (!ok) {
+    $("statusText").textContent = data.message || "That action could not complete.";
+    document.querySelectorAll(".sbtn").forEach((b) => (b.disabled = false));
+    return;
+  }
+  $("statusText").textContent = "Connected";
+  renderScreen(data);
+  document.querySelectorAll(".nav-item").forEach((n) =>
+    n.classList.toggle("on", n.dataset.action === action));
+}
+
+document.querySelectorAll(".nav-item").forEach((n) =>
+  n.addEventListener("click", () => go(n.dataset.action, [])));
+
+$("compose").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = $("answer").value.trim();
+  if (v) go("answer", [], v);
+});
+
+if (worker) { showConsole(true); go("home", []); } else { showConsole(false); }
+</script>
+</body>
+</html>

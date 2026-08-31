@@ -1,0 +1,9 @@
+{
+  "name": "@muxel/console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Muxel product page and web console. Renders whatever the owner's own deployment returns.",
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": { "express": "^4.21.2" }
+}

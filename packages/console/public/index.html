@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muxel — your own AI business assistant, in your own cloud</title>
+<meta name="description" content="Muxel answers your customers on Telegram and on your website from your own price list and policies, running entirely inside your own Cloudflare account. No hosted backend. Your data never leaves your account.">
+<link rel="icon" href="/assets/logo.jpg">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  header { padding: 22px 0; }
+  .nav { display: flex; align-items: center; justify-content: space-between; }
+  .hero { padding: 56px 0 40px; }
+  .hero h1 { font-size: 50px; line-height: 1.1; letter-spacing: -.03em; margin: 0 0 18px; font-weight: 800; }
+  .hero h1 span { background: linear-gradient(92deg, var(--orange), var(--blue) 70%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { font-size: 20px; color: #334155; max-width: 640px; margin: 0 0 28px; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin: 44px 0; }
+  .grid .card { padding: 24px; }
+  .grid h3 { margin: 0 0 8px; font-size: 17px; }
+  .grid p { margin: 0; color: var(--muted); font-size: 15px; }
+  .own { padding: 34px; margin: 8px 0 48px; display: flex; gap: 28px; align-items: center; flex-wrap: wrap; }
+  .own h2 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+  .own p { margin: 0; color: var(--muted); max-width: 520px; }
+  .cf { display: flex; align-items: center; gap: 10px; padding: 14px 20px;
+        border: 1px solid var(--line); border-radius: 14px; background: var(--paper); font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; }
+  footer { border-top: 1px solid var(--line); padding: 26px 0 44px; color: var(--muted); font-size: 14px;
+           display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  @media (max-width: 640px) { .hero h1 { font-size: 36px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="nav">
+    <div class="brand"><img src="/assets/logo.jpg" alt=""><b>Muxel</b></div>
+    <nav style="display:flex;gap:18px;align-items:center">
+      <a class="muted" href="https://github.com/thankywal/muxel">GitHub</a>
+      <a class="btn btn-ghost" href="https://app.muxel.site">Open console</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>Your customers get answered.<br><span>Your data never leaves.</span></h1>
+    <p>
+      Muxel is an autonomous business assistant that answers on Telegram and on your
+      website, from your own price list and your own policies. It runs entirely inside
+      your own Cloudflare account, so there is no hosted backend in the middle and
+      nothing to trust us with.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Deploy to your Cloudflare</a>
+      <a class="btn btn-ghost" href="https://app.muxel.site">Open the console</a>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><h3>Answers from your own facts</h3>
+      <p>Upload a price list or a policy document. It answers from that, not from a guess.</p></div>
+    <div class="card"><h3>Telegram and your website</h3>
+      <p>One assistant, two front doors. Generate a chat bubble and paste one line into your site.</p></div>
+    <div class="card"><h3>Take over any time</h3>
+      <p>Step into a conversation, reply as yourself, hand it back when you are done.</p></div>
+    <div class="card"><h3>Yours to keep</h3>
+      <p>Your Cloudflare account, your database, your keys. Turn it off and the code is still yours.</p></div>
+  </section>
+
+  <section class="card own">
+    <div>
+      <h2>Bring your own cloud</h2>
+      <p>
+        One click deploys Muxel into your account on Cloudflare's free plan. Workers runs it,
+        D1 stores it, R2 holds the files, Vectorize does the retrieval. We never see any of it.
+      </p>
+    </div>
+    <div class="cf"><span class="dot"></span> Cloudflare · Workers · D1 · R2 · Vectorize</div>
+  </section>
+
+  <footer>
+    <div>© 2026 Muxel, from Oro Shin.</div>
+    <div style="display:flex;gap:18px">
+      <a href="https://github.com/thankywal/muxel">Source</a>
+      <a href="https://github.com/thankywal/muxel/blob/main/docs/TELEGRAM-SETUP.md">Setup guide</a>
+      <a href="https://app.muxel.site">Console</a>
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>

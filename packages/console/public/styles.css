@@ -1,0 +1,48 @@
+/* Muxel. Theme taken from the product mock: orange leading, blue answering,
+   on a paper coloured ground with generous radii and soft edges. */
+:root {
+  --orange: #f97316;
+  --orange-ink: #ea580c;
+  --blue: #3b82f6;
+  --blue-ink: #2563eb;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --paper: #f8fafc;
+  --card: #ffffff;
+  --radius: 18px;
+  --shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 8px 24px rgba(15, 23, 42, .06);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--blue-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { width: 40px; height: 40px; border-radius: 10px; }
+.brand b {
+  font-size: 26px; font-weight: 800; letter-spacing: -.02em;
+  background: linear-gradient(92deg, var(--orange) 0%, var(--blue) 62%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 999px; border: 1px solid transparent;
+  font-weight: 650; font-size: 15px; cursor: pointer; text-decoration: none;
+}
+.btn:hover { text-decoration: none; }
+.btn-primary { background: var(--orange); color: #fff; }
+.btn-primary:hover { background: var(--orange-ink); }
+.btn-ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+.btn-ghost:hover { border-color: #cbd5e1; }
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.muted { color: var(--muted); }
