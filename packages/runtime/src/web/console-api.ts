@@ -36,6 +36,7 @@ import {
   deleteConversationById,
   deleteMessageRow,
   deleteProduct,
+  findOperator,
   getMedia,
   getMessageRow,
   getConsoleBot,
@@ -44,6 +45,15 @@ import {
   wireFor,
 } from "../db/queries.js";
 import { createChannel, getChannelForBusiness, updateChannel } from "./channel.js";
+import {
+  channelSplit,
+  customersPage,
+  lastActivity,
+  recentConversations,
+  search as searchRecords,
+  unaidedShare,
+  usageSeries,
+} from "../db/insights.js";
 import { clientForBot, sendHumanMedia, sendHumanReply } from "../human-reply.js";
 import { seal, sha256Hex } from "../crypto.js";
 import { generateId, generateShortId } from "@muxel/core";
@@ -155,6 +165,17 @@ async function attachTelegramBot(
   return { ok: true, username };
 }
 
+/**
+ * The businesses this operator may see, resolved once.
+ *
+ * Every aggregate takes this list. Passing the operator id down instead would
+ * let a panel added later forget to scope itself, and the failure would be one
+ * tenant's numbers appearing in another's dashboard.
+ */
+async function visibleIds(env: Env, userId: number): Promise<string[]> {
+  return (await listBusinesses(env, userId)).map((business) => business.id);
+}
+
 function notFound(): Response {
   return json({ error: "not_found" }, 404);
 }
@@ -176,19 +197,177 @@ export async function handleConsoleApi(
   const segments = path.split("/").filter((part) => part.length > 0);
   const method = request.method;
 
-  // GET /overview
+  // GET /overview — everything the dashboard draws, counted now.
   if (method === "GET" && segments[0] === "overview") {
     const businesses = await listBusinesses(env, userId);
-    const cards = await Promise.all(businesses.map((b) => businessCard(env, b.id)));
+    const ids = businesses.map((business) => business.id);
+    const [cards, series, split, conversations, unaided, events] = await Promise.all([
+      Promise.all(businesses.map((business) => businessCard(env, business.id))),
+      usageSeries(env, ids, 7),
+      channelSplit(env, ids),
+      recentConversations(env, ids, 6),
+      unaidedShare(env, ids),
+      listEvents(env, 6),
+    ]);
+
+    // Yesterday against today, from the same series the chart draws, so the
+    // arrow on a card and the last step of the line can never disagree.
+    const today = series[series.length - 1];
+    const yesterday = series[series.length - 2];
+    const liveChannels =
+      cards.filter((card) => card.telegram?.enabled === true).length +
+      cards.filter((card) => card.web?.enabled === true).length;
+
     return json({
       businesses: cards,
       totals: {
         businesses: cards.length,
-        agents: cards.filter((c) => c.telegram !== null).length + cards.filter((c) => c.web !== null).length,
-        messagesToday: cards.reduce((n, c) => n + c.usage.messages, 0),
-        customers: cards.reduce((n, c) => n + c.customers, 0),
+        agents: cards.length,
+        liveChannels,
+        messagesToday: today?.messages ?? 0,
+        messagesYesterday: yesterday?.messages ?? 0,
+        customers: cards.reduce((n, card) => n + card.customers, 0),
+        tokensToday: (today?.inputTokens ?? 0) + (today?.outputTokens ?? 0),
       },
-      events: await listEvents(env, 8),
+      series,
+      channels: split,
+      conversations,
+      topAgents: cards
+        .map((card) => {
+          const share = unaided.get(card.id) ?? { conversations: 0, handed: 0 };
+          return {
+            id: card.id,
+            name: card.name,
+            messages: card.usage.messages,
+            conversations: share.conversations,
+            // Undefined rather than 0 when nothing has happened yet. A brand new
+            // agent showing "0% answered alone" reads as a broken one.
+            unaided:
+              share.conversations === 0
+                ? null
+                : Math.round(((share.conversations - share.handed) / share.conversations) * 100),
+          };
+        })
+        .sort((a, b) => b.messages - a.messages)
+        .slice(0, 5),
+      events,
+    });
+  }
+
+  // GET /agents — the same businesses, with what the table column needs.
+  if (method === "GET" && segments[0] === "agents") {
+    const businesses = await listBusinesses(env, userId);
+    const ids = businesses.map((business) => business.id);
+    const [cards, unaided, activity] = await Promise.all([
+      Promise.all(businesses.map((business) => businessCard(env, business.id))),
+      unaidedShare(env, ids),
+      lastActivity(env, ids),
+    ]);
+    return json({
+      agents: cards.map((card) => {
+        const share = unaided.get(card.id) ?? { conversations: 0, handed: 0 };
+        return {
+          ...card,
+          live: card.telegram?.enabled === true || card.web?.enabled === true,
+          conversations: share.conversations,
+          unaided:
+            share.conversations === 0
+              ? null
+              : Math.round(((share.conversations - share.handed) / share.conversations) * 100),
+          lastActivity: activity.get(card.id) ?? null,
+        };
+      }),
+    });
+  }
+
+  // GET /channels — every way a customer can reach this deployment.
+  if (method === "GET" && segments[0] === "channels") {
+    const businesses = await listBusinesses(env, userId);
+    const rows = await Promise.all(
+      businesses.map(async (business) => {
+        const [bots, channel, activity] = await Promise.all([
+          listBots(env, business.id),
+          getChannelForBusiness(env, business.id),
+          lastActivity(env, [business.id]),
+        ]);
+        const at = activity.get(business.id) ?? null;
+        const telegram = bots.find((bot) => bot.role === "reply") ?? null;
+        return [
+          ...(telegram === null
+            ? []
+            : [
+                {
+                  kind: "telegram" as const,
+                  label: `@${telegram.username}`,
+                  businessId: business.id,
+                  businessName: business.name,
+                  connected: telegram.enabled,
+                  lastActivity: at,
+                },
+              ]),
+          ...(channel === null
+            ? []
+            : [
+                {
+                  kind: "web" as const,
+                  label: channel.title || business.name,
+                  businessId: business.id,
+                  businessName: business.name,
+                  connected: channel.enabled,
+                  lastActivity: at,
+                },
+              ]),
+        ];
+      }),
+    );
+    return json({ channels: rows.flat() });
+  }
+
+  // GET /customers?page=&size=
+  if (method === "GET" && segments[0] === "customers") {
+    const url = new URL(request.url);
+    const size = Math.min(50, Math.max(5, Number(url.searchParams.get("size") ?? 20) || 20));
+    const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
+    const ids = await visibleIds(env, userId);
+    const { customers, total } = await customersPage(env, ids, size, (page - 1) * size);
+    return json({ customers, total, page, size, pages: Math.max(1, Math.ceil(total / size)) });
+  }
+
+  // GET /conversations — the Messages screen's own list.
+  if (method === "GET" && segments[0] === "conversations" && segments.length === 1) {
+    const url = new URL(request.url);
+    const limit = Math.min(60, Math.max(5, Number(url.searchParams.get("limit") ?? 40) || 40));
+    const ids = await visibleIds(env, userId);
+    return json({ conversations: await recentConversations(env, ids, limit) });
+  }
+
+  // GET /events — the log, which is the event table and nothing invented.
+  if (method === "GET" && segments[0] === "events") {
+    const url = new URL(request.url);
+    const limit = Math.min(200, Math.max(10, Number(url.searchParams.get("limit") ?? 60) || 60));
+    return json({ events: await listEvents(env, limit) });
+  }
+
+  // GET /search?q=
+  if (method === "GET" && segments[0] === "search") {
+    const term = new URL(request.url).searchParams.get("q") ?? "";
+    const ids = await visibleIds(env, userId);
+    return json(await searchRecords(env, ids, term));
+  }
+
+  // GET /me — who this token belongs to, by label and role only.
+  //
+  // Never the Telegram id. The console has no use for it and printing an
+  // internal identifier at a customer facing surface is how they end up in
+  // screenshots and support threads.
+  if (method === "GET" && segments[0] === "me") {
+    const operator = await findOperator(env, userId);
+    const row = await env.DB.prepare("SELECT label FROM operator WHERE telegram_user_id = ?")
+      .bind(userId)
+      .first<{ label: string | null }>();
+    return json({
+      label: row?.label?.trim() || (operator?.role === "owner" ? "Owner" : "Operator"),
+      role: operator?.role ?? "operator",
     });
   }
 

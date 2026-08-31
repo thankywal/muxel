@@ -5,77 +5,56 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Muxel console</title>
 <link rel="icon" href="/assets/logo.jpg">
-<link rel="stylesheet" href="/styles.css">
 <link rel="stylesheet" href="/app.css">
 <style>
-
-  /* ---- onboarding ---- */
+  /* The page a deployment's owner sees before they have one. It shares the
+     console's tokens so the two do not look like different products. */
+  #onboardingWrap { padding: 34px 24px 60px; }
   .ob { max-width: 780px; margin: 0 auto; }
-  .ob header { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 34px; }
-  .ob h1 { font-size: 42px; line-height: 1.12; letter-spacing: -.03em; margin: 0 0 16px; font-weight: 800; }
-  .ob h1 span { background: linear-gradient(92deg, var(--orange), var(--blue) 70%);
+  .ob .top { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 34px; }
+  .ob .mark { display: flex; align-items: center; gap: 11px; font-size: 21px; font-weight: 780; }
+  .ob .mark img { width: 36px; height: 36px; border-radius: 9px; }
+  .ob h1 { font-size: 41px; line-height: 1.13; letter-spacing: -.03em; margin: 0 0 16px; font-weight: 800; }
+  .ob h1 span { background: linear-gradient(92deg, var(--brand), var(--blue) 70%);
                 -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .ob .lede { font-size: 19px; color: #334155; margin: 0 0 30px; }
-  .sec { margin: 38px 0; }
-  .sec h2 { font-size: 15px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
-            margin: 0 0 16px; font-weight: 700; }
+  .ob .lede { font-size: 18px; color: var(--ink-2); margin: 0 0 28px; }
+  .sec { margin: 36px 0; }
+  .sec h2 { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
+            margin: 0 0 15px; font-weight: 700; }
   .flow { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
-  .flow .card { padding: 18px; }
-  .flow b { display: block; margin-bottom: 5px; font-size: 15px; }
-  .flow p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0; }
-  ol.steps li { counter-increment: s; position: relative; padding: 0 0 20px 46px; }
-  ol.steps li::before {
-    content: counter(s); position: absolute; left: 0; top: -1px; width: 30px; height: 30px;
-    border-radius: 50%; background: var(--orange); color: #fff; font-weight: 700; font-size: 14px;
-    display: grid; place-items: center;
-  }
-  ol.steps li::after { content: ""; position: absolute; left: 14.5px; top: 32px; bottom: 4px; width: 1px; background: var(--line); }
+  .flow .card { padding: 17px; }
+  .flow b { display: block; margin-bottom: 5px; font-size: 14.5px; }
+  .flow p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0 0 22px; }
+  ol.steps li { counter-increment: s; position: relative; padding: 0 0 20px 44px; }
+  ol.steps li::before { content: counter(s); position: absolute; left: 0; top: -1px; width: 28px; height: 28px;
+    border-radius: 50%; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px;
+    display: grid; place-items: center; }
+  ol.steps li::after { content: ""; position: absolute; left: 13.5px; top: 30px; bottom: 4px;
+    width: 1px; background: var(--line); }
   ol.steps li:last-child::after { display: none; }
   ol.steps b { display: block; margin-bottom: 3px; }
-  ol.steps p { margin: 0; color: var(--muted); font-size: 14.5px; }
-  ol.steps code { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
-  .connect { padding: 26px; margin-top: 10px; }
-  .connect h3 { margin: 0 0 6px; font-size: 18px; }
-  .connect p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
-  .field { display: flex; gap: 10px; flex-wrap: wrap; }
-  .field input { flex: 1 1 320px; padding: 12px 15px; border: 1px solid var(--line); border-radius: 12px; font: inherit; }
-  .field input:focus { outline: none; border-color: var(--blue); }
-  .err { margin-top: 12px; color: #b91c1c; font-size: 14px; display: none; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .connect { padding: 24px; margin-top: 10px; }
+  .connect h3 { margin: 0 0 6px; font-size: 17px; }
+  .connect p { margin: 0 0 15px; color: var(--muted); font-size: 14px; }
+  .row { display: flex; gap: 9px; flex-wrap: wrap; }
+  .row input { flex: 1 1 320px; padding: 11px 14px; border: 1px solid var(--line);
+               border-radius: 9px; background: var(--surface); }
+  .row input:focus { outline: none; border-color: var(--blue); }
+  .err { margin-top: 12px; color: var(--red); font-size: 13.5px; display: none; }
   .err.on { display: block; }
-
-  /* The onboarding page owns the whole width until a deployment is connected. */
-  #app.connected #onboarding { display: none; }
-  #app:not(.connected) .shell { grid-template-columns: 1fr; }
-  #app:not(.connected) aside { display: none; }
-  #app:not(.connected) main { padding: 34px; }
 </style>
 </head>
 <body>
 <div id="app">
- <div class="shell">
-  <aside>
-    <div class="brand">
-      <img src="/assets/logo.jpg" alt="">
-      <div><b>Muxel</b><small>CONSOLE</small></div>
-    </div>
-    <div class="nav-item" data-tab="home"><i>▣</i>Home</div>
-    <div class="nav-item" data-tab="agents"><i>◆</i>Agents</div>
-    <div class="nav-item" data-tab="businesses"><i>▤</i>Businesses</div>
-    <div class="nav-sep">SETUP</div>
-    <div class="nav-item" data-tab="settings"><i>⚙</i>Settings</div>
-    <div class="nav-item" data-tab="advanced"><i>⌘</i>Advanced</div>
-    <div class="spacer"></div>
-    <div class="conn">Connected to<b id="connUrl"></b><a href="#" id="disconnect">Disconnect</a></div>
-  </aside>
-
-  <main>
+  <main id="onboardingWrap">
     <!-- ===== onboarding ===== -->
     <section class="ob" id="onboarding">
-      <header>
-        <div class="brand"><img src="/assets/logo.jpg" alt=""><b>Muxel</b></div>
+      <div class="top">
+        <div class="mark"><img src="/assets/logo.jpg" alt=""><span>Muxel</span></div>
         <a class="muted" href="https://github.com/thankywal/muxel">GitHub</a>
-      </header>
+      </div>
 
       <h1>This console does not<br>know who you are.<br><span>That is the product.</span></h1>
       <p class="lede">
@@ -85,7 +64,7 @@
         <b>your</b> Cloudflare account, on the free plan, with no server of ours in
         the path.
       </p>
-      <p class="lede" style="font-size:16px;color:var(--muted);margin-top:-16px">
+      <p class="lede" style="font-size:15.5px;color:var(--muted);margin-top:-14px">
         Your address stays in this browser. It is sent with each request and forgotten.
         There is no account here, no session, and no database with your customers in it.
       </p>
@@ -117,14 +96,14 @@
       <div class="card connect">
         <h3>Already deployed? Connect it.</h3>
         <p id="step1Hint">Your deployment's address. This console talks to it straight from your browser and stores nothing.</p>
-        <form class="field" id="connectForm">
+        <form class="row" id="connectForm">
           <input id="workerUrl" placeholder="https://muxel.your-name.workers.dev" autocomplete="off" spellcheck="false">
           <button class="btn btn-primary" type="submit" id="connectBtn">Continue</button>
         </form>
 
         <div id="step2" hidden style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
           <p>Open your console bot in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
-          <form class="field" id="pairForm">
+          <form class="row" id="pairForm">
             <input id="pairCode" placeholder="ABCD2345" autocomplete="off" spellcheck="false"
                    style="text-transform:uppercase;letter-spacing:.14em;font-weight:700">
             <button class="btn btn-primary" type="submit" id="pairBtn">Open console</button>
@@ -135,12 +114,9 @@
       </div>
     </section>
 
-    <!-- ===== the console proper ===== -->
-    <section id="workspace" hidden><div id="view"></div></section>
   </main>
- </div>
+  <div id="shell" hidden></div>
 </div>
-<div id="overlay"></div>
 <script src="/app.js"></script>
 </body>
 </html>

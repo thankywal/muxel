@@ -1,65 +1,82 @@
 /**
  * The Muxel console.
  *
- * The first version of this page rendered the Telegram screens as they came:
- * one question at a time, a Back button where navigation should be, and a grid
- * of buttons standing in for a layout. That is right on a phone and wrong at a
- * desk, where an operator has a price list to load, a hundred conversations to
- * read and two things to compare at once.
+ * Every number, row and label on these pages is counted from the deployment's
+ * own database at the moment it is asked for. Where the design called for
+ * something this product does not have, the page says what it has instead: the
+ * channel list is Telegram and the web widget because that is what Muxel
+ * answers on, and the agent score is the share of conversations that never
+ * needed a person, because that is a fact the handover table holds. A dashboard
+ * that fills its gaps with plausible numbers is worse than a smaller one.
  *
- * So this asks the deployment for facts and lays itself out. The business logic
- * is not written twice: the same queries answer both consoles, and only the
- * presentation differs, which is the part that should. The Telegram screens are
- * still reachable under Advanced, because they cover ground this page does not
- * yet, and hiding them would be pretending otherwise.
- *
- * Nothing here is stored on the server that served the page. The deployment's
- * address and the token live in this browser and are sent with each request.
+ * Nothing is stored on the server that served this page. The deployment's
+ * address and the operator's token live in this browser and are sent with each
+ * request.
  */
 const $ = (id) => document.getElementById(id);
 const KEY = "muxel.worker";
 const TOK = "muxel.token";
+const THEME = "muxel.theme";
 let worker = localStorage.getItem(KEY) || "";
 let token = localStorage.getItem(TOK) || "";
 
-/** Everything from the deployment is escaped. It is the operator's data, not ours. */
-const h = (value) =>
-  String(value ?? "").replace(/[&<>"']/g, (c) =>
+/** Everything from the deployment is escaped. It is the operator's data. */
+const h = (v) =>
+  String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const state = {
-  /**
-   * Whether this deployment answers the data API at all.
-   *
-   * A deployment installed before the API existed answers "not found" to every
-   * one of these paths. Each page reading that as an empty result produced a
-   * console that looked like a working one with nothing in it. Asked once,
-   * answered in one place, and every view reads the answer.
-   */
+  /** Whether the deployment answers the data API. Asked once, read everywhere. */
   api: null,
-  tab: "home",
+  view: "overview",
   businessId: null,
   customerId: null,
   overview: null,
   models: [],
   conversation: null,
   poll: null,
+  page: 1,
+  filter: "all",
+  settingsTab: "general",
+  health: null,
 };
 
-/** One door onto the deployment's data API. */
+// ------------------------------------------------------------------ plumbing
+
+/**
+ * One call, from this browser to the owner's own Worker.
+ *
+ * Not through the server that served this page. That server has no proxy, sees
+ * no token and no message, and could be switched off with every connected
+ * console still working. It is the claim on the front page made literal: there
+ * is no server of ours in the path.
+ *
+ * The Worker answers every one of these with `access-control-allow-origin: *`,
+ * which is safe because each path already refuses anyone without that
+ * deployment's own bearer token.
+ */
 async function api(path, options = {}) {
-  const response = await fetch(`/api/w/${path}`, {
-    method: options.method ?? "GET",
-    headers: {
-      "x-muxel-worker": worker,
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(options.body !== undefined && !options.raw ? { "content-type": "application/json" } : {}),
-      ...(options.headers ?? {}),
-    },
-    ...(options.body === undefined
-      ? {}
-      : { body: options.raw ? options.body : JSON.stringify(options.body) }),
-  });
+  let response;
+  try {
+    response = await fetch(`${worker}/admin/api/${path}`, {
+      method: options.method ?? "GET",
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(options.body !== undefined && !options.raw ? { "content-type": "application/json" } : {}),
+        ...(options.headers ?? {}),
+      },
+      ...(options.body === undefined
+        ? {}
+        : { body: options.raw ? options.body : JSON.stringify(options.body) }),
+    });
+  } catch {
+    // A deployment old enough to predate these paths also predates the cross
+    // origin headers they need, so the browser refuses the call before it is
+    // made. That is indistinguishable from a deployment being offline, and
+    // both mean the same thing to every caller: no answer. Status 0 says so
+    // without any of them having to know which it was.
+    return { ok: false, status: 0, data: {} };
+  }
   if (options.blob) {
     return { ok: response.ok, status: response.status, data: response.ok ? await response.blob() : null };
   }
@@ -69,8 +86,7 @@ async function api(path, options = {}) {
     data = JSON.parse(text);
   } catch {
     // A deployment older than this console answers "not found" in plain text.
-    // Turning that into {} is how the Settings page came to report a version of
-    // "unknown", no GitHub token and "up to date", none of which it had read.
+    // Reading that as {} is how Settings once reported a version it never saw.
     data = null;
   }
   if (!response.ok && data !== null && !options.quiet) {
@@ -88,51 +104,272 @@ function toast(message) {
 }
 
 const ago = (iso) => {
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
+  if (!iso) return "never";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
+const num = (n) => Number(n ?? 0).toLocaleString();
+const nameOf = (c) => c?.displayName || (c?.username ? `@${c.username}` : "") || c?.name || "Someone";
+
+const ICONS = {
+  overview: '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z"/>',
+  agents: '<rect x="3.5" y="8" width="17" height="11" rx="3.5"/><path d="M12 3.5v4.5M8.5 13h.01M15.5 13h.01"/><circle cx="12" cy="3" r="1.4"/><path d="M1.5 12v3M22.5 12v3"/>',
+  businesses: '<path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5"/>',
+  channels: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  customers: '<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.9"/>',
+  messages: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V7a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  logs: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+  advanced: '<path d="M8 3H5a2 2 0 0 0-2 2v3m0 8v3a2 2 0 0 0 2 2h3m8-18h3a2 2 0 0 1 2 2v3m0 8v3a2 2 0 0 1-2 2h-3"/><path d="M9 9h6v6H9z"/>',
+  bell: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
+  telegram: '<path d="M22 3L2 10l6 2.5L20 6l-9 9v5l3-4 5 3z"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+};
+const icon = (name, size = 16) =>
+  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
+     stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] ?? ""}</svg>`;
+
+// -------------------------------------------------------------------- charts
+
+/** A line with no axes, drawn from the same numbers the panel below prints. */
+function sparkline(values, colour, w = 74, hgt = 26) {
+  const nums = values.length > 0 ? values : [0];
+  const max = Math.max(...nums, 1);
+  const min = Math.min(...nums, 0);
+  const span = max - min || 1;
+  const step = nums.length > 1 ? w / (nums.length - 1) : w;
+  const points = nums.map((v, i) => `${(i * step).toFixed(1)},${(hgt - ((v - min) / span) * hgt).toFixed(1)}`);
+  return `<svg class="spark" width="${w}" height="${hgt}" viewBox="0 0 ${w} ${hgt}" fill="none">
+    <polyline points="${points.join(" ")}" stroke="${colour}" stroke-width="1.8"
+      stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function lineChart(series, w = 560, hgt = 170) {
+  const values = series.map((p) => p.messages);
+  const max = Math.max(...values, 1);
+  const padL = 44;
+  const padB = 22;
+  const innerW = w - padL - 8;
+  const innerH = hgt - padB - 8;
+  const step = series.length > 1 ? innerW / (series.length - 1) : innerW;
+  const pt = (v, i) => [padL + i * step, 8 + innerH - (v / max) * innerH];
+  const points = values.map(pt);
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const area = `${path} L${(padL + innerW).toFixed(1)} ${(8 + innerH).toFixed(1)} L${padL} ${(8 + innerH).toFixed(1)} Z`;
+  const ticks = [0, 0.5, 1].map((f) => Math.round(max * f));
+  return `<svg width="100%" viewBox="0 0 ${w} ${hgt}" fill="none" preserveAspectRatio="none" style="display:block">
+    <defs><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--brand)" stop-opacity=".18"/>
+      <stop offset="100%" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
+    ${ticks
+      .map((t, i) => {
+        const y = 8 + innerH - (i / 2) * innerH;
+        return `<line x1="${padL}" y1="${y}" x2="${w - 8}" y2="${y}" stroke="var(--line-soft)" stroke-width="1"/>
+                <text x="${padL - 7}" y="${y + 3.5}" font-size="9.5" text-anchor="end" fill="var(--muted)">${num(t)}</text>`;
+      })
+      .join("")}
+    <path d="${area}" fill="url(#fade)"/>
+    <path d="${path}" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    ${series
+      .map((p, i) => {
+        if (series.length > 8 && i % 2 === 1) return "";
+        return `<text x="${(padL + i * step).toFixed(1)}" y="${hgt - 5}" font-size="9.5"
+          fill="var(--muted)" text-anchor="middle">${p.day.slice(5)}</text>`;
+      })
+      .join("")}
+  </svg>`;
+}
+
+function donut(parts, total) {
+  const size = 150;
+  const r = 54;
+  const c = 2 * Math.PI * r;
+  let used = 0;
+  const arcs = parts
+    .filter((p) => p.value > 0)
+    .map((p) => {
+      const frac = total === 0 ? 0 : p.value / total;
+      const seg = `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${p.colour}"
+        stroke-width="17" stroke-dasharray="${(frac * c).toFixed(2)} ${c.toFixed(2)}"
+        stroke-dashoffset="${(-used * c).toFixed(2)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>`;
+      used += frac;
+      return seg;
+    })
+    .join("");
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--line)" stroke-width="17"/>
+    ${arcs}
+    <text x="${size / 2}" y="${size / 2 - 2}" text-anchor="middle" font-size="19" font-weight="700"
+      fill="var(--ink)">${num(total)}</text>
+    <text x="${size / 2}" y="${size / 2 + 15}" text-anchor="middle" font-size="10.5"
+      fill="var(--muted)">messages</text></svg>`;
+}
+
+// --------------------------------------------------------------------- shell
+
+const NAV = [
+  { group: "MAIN", items: [
+    { id: "overview", label: "Overview" },
+    { id: "agents", label: "Agents" },
+    { id: "businesses", label: "Businesses" },
+    { id: "channels", label: "Channels" },
+    { id: "customers", label: "Customers" },
+    { id: "messages", label: "Messages" },
+  ] },
+  { group: "SETUP", items: [{ id: "settings", label: "Settings" }] },
+  { group: "ADVANCED", items: [
+    { id: "logs", label: "Logs" },
+    { id: "advanced", label: "Advanced" },
+  ] },
+];
+
+const TITLES = {
+  overview: ["Overview", "Monitor your agents, channels, and conversations."],
+  agents: ["Agents", "Create and manage the assistants that answer for you."],
+  businesses: ["Businesses", "What each agent answers about, and where it answers."],
+  channels: ["Channels", "Every way a customer can reach this deployment."],
+  customers: ["Customers", "Everyone who has written, and what they wrote about."],
+  messages: ["Messages", "Read any conversation, and step into it when you want to."],
+  settings: ["Settings", "What this deployment is running, and how it updates itself."],
+  logs: ["Logs", "What this deployment recorded, newest first."],
+  advanced: ["Advanced", "Every screen the Telegram console bot has."],
 };
 
-const nameOf = (customer) =>
-  customer.displayName || (customer.username ? `@${customer.username}` : "Someone");
+function shell() {
+  const [title, sub] = TITLES[state.view] ?? TITLES.overview;
+  $("shell").innerHTML = `
+   <div class="shell">
+    <aside>
+      <div class="brand"><img src="/assets/logo.jpg" alt="">
+        <div><b>Muxel</b><small>CONSOLE</small></div></div>
+      <div class="deployment"><span class="d"></span>
+        <span id="depName">${h(shortWorker())}</span></div>
+      <nav>${NAV.map(
+        (section) => `<div class="nav-sec">${section.group}</div>` +
+          section.items
+            .map(
+              (item) => `<div class="nav-item ${item.id === state.view ? "on" : ""}" data-view="${item.id}">
+                ${icon(item.id)}${h(item.label)}</div>`,
+            )
+            .join(""),
+      ).join("")}</nav>
+      <div class="who-card">
+        <div class="av" id="avatar">·</div>
+        <div class="grow"><b id="whoName">Operator</b><small id="whoRole">signed in</small></div>
+      </div>
+      <div class="conn">Connected to<b>${h(shortWorker())}</b><a href="#" id="disconnect">Disconnect</a></div>
+    </aside>
 
-// ---------------------------------------------------------------- navigation
+    <main>
+      <div class="topbar">
+        <div><h1>${h(title)}</h1><p>${h(sub)}</p></div>
+        <div class="grow"></div>
+        <div class="top-tools">
+          <div class="searchbox" id="openPalette">${icon("search", 15)}<span>Search…</span><kbd>⌘K</kbd></div>
+          <span class="pill" id="healthPill"><span class="d"></span>Checking…</span>
+          <button class="icon-btn" id="bell" title="Recent activity">${icon("bell", 16)}</button>
+          <button class="icon-btn" id="themeBtn" title="Theme">${icon(themeNow() === "dark" ? "sun" : "moon", 16)}</button>
+        </div>
+      </div>
+      <div class="content" id="view"><p class="loading">Loading…</p></div>
+      <footer>
+        <span>Muxel runs in your own Cloudflare account.</span>
+        <span class="grow"></span>
+        <a href="https://github.com/thankywal/muxel" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://muxel.site" target="_blank" rel="noopener">Docs</a>
+      </footer>
+    </main>
+   </div>`;
 
-function go(tab, next = {}) {
+  $("shell").querySelectorAll(".nav-item").forEach((n) => (n.onclick = () => go(n.dataset.view)));
+  $("disconnect").onclick = disconnect;
+  $("openPalette").onclick = openPalette;
+  $("themeBtn").onclick = toggleTheme;
+  $("bell").onclick = () => go("logs");
+  checkHealth();
+  whoAmI();
+}
+
+const shortWorker = () => worker.replace(/^https:\/\//, "").replace(/\.workers\.dev$/, "");
+
+async function checkHealth() {
+  if (state.health === null || state.health === "absent") {
+    const { ok, data } = await api("system", { quiet: true });
+    state.health = ok ? (data.version ?? {}) : "absent";
+  }
+  const pill = $("healthPill");
+  if (!pill) return;
+  if (state.health === "absent") {
+    pill.className = "pill warn";
+    pill.innerHTML = '<span class="d"></span>Deployment is behind';
+    return;
+  }
+  pill.className = "pill";
+  pill.innerHTML = `<span class="d"></span>Workers: Active`;
+}
+
+async function whoAmI() {
+  const { ok, data } = await api("me", { quiet: true });
+  if (!ok || !data.label) return;
+  const label = data.label || "Operator";
+  if ($("whoName")) $("whoName").textContent = label;
+  if ($("whoRole")) $("whoRole").textContent = data.role ?? "signed in";
+  if ($("avatar")) $("avatar").textContent = label.trim().charAt(0).toUpperCase() || "·";
+}
+
+// -------------------------------------------------------------------- router
+
+function go(view, next = {}) {
   clearInterval(state.poll);
   state.poll = null;
-  state.tab = tab;
+  if (view !== state.view) {
+    state.page = 1;
+    state.filter = "all";
+  }
+  state.view = view;
   if (next.businessId !== undefined) state.businessId = next.businessId;
   if (next.customerId !== undefined) state.customerId = next.customerId;
-  document.querySelectorAll(".nav-item").forEach((n) => n.classList.toggle("on", n.dataset.tab === tab));
+  shell();
   render();
 }
 
 async function render() {
   const view = $("view");
+  if (!view) return;
   view.innerHTML = '<p class="loading">Loading…</p>';
-  // Advanced talks to the Telegram screens, which every deployment has, so it
-  // keeps working on the deployments the rest of this page cannot serve.
-  if (state.tab !== "advanced" && !(await apiReady())) return viewOutdated();
-  ({ home: viewHome, agents: viewAgents, businesses: viewBusinesses, settings: viewSettings, advanced: viewAdvanced }[
-    state.tab
-  ] ?? viewHome)();
+  if (state.view !== "advanced" && !(await apiReady())) return viewOutdated();
+  const draw = {
+    overview: viewOverview,
+    agents: viewAgents,
+    businesses: viewBusinesses,
+    channels: viewChannels,
+    customers: viewCustomers,
+    messages: viewMessages,
+    settings: viewSettings,
+    logs: viewLogs,
+    advanced: viewAdvanced,
+  }[state.view];
+  (draw ?? viewOverview)();
 }
 
 async function apiReady() {
-  // "ready" is remembered; "absent" is asked again on every visit, so the
-  // console starts working by itself the moment the deployment is updated
-  // rather than needing to be reloaded to notice.
+  // "ready" is remembered; "absent" is asked again each visit, so the console
+  // starts working by itself once the deployment catches up.
   if (state.api !== "ready") {
     const { status } = await api("system", { quiet: true });
-    state.api = status === 404 ? "absent" : "ready";
+    state.api = status === 404 || status === 0 ? "absent" : "ready";
   }
   return state.api === "ready";
 }
 
-/** The overview is the source for both Home and the Agents list. */
 async function overview(force = false) {
   if (state.overview && !force) return state.overview;
   const { data } = await api("overview");
@@ -140,151 +377,249 @@ async function overview(force = false) {
   return data;
 }
 
-// --------------------------------------------------------------------- cards
+// ------------------------------------------------------------------ overview
 
-const channelChips = (b) => {
-  const chips = [];
-  if (b.telegram) {
-    chips.push(
-      `<span class="chip tg ${b.telegram.enabled ? "" : "off"}"><span class="d"></span>Telegram · @${h(
-        b.telegram.username,
-      )}</span>`,
-    );
-  }
-  if (b.web) {
-    chips.push(`<span class="chip web ${b.web.enabled ? "" : "off"}"><span class="d"></span>Website</span>`);
-  }
-  if (chips.length === 0) chips.push('<span class="chip off"><span class="d"></span>No channel yet</span>');
-  return chips.join("");
+const CHANNEL_ICON = {
+  telegram: { icon: "telegram", bg: "var(--blue-soft)", fg: "var(--blue)" },
+  web: { icon: "globe", bg: "var(--brand-soft)", fg: "var(--brand-ink)" },
 };
+const chanTag = (kind) =>
+  `<span class="chan"><span class="ic" style="background:${CHANNEL_ICON[kind].bg};color:${CHANNEL_ICON[kind].fg}">
+    ${icon(CHANNEL_ICON[kind].icon, 14)}</span>${kind === "telegram" ? "Telegram" : "Website"}</span>`;
 
-const agentCard = (b) => `
-  <div class="agent" data-business="${h(b.id)}">
-    <h3>${h(b.name)}</h3>
-    <div class="sub">${h(b.modelLabel)}</div>
-    <div class="chips">${channelChips(b)}</div>
-    <div class="row3">
-      <div><b>${b.usage.messages}</b>messages today</div>
-      <div><b>${b.customers}</b>customers</div>
-      <div><b>${(b.usage.inputTokens + b.usage.outputTokens).toLocaleString()}</b>tokens today</div>
-    </div>
-  </div>`;
-
-/**
- * What this page says when the deployment is older than it is.
- *
- * Not an error and not an empty state. The deployment is working: its bots are
- * answering customers right now and the Telegram console can still drive all of
- * it. What it cannot do is answer the questions these pages ask, because those
- * paths did not exist when it was installed. Saying exactly that, and exactly
- * what to do, is the whole job here.
- */
-function viewOutdated() {
-  $("view").innerHTML = `
-    <div class="page-head">
-      <div><h1>Your deployment is older than this console</h1>
-      <p>It is running and answering customers. It just does not have the pages this app asks for yet.</p></div>
-    </div>
-
-    <div class="card" style="padding:24px;max-width:760px;margin-bottom:18px">
-      <p style="margin:0 0 14px">Home, Agents, Businesses and Settings all read a data API that was added
-        after your deployment was installed. Until it is updated, those four pages have nothing to read,
-        which is why they would otherwise sit empty.</p>
-      <p style="margin:0 0 14px"><b>Advanced still works.</b> Every screen your Telegram console bot has is
-        there, and so is everything you can do with it: businesses, conversations, documents, the price
-        list, your GitHub token and the update itself.</p>
-      <button class="btn btn-primary btn-sm" id="goAdv">Open Advanced</button>
-    </div>
-
-    <div class="card" style="padding:24px;max-width:760px;border-color:#fed7aa;background:#fff7ed">
-      <h3 style="margin:0 0 8px;font-size:16px;color:var(--orange-ink)">Before you press Update</h3>
-      <p style="margin:0 0 12px">The update in your current build copies every file from upstream, and that
-        includes <code>wrangler.jsonc</code>, which is the file naming your Worker and the database holding
-        your conversations. Upstream's copy has placeholders in those places. Running that update would
-        point this deployment at a database that does not exist.</p>
-      <p style="margin:0">That is fixed upstream. Getting the fix takes one sync that leaves
-        <code>wrangler.jsonc</code> alone, and after it every update from this page is a single click.
-        Ask whoever set this up to run <code>scripts/first-sync.sh</code> once.</p>
-    </div>`;
-  $("goAdv").onclick = () => go("advanced");
+function statCard(tile, colour, soft, label, value, delta, spark) {
+  return `<div class="card stat">
+    <div class="tile" style="background:${soft};color:${colour}">${icon(tile, 18)}</div>
+    <div><div class="k">${h(label)}</div><div class="v">${h(value)}</div>${delta ?? ""}</div>
+    ${spark ?? ""}</div>`;
 }
 
-// ---------------------------------------------------------------------- home
+const deltaLine = (today, yesterday, unit) => {
+  if (yesterday === 0 && today === 0) return `<div class="delta">nothing yet</div>`;
+  if (yesterday === 0) return `<div class="delta up">▲ first ${h(unit)}</div>`;
+  const pct = Math.round(((today - yesterday) / yesterday) * 100);
+  const dir = pct >= 0 ? "up" : "down";
+  return `<div class="delta ${dir}">${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs yesterday</div>`;
+};
 
-async function viewHome() {
-  const data = await overview();
-  const businesses = data.businesses ?? [];
-  const totals = data.totals ?? {};
+async function viewOverview() {
+  const d = await overview();
+  const t = d.totals ?? {};
+  const series = d.series ?? [];
+  const split = d.channels ?? { telegram: 0, web: 0 };
+  const totalMsgs = split.telegram + split.web;
+
   $("view").innerHTML = `
-    <div class="page-head">
-      <div><h1>Your agents</h1><p>What they answered today, and who they answered.</p></div>
-      <button class="btn btn-primary btn-sm" id="newBiz">Create agent</button>
+    <div class="page-actions"><button class="btn btn-primary btn-sm" id="newBiz">${icon("plus", 15)}Create agent</button></div>
+
+    <div class="grid g4" style="margin-bottom:16px">
+      ${statCard("agents", "var(--brand-ink)", "var(--brand-soft)", "Agents", num(t.agents), `<div class="delta">${
+        t.liveChannels > 0 ? "answering now" : "none answering yet"
+      }</div>`)}
+      ${statCard("channels", "var(--blue)", "var(--blue-soft)", "Live channels", num(t.liveChannels),
+        '<div class="delta">Telegram and website</div>')}
+      ${statCard(
+        "messages", "var(--violet)", "var(--violet-soft)", "Messages today", num(t.messagesToday),
+        deltaLine(t.messagesToday ?? 0, t.messagesYesterday ?? 0, "day"),
+        // The only card with a line, because messages are the only thing kept
+        // per day. A line on the others would have to be drawn from this same
+        // series, which would make them say something they do not know.
+        sparkline(series.map((p) => p.messages), "var(--violet)"),
+      )}
+      ${statCard("customers", "var(--green)", "var(--green-soft)", "Customers", num(t.customers),
+        '<div class="delta">across every agent</div>')}
     </div>
-    <div class="stats">
-      <div class="stat"><div class="k">Agents</div><div class="v">${totals.businesses ?? 0}</div></div>
-      <div class="stat"><div class="k">Live channels</div><div class="v">${totals.agents ?? 0}</div></div>
-      <div class="stat"><div class="k">Messages today</div><div class="v">${totals.messagesToday ?? 0}</div></div>
-      <div class="stat"><div class="k">Customers</div><div class="v">${totals.customers ?? 0}</div></div>
+
+    <div class="grid g2" style="margin-bottom:16px">
+      <div class="card">
+        <div class="card-head"><h2>Recent conversations</h2><a href="#" data-goto="messages">View all</a></div>
+        <div class="rows">${
+          (d.conversations ?? []).length === 0
+            ? '<p class="loading">Nobody has written yet.</p>'
+            : d.conversations.map(conversationRow).join("")
+        }</div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Top agents</h2><a href="#" data-goto="agents">View all</a></div>
+        ${
+          (d.topAgents ?? []).length === 0
+            ? '<p class="loading">No agents yet.</p>'
+            : `<table><thead><tr><th>Agent</th><th>Messages</th><th>Answered alone</th></tr></thead>
+              <tbody>${d.topAgents
+                .map(
+                  (a) => `<tr class="click" data-business="${h(a.id)}">
+                    <td><b>${h(a.name)}</b></td><td>${num(a.messages)}</td>
+                    <td>${
+                      a.unaided === null
+                        ? '<span class="muted" style="color:var(--muted)">no data yet</span>'
+                        : `<div style="font-size:12px;margin-bottom:3px">${a.unaided}%</div>
+                           <div class="bar"><i style="width:${a.unaided}%"></i></div>`
+                    }</td></tr>`,
+                )
+                .join("")}</tbody></table>`
+        }
+      </div>
     </div>
-    ${
-      businesses.length === 0
-        ? `<div class="empty">
-             <h3>Nothing is answering yet</h3>
-             <p>An agent is a business plus the channels it answers on. Create one, teach it your
-                price list, and point a Telegram bot or your website at it.</p>
-             <button class="btn btn-primary" id="newBiz2">Create your first agent</button>
-           </div>`
-        : `<div class="cards">${businesses.map(agentCard).join("")}</div>`
-    }
-    ${
-      (data.events ?? []).length === 0
-        ? ""
-        : `<h2 style="font-size:14px;letter-spacing:.06em;color:var(--muted);margin:30px 0 12px">RECENT ACTIVITY</h2>
-           <table><tbody>${data.events
-             .map(
-               (e) => `<tr style="cursor:default"><td style="width:150px;color:var(--muted)">${h(ago(e.createdAt))}</td>
-                 <td style="width:170px">${h(e.businessName ?? "—")}</td>
-                 <td><b>${h(e.kind)}</b> <span class="muted">${h(e.detail)}</span></td></tr>`,
-             )
-             .join("")}</tbody></table>`
-    }`;
-  $("view")
-    .querySelectorAll(".agent")
-    .forEach((card) => (card.onclick = () => go("agents", { businessId: card.dataset.business, customerId: null })));
-  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = createBusinessDialog;
+
+    <div class="grid g3">
+      <div class="card" style="grid-column:span 1">
+        <div class="card-head"><h2>Message volume</h2><span style="font-size:12.5px;color:var(--muted)">Last 7 days</span></div>
+        <div class="pad" style="padding-top:12px">
+          <div style="font-size:23px;font-weight:720;letter-spacing:-.02em">${num(series.reduce((n, p) => n + p.messages, 0))}</div>
+          <div style="color:var(--muted);font-size:12.5px;margin-bottom:8px">messages this week</div>
+          ${lineChart(series)}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Channel distribution</h2>
+          <span style="font-size:12.5px;color:var(--muted)">All time</span></div>
+        <div class="pad" style="display:flex;gap:18px;align-items:center">
+          ${donut(
+            [
+              { value: split.telegram, colour: "var(--blue)" },
+              { value: split.web, colour: "var(--brand)" },
+            ],
+            totalMsgs,
+          )}
+          <div style="font-size:13px">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:9px">
+              <span style="width:9px;height:9px;border-radius:50%;background:var(--blue)"></span>
+              <div><b>Telegram</b><div style="color:var(--muted);font-size:12px">${
+                totalMsgs === 0 ? "0%" : Math.round((split.telegram / totalMsgs) * 100) + "%"
+              } (${num(split.telegram)})</div></div></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="width:9px;height:9px;border-radius:50%;background:var(--brand)"></span>
+              <div><b>Website</b><div style="color:var(--muted);font-size:12px">${
+                totalMsgs === 0 ? "0%" : Math.round((split.web / totalMsgs) * 100) + "%"
+              } (${num(split.web)})</div></div></div>
+            <p style="color:var(--muted);font-size:12px;margin:14px 0 0;max-width:170px">
+              These are the two channels Muxel answers on.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Recent activity</h2><a href="#" data-goto="logs">View all</a></div>
+        <div class="rows" style="padding:8px 0">${
+          (d.events ?? []).length === 0
+            ? '<p class="loading">Nothing recorded yet.</p>'
+            : d.events
+                .map(
+                  (e) => `<div class="dotline"><span class="d"></span>
+                    <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      <b>${h(e.kind.replace(/_/g, " "))}</b>
+                      <span style="color:var(--muted)"> ${h(e.detail)}</span></span>
+                    <time>${h(ago(e.createdAt))}</time></div>`,
+                )
+                .join("")
+        }</div>
+      </div>
+    </div>`;
+
+  $("newBiz").onclick = createBusinessDialog;
+  wireGoto();
+  $("view").querySelectorAll("tr[data-business]").forEach(
+    (r) => (r.onclick = () => go("agents", { businessId: r.dataset.business, customerId: null })),
+  );
+  $("view").querySelectorAll("[data-conv]").forEach(
+    (r) => (r.onclick = () => go("messages", { customerId: r.dataset.conv })),
+  );
+}
+
+const STATE_TAG = {
+  human: '<span class="tag brand">You are in it</span>',
+  waiting: '<span class="tag amber">Waiting</span>',
+  settled: '<span class="tag green">Answered</span>',
+};
+
+const conversationRow = (c) => `
+  <div class="row-item" ${c.customerId ? `data-conv="${h(c.customerId)}" style="cursor:pointer"` : ""}>
+    <span class="ic" style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;
+      background:${CHANNEL_ICON[c.channel].bg};color:${CHANNEL_ICON[c.channel].fg}">
+      ${icon(CHANNEL_ICON[c.channel].icon, 15)}</span>
+    <div class="grow"><b>${h(nameOf({ name: c.customerName }))}</b>
+      <small>${h(c.businessName)} · ${h(ago(c.updatedAt))}</small></div>
+    <span class="say">${h(c.lastMessage)}</span>
+    ${STATE_TAG[c.state]}
+  </div>`;
+
+function wireGoto() {
+  $("view").querySelectorAll("[data-goto]").forEach(
+    (a) => (a.onclick = (e) => (e.preventDefault(), go(a.dataset.goto))),
+  );
 }
 
 // -------------------------------------------------------------------- agents
 
 async function viewAgents() {
-  const data = await overview();
-  const businesses = data.businesses ?? [];
-  if (businesses.length === 0) return viewHome();
-  if (!state.businessId || !businesses.some((b) => b.id === state.businessId)) {
-    state.businessId = businesses[0].id;
-  }
-  const current = businesses.find((b) => b.id === state.businessId);
+  if (state.businessId) return agentConversations();
+  const { data } = await api("agents");
+  const all = data.agents ?? [];
+  const shown = all.filter((a) => (state.filter === "all" ? true : state.filter === "live" ? a.live : !a.live));
 
   $("view").innerHTML = `
-    <div class="page-head">
-      <div><h1>${h(current.name)}</h1><p>${channelChips(current)}</p></div>
+    <div class="page-actions"><button class="btn btn-primary btn-sm" id="newBiz">${icon("plus", 15)}Create agent</button></div>
+    <div class="tabs">
+      <button data-filter="all" class="${state.filter === "all" ? "on" : ""}">All agents<span class="n">${all.length}</span></button>
+      <button data-filter="live" class="${state.filter === "live" ? "on" : ""}">Live<span class="n">${all.filter((a) => a.live).length}</span></button>
+      <button data-filter="off" class="${state.filter === "off" ? "on" : ""}">Off<span class="n">${all.filter((a) => !a.live).length}</span></button>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px" id="agentTabs">
-      ${businesses
-        .map(
-          (b) =>
-            `<button class="btn btn-sm ${b.id === state.businessId ? "btn-primary" : "btn-ghost"}"
-               data-business="${h(b.id)}">${h(b.name)}</button>`,
-        )
-        .join("")}
+    ${
+      all.length === 0
+        ? `<div class="card empty"><h3>No agents yet</h3>
+             <p>An agent is a business plus the channels it answers on. Create one, give it your price
+                list, and point a Telegram bot or your website at it.</p>
+             <button class="btn btn-primary" id="newBiz2">Create your first agent</button></div>`
+        : `<div class="card"><table>
+            <thead><tr><th>Agent</th><th>Status</th><th>Channels</th><th>Messages today</th>
+              <th>Answered alone</th><th>Last activity</th></tr></thead>
+            <tbody>${shown
+              .map(
+                (a) => `<tr class="click" data-business="${h(a.id)}">
+                  <td><b>${h(a.name)}</b><div style="color:var(--muted);font-size:12px">${h(a.modelLabel)}</div></td>
+                  <td>${a.live ? '<span class="tag green">Live</span>' : '<span class="tag grey"><span class="d"></span>Off</span>'}</td>
+                  <td>${[a.telegram ? chanTag("telegram") : "", a.web ? chanTag("web") : ""].filter(Boolean).join(" ") || '<span style="color:var(--muted)">none</span>'}</td>
+                  <td>${num(a.usage.messages)}</td>
+                  <td>${
+                    a.unaided === null
+                      ? '<span style="color:var(--muted)">no data yet</span>'
+                      : `<div style="font-size:12px;margin-bottom:3px">${a.unaided}%</div><div class="bar"><i style="width:${a.unaided}%"></i></div>`
+                  }</td>
+                  <td style="color:var(--muted)">${h(ago(a.lastActivity))}</td></tr>`,
+              )
+              .join("")}</tbody></table>
+            <div class="tfoot"><span>Showing ${shown.length} of ${all.length} agents</span></div></div>`
+    }`;
+  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = createBusinessDialog;
+  $("view").querySelectorAll("[data-filter]").forEach(
+    (b) => (b.onclick = () => ((state.filter = b.dataset.filter), render())),
+  );
+  $("view").querySelectorAll("tr[data-business]").forEach(
+    (r) => (r.onclick = () => go("agents", { businessId: r.dataset.business, customerId: null })),
+  );
+}
+
+/** One agent, its conversations, and the transcript beside them. */
+async function agentConversations() {
+  const d = await overview();
+  const agent = (d.businesses ?? []).find((b) => b.id === state.businessId);
+  if (agent === undefined) {
+    state.businessId = null;
+    return render();
+  }
+  $("view").innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <a href="#" id="back" style="color:var(--muted);font-size:13px">← All agents</a>
+      <b style="font-size:15px">${h(agent.name)}</b>
+      ${[agent.telegram ? chanTag("telegram") : "", agent.web ? chanTag("web") : ""].filter(Boolean).join(" ")}
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" id="openBiz">Open its business</button>
     </div>
     <div class="split">
-      <div class="list" id="convList"><p class="loading" style="padding:0 15px">Loading…</p></div>
+      <div class="card list" id="convList"><p class="loading">Loading…</p></div>
       <div id="convPane"></div>
     </div>`;
-  $("agentTabs")
-    .querySelectorAll("button")
-    .forEach((b) => (b.onclick = () => go("agents", { businessId: b.dataset.business, customerId: null })));
+  $("back").onclick = (e) => (e.preventDefault(), go("agents", { businessId: null, customerId: null }));
+  $("openBiz").onclick = () => go("businesses", { businessId: agent.id });
   loadCustomers();
 }
 
@@ -294,17 +629,15 @@ async function loadCustomers() {
   const list = $("convList");
   if (!list) return;
   if (customers.length === 0) {
-    list.innerHTML =
-      '<div style="padding:26px 16px" class="muted">Nobody has written to this agent yet.</div>';
+    list.innerHTML = '<p class="loading">Nobody has written to this agent yet.</p>';
     $("convPane").innerHTML =
-      '<div class="empty"><h3>No conversations</h3><p>They appear here the moment a customer sends the first message.</p></div>';
+      '<div class="card empty"><h3>No conversations</h3><p>They appear the moment a customer sends the first message.</p></div>';
     return;
   }
   list.innerHTML = customers
     .map(
       (c) => `<div class="it ${c.id === state.customerId ? "on" : ""}" data-customer="${h(c.id)}">
-        <b>${h(nameOf(c))}</b>
-        <span>${c.messageCount} messages · ${h(ago(c.lastSeen))}</span>
+        <div class="grow"><b>${h(nameOf(c))}</b><small>${c.messageCount} messages · ${h(ago(c.lastSeen))}</small></div>
       </div>`,
     )
     .join("");
@@ -322,6 +655,45 @@ async function loadCustomers() {
   openConversation();
 }
 
+// ------------------------------------------------------------------ messages
+
+async function viewMessages() {
+  const { data } = await api("conversations?limit=40");
+  const conversations = (data.conversations ?? []).filter((c) => c.customerId !== null);
+  if (conversations.length === 0) {
+    $("view").innerHTML =
+      '<div class="card empty"><h3>No conversations yet</h3><p>Everything a customer sends on any channel lands here.</p></div>';
+    return;
+  }
+  if (!state.customerId || !conversations.some((c) => c.customerId === state.customerId)) {
+    state.customerId = conversations[0].customerId;
+  }
+  $("view").innerHTML = `
+    <div class="split">
+      <div class="card list">${conversations
+        .map(
+          (c) => `<div class="it ${c.customerId === state.customerId ? "on" : ""}" data-customer="${h(c.customerId)}">
+            <span class="ic" style="width:28px;height:28px;border-radius:7px;display:grid;place-items:center;flex:none;
+              background:${CHANNEL_ICON[c.channel].bg};color:${CHANNEL_ICON[c.channel].fg}">
+              ${icon(CHANNEL_ICON[c.channel].icon, 14)}</span>
+            <div class="grow"><b>${h(nameOf({ name: c.customerName }))}</b>
+              <small>${h(c.lastMessage)}</small></div>
+            <time style="color:var(--muted);font-size:11.5px;white-space:nowrap">${h(ago(c.updatedAt))}</time>
+          </div>`,
+        )
+        .join("")}</div>
+      <div id="convPane"></div>
+    </div>`;
+  $("view").querySelectorAll(".it").forEach((it) => {
+    it.onclick = () => {
+      state.customerId = it.dataset.customer;
+      $("view").querySelectorAll(".it").forEach((o) => o.classList.toggle("on", o === it));
+      openConversation();
+    };
+  });
+  openConversation();
+}
+
 async function openConversation(quiet = false) {
   const { ok, data } = await api(`conversations/${state.customerId}`);
   if (!ok) return;
@@ -329,11 +701,10 @@ async function openConversation(quiet = false) {
   drawConversation();
   if (!quiet) {
     clearInterval(state.poll);
-    // A person watching a live chat expects it to move on its own. Eight
-    // seconds is slow enough to cost nothing and fast enough that an operator
-    // does not reach for a refresh button that is not there.
+    // A live chat should move on its own. Eight seconds costs nothing and is
+    // fast enough that nobody reaches for a refresh button that is not there.
     state.poll = setInterval(() => {
-      if (state.tab === "agents" && state.customerId) openConversation(true);
+      if ((state.view === "agents" || state.view === "messages") && state.customerId) openConversation(true);
     }, 8000);
   }
 }
@@ -349,14 +720,12 @@ function drawConversation() {
   })();
 
   pane.innerHTML = `
-    <div class="chat">
+    <div class="card chat">
       <div class="chat-head">
-        <div>
-          <b>${h(nameOf(customer))}</b>
-          <span>${customer.username ? "@" + h(customer.username) + " · " : ""}${customer.messageCount} messages · ${h(
-            ago(customer.lastSeen),
-          )}</span>
-        </div>
+        <div><b style="font-size:14.5px">${h(nameOf(customer))}</b>
+          <div style="font-size:12px;color:var(--muted)">${
+            customer.username ? "@" + h(customer.username) + " · " : ""
+          }${customer.messageCount} messages · ${h(ago(customer.lastSeen))}</div></div>
         <div style="display:flex;gap:8px">
           ${
             mine
@@ -376,8 +745,7 @@ function drawConversation() {
               <div class="acts">
                 ${who === "user" ? "" : `<a href="#" data-edit="${h(m.id)}">Edit</a>`}
                 <a href="#" data-del="${h(m.id)}">Delete</a>
-              </div>
-            </div>`;
+              </div></div>`;
         })
         .join("")}</div>
       <form class="composer" id="say">
@@ -392,7 +760,6 @@ function drawConversation() {
 
   const box = $("msgs");
   if (atBottom) box.scrollTop = box.scrollHeight;
-
   if ($("takeover")) $("takeover").onclick = () => handoverTo("takeover");
   if ($("release")) $("release").onclick = () => handoverTo("release");
   $("wipe").onclick = deleteConversation;
@@ -414,16 +781,15 @@ function drawConversation() {
 async function loadAttachment(box) {
   const { ok, data } = await api(`messages/${box.dataset.media}/media`, { blob: true });
   if (!ok || !data) {
-    box.innerHTML = `<span class="muted" style="font-size:12.5px">${h(box.dataset.kind)} · no longer available</span>`;
+    box.innerHTML = `<span style="font-size:12px;color:var(--muted)">${h(box.dataset.kind)} · no longer available</span>`;
     return;
   }
   const url = URL.createObjectURL(data);
-  box.innerHTML =
-    data.type.startsWith("image/")
-      ? `<img src="${url}" alt="${h(box.dataset.kind)}">`
-      : data.type.startsWith("video/")
-        ? `<video src="${url}" controls></video>`
-        : `<a href="${url}" download class="muted" style="font-size:13px">Download the ${h(box.dataset.kind)}</a>`;
+  box.innerHTML = data.type.startsWith("image/")
+    ? `<img src="${url}" alt="${h(box.dataset.kind)}">`
+    : data.type.startsWith("video/")
+      ? `<video src="${url}" controls></video>`
+      : `<a href="${url}" download style="font-size:13px">Download the ${h(box.dataset.kind)}</a>`;
 }
 
 async function handoverTo(what) {
@@ -437,10 +803,7 @@ async function sendText(event) {
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
-  const { ok, data } = await api(`conversations/${state.customerId}/send`, {
-    method: "POST",
-    body: { text },
-  });
+  const { ok, data } = await api(`conversations/${state.customerId}/send`, { method: "POST", body: { text } });
   if (!ok) {
     input.value = text;
     return;
@@ -477,8 +840,8 @@ async function editMessage(messageId) {
   if (!ok) return;
   state.conversation.messages = data.messages;
   drawConversation();
-  // Said plainly, because the two outcomes are genuinely different and the
-  // operator is the only one who can see which one they needed.
+  // Said plainly: the two outcomes are genuinely different and the operator is
+  // the only one who can see which one they needed.
   toast(data.onWire ? "Changed here and in the chat." : "Changed here only. The sent copy is unchanged.");
 }
 
@@ -510,43 +873,171 @@ async function deleteConversation() {
   if (!ok) return;
   state.customerId = null;
   toast("Conversation deleted.");
-  loadCustomers();
+  render();
+}
+
+// ------------------------------------------------------------------ channels
+
+async function viewChannels() {
+  const { data } = await api("channels");
+  const all = data.channels ?? [];
+  const shown = all.filter((c) =>
+    state.filter === "all" ? true : state.filter === "on" ? c.connected : !c.connected,
+  );
+  $("view").innerHTML = `
+    <div class="page-actions"><button class="btn btn-primary btn-sm" id="newBiz">${icon("plus", 15)}Add channel</button></div>
+    <div class="tabs">
+      <button data-filter="all" class="${state.filter === "all" ? "on" : ""}">All<span class="n">${all.length}</span></button>
+      <button data-filter="on" class="${state.filter === "on" ? "on" : ""}">Connected<span class="n">${all.filter((c) => c.connected).length}</span></button>
+      <button data-filter="off" class="${state.filter === "off" ? "on" : ""}">Off<span class="n">${all.filter((c) => !c.connected).length}</span></button>
+    </div>
+    ${
+      all.length === 0
+        ? `<div class="card empty"><h3>No channels yet</h3>
+             <p>A channel is how a customer reaches you: a Telegram bot, or the chat bubble on your website.</p>
+             <button class="btn btn-primary" id="newBiz2">Create a business</button></div>`
+        : `<div class="card"><table>
+            <thead><tr><th>Channel</th><th>Type</th><th>Status</th><th>Answers for</th><th>Last activity</th></tr></thead>
+            <tbody>${shown
+              .map(
+                (c) => `<tr class="click" data-business="${h(c.businessId)}">
+                  <td>${chanTag(c.kind)}</td>
+                  <td style="color:var(--muted)">${c.kind === "telegram" ? h(c.label) : "Website widget"}</td>
+                  <td>${c.connected ? '<span class="tag green">Connected</span>' : '<span class="tag grey"><span class="d"></span>Off</span>'}</td>
+                  <td>${h(c.businessName)}</td>
+                  <td style="color:var(--muted)">${h(ago(c.lastActivity))}</td></tr>`,
+              )
+              .join("")}</tbody></table>
+            <div class="tfoot">
+              <span>Showing ${shown.length} of ${all.length} channels</span>
+              <span>Muxel answers on Telegram and on your website. Those are the two.</span>
+            </div></div>`
+    }`;
+  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = createBusinessDialog;
+  $("view").querySelectorAll("[data-filter]").forEach(
+    (b) => (b.onclick = () => ((state.filter = b.dataset.filter), render())),
+  );
+  $("view").querySelectorAll("tr[data-business]").forEach(
+    (r) => (r.onclick = () => go("businesses", { businessId: r.dataset.business })),
+  );
+}
+
+// ----------------------------------------------------------------- customers
+
+async function viewCustomers() {
+  const { data } = await api(`customers?page=${state.page}&size=20`);
+  const rows = data.customers ?? [];
+  $("view").innerHTML =
+    rows.length === 0 && state.page === 1
+      ? '<div class="card empty"><h3>No customers yet</h3><p>Anyone who writes to one of your agents appears here.</p></div>'
+      : `<div class="card"><table>
+          <thead><tr><th>Customer</th><th>Channel</th><th>Business</th><th>Messages</th>
+            <th>Conversations</th><th>Last contact</th></tr></thead>
+          <tbody>${rows
+            .map(
+              (c) => `<tr class="click" data-customer="${h(c.id)}">
+                <td><b>${h(c.name || "Someone")}</b>${
+                  c.username ? `<div style="color:var(--muted);font-size:12px">@${h(c.username)}</div>` : ""
+                }</td>
+                <td>${chanTag(c.channel)}</td>
+                <td>${h(c.businessName)}</td>
+                <td>${num(c.messageCount)}</td>
+                <td>${num(c.conversations)}</td>
+                <td style="color:var(--muted)">${h(ago(c.lastSeen))}</td></tr>`,
+            )
+            .join("")}</tbody></table>
+          <div class="tfoot">
+            <span>Showing ${(data.page - 1) * data.size + 1} to ${
+              (data.page - 1) * data.size + rows.length
+            } of ${num(data.total)} customers</span>
+            ${pager(data.page, data.pages)}
+          </div></div>`;
+  wirePager();
+  $("view").querySelectorAll("tr[data-customer]").forEach(
+    (r) => (r.onclick = () => go("messages", { customerId: r.dataset.customer })),
+  );
+}
+
+function pager(page, pages) {
+  if (pages <= 1) return "";
+  const nums = [];
+  for (let p = 1; p <= pages; p += 1) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 1) nums.push(p);
+    else if (nums[nums.length - 1] !== "…") nums.push("…");
+  }
+  return `<div class="pager">
+    <button data-page="${page - 1}" ${page === 1 ? "disabled" : ""}>‹</button>
+    ${nums
+      .map((p) =>
+        p === "…"
+          ? '<button disabled>…</button>'
+          : `<button data-page="${p}" class="${p === page ? "on" : ""}">${p}</button>`,
+      )
+      .join("")}
+    <button data-page="${page + 1}" ${page === pages ? "disabled" : ""}>›</button></div>`;
+}
+
+function wirePager() {
+  $("view").querySelectorAll("[data-page]").forEach(
+    (b) => (b.onclick = () => ((state.page = Number(b.dataset.page)), render())),
+  );
+}
+
+// ---------------------------------------------------------------------- logs
+
+async function viewLogs() {
+  const { data } = await api("events?limit=100");
+  const events = data.events ?? [];
+  $("view").innerHTML =
+    events.length === 0
+      ? '<div class="card empty"><h3>Nothing recorded yet</h3><p>This is the deployment\'s own event log, not a summary of it.</p></div>'
+      : `<div class="card"><table>
+          <thead><tr><th style="width:130px">When</th><th style="width:190px">Business</th>
+            <th style="width:190px">Event</th><th>Detail</th></tr></thead>
+          <tbody>${events
+            .map(
+              (e) => `<tr><td style="color:var(--muted)">${h(ago(e.createdAt))}</td>
+                <td>${h(e.businessName ?? "—")}</td>
+                <td><span class="tag">${h(e.kind.replace(/_/g, " "))}</span></td>
+                <td style="color:var(--muted)">${h(e.detail)}</td></tr>`,
+            )
+            .join("")}</tbody></table>
+          <div class="tfoot"><span>${events.length} most recent events</span></div></div>`;
 }
 
 // ---------------------------------------------------------------- businesses
 
 async function viewBusinesses() {
-  if (state.businessId && state.tab === "businesses" && state.detail) return businessDetail(state.businessId);
-  const data = await overview();
-  const businesses = data.businesses ?? [];
+  if (state.businessId) return businessDetail(state.businessId);
+  const d = await overview(true);
+  const businesses = d.businesses ?? [];
   $("view").innerHTML = `
-    <div class="page-head">
-      <div><h1>Businesses</h1><p>What each agent answers about, and where it answers.</p></div>
-      <button class="btn btn-primary btn-sm" id="newBiz">Create business</button>
-    </div>
+    <div class="page-actions"><button class="btn btn-primary btn-sm" id="newBiz">${icon("plus", 15)}Create business</button></div>
     ${
       businesses.length === 0
-        ? `<div class="empty"><h3>No businesses yet</h3>
+        ? `<div class="card empty"><h3>No businesses yet</h3>
              <p>A business is one assistant: one price list, one voice, and the channels it answers on.</p>
              <button class="btn btn-primary" id="newBiz2">Create your first business</button></div>`
-        : `<table>
-            <thead><tr><th>Name</th><th>Channels</th><th>Model</th><th>Today</th><th>Customers</th></tr></thead>
+        : `<div class="card"><table>
+            <thead><tr><th>Business</th><th>Channels</th><th>Model</th><th>Messages today</th>
+              <th>Customers</th><th>Created</th></tr></thead>
             <tbody>${businesses
               .map(
-                (b) => `<tr data-business="${h(b.id)}">
+                (b) => `<tr class="click" data-business="${h(b.id)}">
                   <td><b>${h(b.name)}</b></td>
-                  <td>${channelChips(b)}</td>
-                  <td class="muted">${h(b.modelLabel)}</td>
-                  <td>${b.usage.messages}</td>
-                  <td>${b.customers}</td>
-                </tr>`,
+                  <td>${[b.telegram ? chanTag("telegram") : "", b.web ? chanTag("web") : ""].filter(Boolean).join(" ") || '<span style="color:var(--muted)">none</span>'}</td>
+                  <td style="color:var(--muted)">${h(b.modelLabel)}</td>
+                  <td>${num(b.usage.messages)}</td>
+                  <td>${num(b.customers)}</td>
+                  <td style="color:var(--muted)">${h(new Date(b.createdAt).toLocaleDateString())}</td></tr>`,
               )
-              .join("")}</tbody></table>`
+              .join("")}</tbody></table>
+            <div class="tfoot"><span>Showing ${businesses.length} of ${businesses.length} businesses</span></div></div>`
     }`;
-  $("view")
-    .querySelectorAll("tr[data-business]")
-    .forEach((row) => (row.onclick = () => businessDetail(row.dataset.business)));
   for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = createBusinessDialog;
+  $("view").querySelectorAll("tr[data-business]").forEach(
+    (r) => (r.onclick = () => businessDetail(r.dataset.business)),
+  );
 }
 
 async function businessDetail(businessId) {
@@ -554,98 +1045,95 @@ async function businessDetail(businessId) {
   $("view").innerHTML = '<p class="loading">Loading…</p>';
   const [{ data: b }, models] = await Promise.all([api(`businesses/${businessId}`), loadModels()]);
   $("view").innerHTML = `
-    <div class="page-head">
-      <div>
-        <a href="#" class="muted" id="back" style="font-size:13px">← All businesses</a>
-        <h1 style="margin-top:6px">${h(b.name)}</h1>
-        <p>${channelChips(b)}</p>
-      </div>
-      <button class="btn btn-ghost btn-sm" id="delBiz">Delete business</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <a href="#" id="back" style="color:var(--muted);font-size:13px">← All businesses</a>
+      <b style="font-size:16px">${h(b.name)}</b>
+      ${[b.telegram ? chanTag("telegram") : "", b.web ? chanTag("web") : ""].filter(Boolean).join(" ")}
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" id="openChats">Conversations</button>
+      <button class="btn btn-danger btn-sm" id="delBiz">Delete</button>
     </div>
 
-    <div class="stats">
-      <div class="stat"><div class="k">Messages today</div><div class="v">${b.usage.messages}</div></div>
-      <div class="stat"><div class="k">Customers</div><div class="v">${b.customers}</div></div>
-      <div class="stat"><div class="k">Products</div><div class="v">${(b.products ?? []).length}</div></div>
-      <div class="stat"><div class="k">Documents</div><div class="v">${(b.documents ?? []).length}</div></div>
+    <div class="grid g4" style="margin-bottom:16px">
+      ${statCard("messages", "var(--violet)", "var(--violet-soft)", "Messages today", num(b.usage.messages))}
+      ${statCard("customers", "var(--green)", "var(--green-soft)", "Customers", num(b.customers))}
+      ${statCard("businesses", "var(--brand-ink)", "var(--brand-soft)", "Price list", num((b.products ?? []).length))}
+      ${statCard("logs", "var(--blue)", "var(--blue-soft)", "Documents", num((b.documents ?? []).length))}
     </div>
 
-    <div class="card" style="padding:22px;margin-bottom:18px">
-      <h3 style="margin:0 0 4px;font-size:16px">Which model answers</h3>
-      <p class="muted" style="margin:0 0 14px;font-size:13.5px">Every one of these runs inside your own
-        Cloudflare account. A bigger model reads more before it answers and uses more of your daily allowance.</p>
-      <div class="form-row" style="max-width:420px;margin:0">
-        <select id="model">${models
-          .map((m) => `<option value="${h(m.id)}" ${m.id === b.model ? "selected" : ""}>${h(m.label)}</option>`)
-          .join("")}</select>
-      </div>
-    </div>
-
-    <div class="card" style="padding:22px;margin-bottom:18px">
-      <h3 style="margin:0 0 4px;font-size:16px">Channels</h3>
-      <p class="muted" style="margin:0 0 14px;font-size:13.5px">Where customers reach this business.</p>
-      ${
-        b.telegram
-          ? `<p style="margin:0 0 12px">Telegram · <b>@${h(b.telegram.username)}</b></p>`
-          : `<div class="form-row" style="max-width:520px">
-               <label>Attach a Telegram bot</label>
-               <div style="display:flex;gap:9px">
-                 <input id="botToken" placeholder="123456:ABC-DEF…" autocomplete="off" style="flex:1">
-                 <button class="btn btn-primary btn-sm" id="attachBot">Attach</button>
-               </div>
-               <small>Create it with @BotFather, then paste the token it gives you. It is sealed
-                 with your deployment's own key and stored in your own Cloudflare account.</small>
-             </div>`
-      }
-      ${
-        b.web
-          ? `<label style="display:flex;gap:9px;align-items:center;margin-top:10px;font-size:14px">
-               <input type="checkbox" id="webOn" ${b.web.enabled ? "checked" : ""}> Website widget is on
-             </label>`
-          : ""
-      }
-    </div>
-
-    <div class="card" style="padding:22px;margin-bottom:18px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div>
-          <h3 style="margin:0 0 4px;font-size:16px">Price list</h3>
-          <p class="muted" style="margin:0;font-size:13.5px">The only prices the agent is allowed to quote.</p>
+    <div class="grid g2" style="margin-bottom:16px">
+      <div class="card">
+        <div class="card-head"><h2>Which model answers</h2></div>
+        <div class="pad">
+          <p style="color:var(--muted);font-size:13px;margin:0 0 13px">Every one of these runs inside your own
+            Cloudflare account. A bigger model reads more before it answers and uses more of your daily allowance.</p>
+          <div class="field" style="max-width:380px;margin:0">
+            <select id="model">${models
+              .map((m) => `<option value="${h(m.id)}" ${m.id === b.model ? "selected" : ""}>${h(m.label)}</option>`)
+              .join("")}</select>
+          </div>
         </div>
-        <button class="btn btn-ghost btn-sm" id="addProduct">Add item</button>
       </div>
+      <div class="card">
+        <div class="card-head"><h2>Channels</h2></div>
+        <div class="pad">
+          ${
+            b.telegram
+              ? `<p style="margin:0 0 10px">Telegram · <b>@${h(b.telegram.username)}</b></p>`
+              : `<div class="field" style="margin-bottom:10px"><label>Attach a Telegram bot</label>
+                   <div style="display:flex;gap:8px">
+                     <input id="botToken" placeholder="123456:ABC-DEF…" autocomplete="off" style="flex:1">
+                     <button class="btn btn-primary btn-sm" id="attachBot">Attach</button></div>
+                   <small>Create it with @BotFather. It is sealed with your deployment's own key
+                     and stored in your own Cloudflare account.</small></div>`
+          }
+          ${
+            b.web
+              ? `<label style="display:flex;gap:8px;align-items:center;font-size:13.5px">
+                   <input type="checkbox" id="webOn" ${b.web.enabled ? "checked" : ""}> Website widget is on</label>`
+              : ""
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><h2>Price list</h2>
+        <button class="btn btn-ghost btn-sm" id="addProduct">Add item</button></div>
       ${
         (b.products ?? []).length === 0
-          ? '<p class="muted" style="margin:0">Nothing here yet, so the agent will say it does not know a price rather than invent one.</p>'
+          ? '<p class="loading">Nothing here yet, so the agent will say it does not know a price rather than invent one.</p>'
           : `<table><thead><tr><th>Item</th><th>Price</th><th>Description</th><th></th></tr></thead>
              <tbody>${b.products
                .map(
-                 (p) => `<tr style="cursor:default"><td><b>${h(p.name)}</b></td><td>${h(p.price)}</td>
-                   <td class="muted">${h(p.description)}</td>
-                   <td style="text-align:right"><a href="#" class="muted" data-prod="${h(p.id)}">Remove</a></td></tr>`,
+                 (p) => `<tr><td><b>${h(p.name)}</b></td><td>${h(p.price)}</td>
+                   <td style="color:var(--muted)">${h(p.description)}</td>
+                   <td style="text-align:right"><a href="#" data-prod="${h(p.id)}"
+                     style="color:var(--muted);font-size:12.5px">Remove</a></td></tr>`,
                )
                .join("")}</tbody></table>`
       }
     </div>
 
-    <div class="card" style="padding:22px">
-      <h3 style="margin:0 0 4px;font-size:16px">Documents</h3>
-      <p class="muted" style="margin:0 0 14px;font-size:13.5px">What the agent reads before it answers.
-        Upload from the console bot in Telegram, under Advanced.</p>
+    <div class="card">
+      <div class="card-head"><h2>Documents</h2>
+        <span style="font-size:12.5px;color:var(--muted)">Upload from the console bot, under Advanced</span></div>
       ${
         (b.documents ?? []).length === 0
-          ? '<p class="muted" style="margin:0">No documents yet.</p>'
+          ? '<p class="loading">No documents yet.</p>'
           : `<table><thead><tr><th>File</th><th>Status</th><th>Pieces</th></tr></thead><tbody>${b.documents
               .map(
-                (d) => `<tr style="cursor:default"><td>${h(d.filename)}</td>
-                  <td>${h(d.status)}${d.error ? ` · <span class="muted">${h(d.error)}</span>` : ""}</td>
-                  <td>${d.chunkCount}</td></tr>`,
+                (d) => `<tr><td>${h(d.filename)}</td>
+                  <td><span class="tag ${d.status === "ready" ? "green" : ""}">${h(d.status)}</span>${
+                    d.error ? ` <span style="color:var(--muted)">${h(d.error)}</span>` : ""
+                  }</td><td>${d.chunkCount}</td></tr>`,
               )
               .join("")}</tbody></table>`
       }
     </div>`;
 
-  $("back").onclick = (e) => (e.preventDefault(), (state.businessId = null), go("businesses"));
+  $("back").onclick = (e) => (e.preventDefault(), (state.businessId = null), render());
+  $("openChats").onclick = () => go("agents", { businessId, customerId: null });
   $("model").onchange = async (e) => {
     await api(`businesses/${businessId}`, { method: "PATCH", body: { model: e.target.value } });
     state.overview = null;
@@ -671,16 +1159,14 @@ async function businessDetail(businessId) {
       }
     };
   $("addProduct").onclick = () => addProductDialog(businessId);
-  $("view")
-    .querySelectorAll("[data-prod]")
-    .forEach(
-      (a) =>
-        (a.onclick = async (e) => {
-          e.preventDefault();
-          await api(`businesses/${businessId}/products/${a.dataset.prod}`, { method: "DELETE" });
-          businessDetail(businessId);
-        }),
-    );
+  $("view").querySelectorAll("[data-prod]").forEach(
+    (a) =>
+      (a.onclick = async (e) => {
+        e.preventDefault();
+        await api(`businesses/${businessId}/products/${a.dataset.prod}`, { method: "DELETE" });
+        businessDetail(businessId);
+      }),
+  );
   $("delBiz").onclick = async () => {
     const choice = await ask(
       `Delete ${b.name}`,
@@ -708,63 +1194,121 @@ async function viewSettings() {
   const { ok, data } = await api("system");
   if (!ok) return viewOutdated();
   const v = data.version ?? {};
+  const tab = state.settingsTab;
   $("view").innerHTML = `
-    <div class="page-head">
-      <div><h1>Settings</h1><p>What this deployment is running, and how it updates itself.</p></div>
+    <div class="subnav">
+      <button data-stab="general" class="${tab === "general" ? "on" : ""}">General</button>
+      <button data-stab="deployment" class="${tab === "deployment" ? "on" : ""}">Deployment</button>
+      <button data-stab="security" class="${tab === "security" ? "on" : ""}">Security</button>
     </div>
+    <div id="stab"></div>`;
+  $("view").querySelectorAll("[data-stab]").forEach(
+    (b) => (b.onclick = () => ((state.settingsTab = b.dataset.stab), viewSettings())),
+  );
 
-    <div class="card" style="padding:22px;margin-bottom:18px">
-      <h3 style="margin:0 0 4px;font-size:16px">Version</h3>
-      <p class="muted" style="margin:0 0 14px;font-size:13.5px">
-        Running <b>${h(v.running ?? "unknown")}</b>${
-          v.latest ? ` · latest is <b>${h(v.latest)}</b>` : ""
-        } · from <b>${h(data.repo ?? "")}</b></p>
-      ${
-        v.behind
-          ? `<p style="margin:0 0 14px;color:var(--orange-ink)"><b>An update is available.</b> One click copies the
-               new code into your own GitHub repository. Cloudflare builds and deploys it from there, so nothing
-               of ours ever touches your account.</p>`
-          : '<p style="margin:0 0 14px" class="muted">This deployment is up to date.</p>'
-      }
-      <button class="btn ${v.behind ? "btn-primary" : "btn-ghost"} btn-sm" id="doUpdate"
-        ${data.githubToken ? "" : "disabled"}>Update now</button>
-      ${
-        data.githubToken
-          ? ""
-          : '<p class="muted" style="margin:12px 0 0;font-size:13.5px">Add a GitHub token below before updating.</p>'
-      }
-      <div id="updateOut" style="margin-top:14px"></div>
-    </div>
-
-    <div class="card" style="padding:22px">
-      <h3 style="margin:0 0 4px;font-size:16px">GitHub token</h3>
-      <p class="muted" style="margin:0 0 14px;font-size:13.5px">
-        Used only to push the new code into your own repository. It is sealed with your deployment's own
-        master key and kept in your own Cloudflare KV. This console cannot read it back, and neither can we:
-        there is no server of ours in the path.</p>
-      ${
-        data.githubToken
-          ? `<p style="margin:0 0 14px">A token is set. <a href="#" id="delTok">Remove it</a></p>`
-          : ""
-      }
-      <div class="form-row" style="max-width:560px;margin:0">
-        <label>${data.githubToken ? "Replace the token" : "Add a token"}</label>
-        <div style="display:flex;gap:9px">
-          <input id="tok" type="password" placeholder="github_pat_… or ghp_…" autocomplete="off" style="flex:1">
-          <button class="btn btn-primary btn-sm" id="saveTok">Save</button>
+  const box = $("stab");
+  if (tab === "general") {
+    box.innerHTML = `
+      <div class="card" style="max-width:640px">
+        <div class="card-head"><h2>This deployment</h2></div>
+        <div class="pad">
+          <div class="field"><label>Address</label><input value="${h(worker)}" readonly></div>
+          <div class="field"><label>Public origin it tells Telegram about</label>
+            <input value="${h(data.origin || "not recorded yet")}" readonly></div>
+          <div class="field" style="margin-bottom:0"><label>Source repository</label>
+            <input value="${h(data.repo || "unknown")}" readonly></div>
         </div>
-        <small>Make a fine grained token on GitHub with <b>Contents: read and write</b> on your Muxel
-          repository only. It is checked against GitHub before it is stored.</small>
+      </div>
+      <div class="card" style="max-width:640px;margin-top:16px">
+        <div class="card-head"><h2>Usage today</h2></div>
+        <div class="pad" style="display:flex;gap:34px">
+          <div><div style="color:var(--muted);font-size:12.5px">Messages</div>
+            <div style="font-size:22px;font-weight:700">${num(data.usage?.messages)}</div></div>
+          <div><div style="color:var(--muted);font-size:12.5px">Input tokens</div>
+            <div style="font-size:22px;font-weight:700">${num(data.usage?.inputTokens)}</div></div>
+          <div><div style="color:var(--muted);font-size:12.5px">Output tokens</div>
+            <div style="font-size:22px;font-weight:700">${num(data.usage?.outputTokens)}</div></div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (tab === "deployment") {
+    box.innerHTML = `
+      <div class="card" style="max-width:700px">
+        <div class="card-head"><h2>Version</h2></div>
+        <div class="pad">
+          <p style="color:var(--muted);font-size:13.5px;margin:0 0 13px">
+            Running <b style="color:var(--ink)">${h(v.running ?? "unknown")}</b>${
+              v.latest ? ` · latest is <b style="color:var(--ink)">${h(v.latest)}</b>` : ""
+            } · from <b style="color:var(--ink)">${h(data.repo ?? "")}</b></p>
+          ${
+            v.behind
+              ? `<p style="margin:0 0 14px;color:var(--brand-ink)"><b>An update is available.</b> One click copies
+                   the new code into your own GitHub repository. Cloudflare builds and deploys it from there, so
+                   nothing of ours ever touches your account.</p>`
+              : '<p style="margin:0 0 14px;color:var(--muted)">This deployment is up to date.</p>'
+          }
+          <button class="btn ${v.behind ? "btn-primary" : "btn-ghost"} btn-sm" id="doUpdate"
+            ${data.githubToken ? "" : "disabled"}>Update now</button>
+          ${
+            data.githubToken
+              ? ""
+              : '<p style="color:var(--muted);font-size:13px;margin:12px 0 0">Add a GitHub token under Security first.</p>'
+          }
+          <div id="updateOut" style="margin-top:14px"></div>
+        </div>
+      </div>`;
+    $("doUpdate").onclick = async () => {
+      $("doUpdate").disabled = true;
+      $("updateOut").innerHTML = '<p class="loading" style="padding:0">Reading the new code and pushing it…</p>';
+      const { data: out } = await api("update", { method: "POST" });
+      $("doUpdate").disabled = false;
+      $("updateOut").innerHTML =
+        `<p style="margin:0;color:${out.ok ? "var(--green)" : "var(--red)"}">${h(out.message)}</p>` +
+        (out.ok
+          ? '<p style="color:var(--muted);font-size:13px;margin:8px 0 0">Cloudflare builds and deploys it from your repository. Give it a couple of minutes, then reload.</p>'
+          : "") +
+        (out.notes ?? [])
+          .map(
+            (note) => `<p style="margin:10px 0 0;padding:11px 14px;background:var(--brand-soft);
+              border:1px solid var(--brand-line);border-radius:10px;font-size:13px;color:var(--brand-ink)">${h(note)}</p>`,
+          )
+          .join("");
+    };
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="card" style="max-width:700px">
+      <div class="card-head"><h2>GitHub token</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">
+          Used only to push the new code into your own repository. It is sealed with your deployment's own
+          master key and kept in your own Cloudflare KV. This console cannot read it back, and neither can we:
+          there is no server of ours in the path.</p>
+        ${
+          data.githubToken
+            ? `<p style="margin:0 0 14px">A token is set. <a href="#" id="delTok">Remove it</a></p>`
+            : ""
+        }
+        <div class="field" style="margin:0">
+          <label>${data.githubToken ? "Replace the token" : "Add a token"}</label>
+          <div style="display:flex;gap:8px">
+            <input id="tok" type="password" placeholder="github_pat_… or ghp_…" autocomplete="off" style="flex:1">
+            <button class="btn btn-primary btn-sm" id="saveTok">Save</button></div>
+          <small>Make a fine grained token on GitHub with <b>Contents: read and write</b> on your Muxel
+            repository only. It is checked against GitHub before it is stored.</small>
+        </div>
       </div>
     </div>`;
-
   $("saveTok").onclick = async () => {
     const value = $("tok").value.trim();
     if (!value) return;
     $("saveTok").disabled = true;
-    const { ok, data: out } = await api("secrets/github_token", { method: "PUT", body: { token: value } });
+    const { ok: saved, data: out } = await api("secrets/github_token", { method: "PUT", body: { token: value } });
     $("saveTok").disabled = false;
-    if (ok) {
+    if (saved) {
       toast(`Saved${out.login ? ` for ${out.login}` : ""}.`);
       viewSettings();
     }
@@ -775,25 +1319,6 @@ async function viewSettings() {
       await api("secrets/github_token", { method: "DELETE" });
       viewSettings();
     };
-  $("doUpdate").onclick = async () => {
-    $("doUpdate").disabled = true;
-    $("updateOut").innerHTML = '<p class="loading" style="padding:0">Reading the new code and pushing it…</p>';
-    const { data: out } = await api("update", { method: "POST" });
-    $("doUpdate").disabled = false;
-    $("updateOut").innerHTML = `<p style="margin:0;color:${out.ok ? "#15803d" : "#b91c1c"}">${h(out.message)}</p>
-      ${
-        out.ok
-          ? '<p class="muted" style="margin:8px 0 0;font-size:13.5px">Cloudflare builds and deploys it from your repository. Give it a couple of minutes, then reload.</p>'
-          : ""
-      }
-      ${(out.notes ?? [])
-        .map(
-          (note) =>
-            `<p style="margin:10px 0 0;padding:11px 14px;background:#fff7ed;border:1px solid #fed7aa;
-              border-radius:11px;font-size:13.5px;color:var(--orange-ink)">${h(note)}</p>`,
-        )
-        .join("")}`;
-  };
 }
 
 // ------------------------------------------------------------------ advanced
@@ -801,25 +1326,23 @@ async function viewSettings() {
 /**
  * The Telegram screens, as they are.
  *
- * Everything the console bot can do is here, including the parts this page has
- * no layout for yet: uploading a document, editing the prompt, a customer's
+ * Everything the console bot can do is here, including the parts this app has
+ * no page for yet: uploading a document, editing the prompt, a customer's
  * remembered facts. Keeping them reachable is more honest than a web app that
  * silently does less than the bot it replaces.
  */
 async function viewAdvanced() {
   $("view").innerHTML = `
-    <div class="page-head">
-      <div><h1>Advanced</h1><p>Every screen the console bot has, including the ones this app has no page for yet:
-        documents, the prompt, skills and a customer's remembered facts.</p></div>
-    </div>
-    <div class="card" style="padding:26px 28px;max-width:720px">
-      <div id="screenText" style="font-size:15.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word"></div>
-      <div id="screenRows" style="margin-top:20px;display:flex;flex-direction:column;gap:9px"></div>
-      <form id="screenSay" style="display:none;gap:9px;margin-top:16px">
-        <input id="screenAnswer" placeholder="Type your answer and press enter" autocomplete="off"
-          style="flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:11px;font:inherit">
-        <button class="btn btn-primary btn-sm" type="submit">Send</button>
-      </form>
+    <div class="card" style="max-width:700px">
+      <div class="pad">
+        <div id="screenText" style="font-size:14.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word"></div>
+        <div id="screenRows" style="margin-top:18px;display:flex;flex-direction:column;gap:8px"></div>
+        <form id="screenSay" style="display:none;gap:8px;margin-top:14px">
+          <input id="screenAnswer" placeholder="Type your answer and press enter" autocomplete="off"
+            style="flex:1;padding:10px 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface)">
+          <button class="btn btn-primary btn-sm" type="submit">Send</button>
+        </form>
+      </div>
     </div>`;
   $("screenSay").onsubmit = (e) => {
     e.preventDefault();
@@ -830,11 +1353,16 @@ async function viewAdvanced() {
 }
 
 async function screen(action, args = [], answer) {
-  const response = await fetch("/api/screen", {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ worker, action, args, ...(answer ? { answer } : {}) }),
-  });
+  let response;
+  try {
+    response = await fetch(`${worker}/admin/screen`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ action, args, ...(answer ? { answer } : {}) }),
+    });
+  } catch {
+    return toast("Could not reach your deployment. Check that it is still live.");
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return toast(data.message || "That action could not complete.");
   if (!$("screenText")) return;
@@ -844,7 +1372,7 @@ async function screen(action, args = [], answer) {
   rows.innerHTML = "";
   for (const row of data.rows ?? []) {
     const line = document.createElement("div");
-    line.style.cssText = "display:flex;gap:9px;flex-wrap:wrap";
+    line.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
     for (const button of row) {
       const el = document.createElement("button");
       el.className = "btn btn-ghost btn-sm";
@@ -855,9 +1383,131 @@ async function screen(action, args = [], answer) {
     rows.appendChild(line);
   }
   $("screenSay").style.display = data.pending ? "flex" : "none";
-  // A screen that has changed the world behind this page invalidates what the
-  // other tabs are showing, so they are re fetched rather than trusted.
+  // A screen may have changed the world the other tabs are showing.
   state.overview = null;
+}
+
+// ------------------------------------------------------------------ outdated
+
+function viewOutdated() {
+  $("view").innerHTML = `
+    <div class="card" style="padding:24px;max-width:760px;margin-bottom:16px">
+      <h2 style="margin:0 0 8px;font-size:17px">Your deployment is older than this console</h2>
+      <p style="margin:0 0 13px;color:var(--ink-2)">It is running and answering customers. It just does not
+        have the pages this app asks for: Overview, Agents, Businesses, Channels, Customers, Messages, Logs
+        and Settings all read a data API that was added after it was installed.</p>
+      <p style="margin:0 0 14px;color:var(--ink-2)"><b>Advanced still works.</b> Every screen your Telegram
+        console bot has is there, and so is everything you can do with it: businesses, conversations,
+        documents, the price list, your GitHub token and the update itself.</p>
+      <button class="btn btn-primary btn-sm" id="goAdv">Open Advanced</button>
+    </div>
+    <div class="card" style="padding:24px;max-width:760px;border-color:var(--brand-line);background:var(--brand-soft)">
+      <h3 style="margin:0 0 8px;font-size:16px;color:var(--brand-ink)">Before you press Update</h3>
+      <p style="margin:0 0 12px">The update in your current build copies every file from upstream, and that
+        includes <code>wrangler.jsonc</code>, the file naming your Worker and the database holding your
+        conversations. Upstream's copy has placeholders in those places, so running that update would point
+        this deployment at a database that does not exist.</p>
+      <p style="margin:0">That is fixed upstream. Getting the fix takes one sync that leaves
+        <code>wrangler.jsonc</code> alone, and after it every update from this page is a single click.
+        Ask whoever set this up to run <code>scripts/first-sync.sh</code> once.</p>
+    </div>`;
+  $("goAdv").onclick = () => go("advanced");
+}
+
+// ------------------------------------------------------------------- palette
+
+let paletteEl = null;
+function openPalette() {
+  if (paletteEl) return;
+  const bg = document.createElement("div");
+  bg.className = "palette-bg";
+  bg.innerHTML = `<div class="palette">
+    <input id="pq" placeholder="Search businesses, customers and messages…" autocomplete="off">
+    <div class="out" id="pout"></div></div>`;
+  document.body.appendChild(bg);
+  paletteEl = bg;
+  const close = () => (bg.remove(), (paletteEl = null));
+  bg.onclick = (e) => e.target === bg && close();
+  const input = bg.querySelector("#pq");
+  input.focus();
+
+  const pages = NAV.flatMap((s) => s.items);
+  const draw = (results) => {
+    const out = bg.querySelector("#pout");
+    const term = input.value.trim().toLowerCase();
+    const matched = pages.filter((p) => p.label.toLowerCase().includes(term));
+    out.innerHTML =
+      (matched.length > 0
+        ? `<div class="grp">GO TO</div>` +
+          matched.map((p) => `<div class="hit" data-go="${p.id}">${icon(p.id, 15)}${h(p.label)}</div>`).join("")
+        : "") +
+      (results?.businesses?.length
+        ? `<div class="grp">BUSINESSES</div>` +
+          results.businesses.map((b) => `<div class="hit" data-biz="${h(b.id)}">${h(b.name)}</div>`).join("")
+        : "") +
+      (results?.customers?.length
+        ? `<div class="grp">CUSTOMERS</div>` +
+          results.customers
+            .map(
+              (c) => `<div class="hit" data-cust="${h(c.id)}">${h(c.name || "Someone")}<small>${h(c.businessName)}</small></div>`,
+            )
+            .join("")
+        : "") +
+      (results?.messages?.length
+        ? `<div class="grp">MESSAGES</div>` +
+          results.messages
+            .map(
+              (m) => `<div class="hit" ${m.customerId ? `data-cust="${h(m.customerId)}"` : ""}>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(m.content.slice(0, 70))}</span>
+                <small>${h(m.businessName)}</small></div>`,
+            )
+            .join("")
+        : "");
+    out.querySelectorAll("[data-go]").forEach((el) => (el.onclick = () => (close(), go(el.dataset.go))));
+    out.querySelectorAll("[data-biz]").forEach(
+      (el) => (el.onclick = () => (close(), go("businesses", { businessId: el.dataset.biz }))),
+    );
+    out.querySelectorAll("[data-cust]").forEach(
+      (el) => (el.onclick = () => (close(), go("messages", { customerId: el.dataset.cust }))),
+    );
+  };
+  draw(null);
+
+  let timer;
+  input.oninput = () => {
+    clearTimeout(timer);
+    const term = input.value.trim();
+    if (term.length < 2) return draw(null);
+    timer = setTimeout(async () => {
+      const { ok, data } = await api(`search?q=${encodeURIComponent(term)}`, { quiet: true });
+      draw(ok ? data : null);
+    }, 180);
+  };
+  bg.addEventListener("keydown", (e) => e.key === "Escape" && close());
+}
+
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    if (worker && token) openPalette();
+  }
+});
+
+// --------------------------------------------------------------------- theme
+
+const themeNow = () => document.documentElement.getAttribute("data-theme") ?? "light";
+function applyTheme(name) {
+  document.documentElement.setAttribute("data-theme", name);
+  try {
+    localStorage.setItem(THEME, name);
+  } catch {
+    /* a browser with storage switched off still gets the theme for this visit */
+  }
+}
+function toggleTheme() {
+  applyTheme(themeNow() === "dark" ? "light" : "dark");
+  shell();
+  render();
 }
 
 // ------------------------------------------------------------------- dialogs
@@ -873,19 +1523,16 @@ function ask(title, body, choices) {
         <button class="btn btn-ghost btn-sm" data-key="">Cancel</button>
         ${choices
           .map(
-            (c) =>
-              `<button class="btn ${c.primary ? "btn-primary" : "btn-ghost"} btn-sm" data-key="${h(
-                c.key,
-              )}">${h(c.label)}</button>`,
+            (c) => `<button class="btn ${c.primary ? "btn-primary" : "btn-ghost"} btn-sm" data-key="${h(c.key)}">${h(c.label)}</button>`,
           )
           .join("")}
       </div></div>`;
     bg.onclick = (e) => {
-      if (e.target === bg) (bg.remove(), resolve(null));
+      if (e.target === bg) return bg.remove(), resolve(null);
       const key = e.target.dataset?.key;
       if (key !== undefined) (bg.remove(), resolve(key || null));
     };
-    $("overlay").appendChild(bg);
+    document.body.appendChild(bg);
   });
 }
 
@@ -895,23 +1542,22 @@ function createBusinessDialog() {
   bg.innerHTML = `<div class="modal">
     <h3>Create a business</h3>
     <p class="sub">One assistant, one price list, one voice. You choose where it answers next.</p>
-    <div class="form-row"><label>Business name</label>
+    <div class="field"><label>Business name</label>
       <input id="bizName" placeholder="Sunrise Bakery" autocomplete="off"></div>
-    <div class="form-row"><label>Where should it answer?</label>
+    <div class="field"><label>Where should it answer?</label>
       <select id="bizType">
         <option value="web">My website · nothing else needed</option>
         <option value="telegram">Telegram · I have a bot token</option>
       </select>
-      <small>Either way you can add the other channel afterwards.</small>
-    </div>
-    <div class="form-row" id="tokRow" hidden><label>Telegram bot token</label>
+      <small>Either way you can add the other channel afterwards.</small></div>
+    <div class="field" id="tokRow" hidden><label>Telegram bot token</label>
       <input id="bizToken" placeholder="123456:ABC-DEF…" autocomplete="off">
       <small>From @BotFather. Sealed with your deployment's own key before it is stored.</small></div>
     <div class="actions">
       <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
       <button class="btn btn-primary btn-sm" id="create">Create</button>
     </div></div>`;
-  $("overlay").appendChild(bg);
+  document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
   bg.onclick = (e) => e.target === bg && close();
@@ -930,14 +1576,13 @@ function createBusinessDialog() {
     if (wantsTelegram) {
       const attached = await api(`businesses/${data.id}/telegram`, { method: "POST", body: { token: botToken } });
       // The business is already made. Saying so, and saying the bot is not
-      // attached, is better than a failure that reads as if nothing happened.
+      // attached, beats a failure that reads as if nothing happened.
       if (!attached.ok) toast("Business created, but that bot token was refused.");
     }
     close();
     state.overview = null;
     toast("Business created.");
-    go("businesses");
-    businessDetail(data.id);
+    go("businesses", { businessId: data.id });
   };
 }
 
@@ -947,14 +1592,14 @@ function addProductDialog(businessId) {
   bg.innerHTML = `<div class="modal">
     <h3>Add to the price list</h3>
     <p class="sub">The agent quotes from this and nowhere else.</p>
-    <div class="form-row"><label>Item</label><input id="pName" placeholder="Chocolate cake, 1 lb"></div>
-    <div class="form-row"><label>Price</label><input id="pPrice" placeholder="450 THB"></div>
-    <div class="form-row"><label>Description</label><input id="pDesc" placeholder="Serves 6 to 8. Order a day ahead."></div>
+    <div class="field"><label>Item</label><input id="pName" placeholder="Chocolate cake, 1 lb"></div>
+    <div class="field"><label>Price</label><input id="pPrice" placeholder="450 THB"></div>
+    <div class="field"><label>Description</label><input id="pDesc" placeholder="Serves 6 to 8. Order a day ahead."></div>
     <div class="actions">
       <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
       <button class="btn btn-primary btn-sm" id="save">Add</button>
     </div></div>`;
-  $("overlay").appendChild(bg);
+  document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
   bg.onclick = (e) => e.target === bg && close();
@@ -975,25 +1620,52 @@ function addProductDialog(businessId) {
   };
 }
 
-// ------------------------------------------------------------------ connect
+// ------------------------------------------------------------------- connect
 
 function showConsole(on) {
-  $("app").classList.toggle("connected", on);
-  $("onboarding").hidden = on;
-  $("workspace").hidden = !on;
-  $("connUrl").textContent = worker.replace(/^https:\/\//, "");
+  $("onboardingWrap").hidden = on;
+  $("shell").hidden = !on;
+  if (on) {
+    shell();
+    render();
+  }
 }
 
-async function post(path, body, auth) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(auth && token ? { authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  return { ok: response.ok, data: await response.json().catch(() => ({})) };
+function disconnect(event) {
+  event?.preventDefault();
+  localStorage.removeItem(KEY);
+  localStorage.removeItem(TOK);
+  worker = "";
+  token = "";
+  clearInterval(state.poll);
+  Object.assign(state, { api: null, overview: null, health: null, businessId: null, customerId: null });
+  showConsole(false);
+}
+
+/**
+ * Checks that an address is a Muxel deployment, from the browser.
+ *
+ * This used to be a call to our own server, which then made the request. That
+ * needed an SSRF guard, because a server fetching a URL a stranger typed can be
+ * pointed at things on its own network. A browser fetching a URL its own owner
+ * typed is just that person opening their own deployment, so the guard and the
+ * server both go away.
+ */
+async function probe(url) {
+  const base = url.replace(/\/+$/, "");
+  try {
+    const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(12000) });
+    const body = await response.json().catch(() => ({}));
+    if (body?.service !== "muxel") {
+      return { ok: false, message: "That URL answered, but it is not a Muxel deployment." };
+    }
+    return { ok: true, base, status: body.status ?? "unknown" };
+  } catch {
+    return {
+      ok: false,
+      message: "Could not reach that address. Check the URL, and that the deployment is live.",
+    };
+  }
 }
 
 $("connectForm").addEventListener("submit", async (e) => {
@@ -1002,14 +1674,14 @@ $("connectForm").addEventListener("submit", async (e) => {
   if (!url) return;
   $("connectBtn").disabled = true;
   $("connectErr").classList.remove("on");
-  const { ok, data } = await post("/api/connect", { worker: url });
+  const result = await probe(url);
   $("connectBtn").disabled = false;
-  if (!ok) {
-    $("connectErr").textContent = data.message || "Could not reach that deployment.";
+  if (!result.ok) {
+    $("connectErr").textContent = result.message;
     $("connectErr").classList.add("on");
     return;
   }
-  worker = data.base;
+  worker = result.base;
   localStorage.setItem(KEY, worker);
   // Reaching it is not the same as being allowed into it, so the code comes next.
   $("step2").hidden = false;
@@ -1022,9 +1694,14 @@ $("pairForm").addEventListener("submit", async (e) => {
   if (!code) return;
   $("pairBtn").disabled = true;
   $("connectErr").classList.remove("on");
-  const { ok, data } = await post("/api/pair", { worker, code });
+  const response = await fetch(`${worker}/admin/pair`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await response.json().catch(() => ({}));
   $("pairBtn").disabled = false;
-  if (!ok) {
+  if (!response.ok) {
     $("connectErr").textContent = data.message || "That code did not work.";
     $("connectErr").classList.add("on");
     return;
@@ -1032,25 +1709,14 @@ $("pairForm").addEventListener("submit", async (e) => {
   token = data.token;
   localStorage.setItem(TOK, token);
   showConsole(true);
-  go("home");
 });
 
-$("disconnect").addEventListener("click", (e) => {
-  e.preventDefault();
-  localStorage.removeItem(KEY);
-  localStorage.removeItem(TOK);
-  worker = "";
-  token = "";
-  clearInterval(state.poll);
-  showConsole(false);
-});
-
-document.querySelectorAll(".nav-item").forEach((n) =>
-  n.addEventListener("click", () => go(n.dataset.tab, { businessId: null, customerId: null })));
-
-if (worker && token) {
-  showConsole(true);
-  go("home");
-} else {
-  showConsole(false);
+try {
+  applyTheme(
+    localStorage.getItem(THEME) ??
+      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
+  );
+} catch {
+  applyTheme("light");
 }
+showConsole(Boolean(worker && token));

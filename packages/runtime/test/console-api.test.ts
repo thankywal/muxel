@@ -24,6 +24,7 @@ vi.mock("../src/db/queries.js", () => ({
   deleteMessageRow: vi.fn(async () => undefined),
   deleteProduct: vi.fn(async () => undefined),
   endHandover: vi.fn(async () => undefined),
+  findOperator: vi.fn(async () => ({ telegramUserId: 1, role: "owner" as const })),
   getBusiness: vi.fn(async () => business),
   getConsoleBot: vi.fn(async () => null),
   getCustomer: vi.fn(async () => customer),
@@ -58,6 +59,18 @@ vi.mock("../src/web/secrets-vault.js", () => ({
   hasSecret: vi.fn(async () => false),
   putSecret: vi.fn(async () => undefined),
 }));
+vi.mock("../src/db/insights.js", () => ({
+  channelSplit: vi.fn(async () => ({ telegram: 3, web: 1 })),
+  customersPage: vi.fn(async () => ({ customers: [], total: 0 })),
+  lastActivity: vi.fn(async () => new Map()),
+  recentConversations: vi.fn(async () => []),
+  search: vi.fn(async () => ({ businesses: [], customers: [], messages: [] })),
+  unaidedShare: vi.fn(async () => new Map()),
+  usageSeries: vi.fn(async () => [
+    { day: "2026-08-31", messages: 2, inputTokens: 10, outputTokens: 5 },
+    { day: "2026-09-01", messages: 4, inputTokens: 20, outputTokens: 9 },
+  ]),
+}));
 vi.mock("../src/web/self-update.js", () => ({ runSelfUpdate: vi.fn(async () => ({ ok: true, message: "done" })) }));
 vi.mock("../src/updates.js", () => ({ versionStatus: vi.fn(async () => ({ running: "1", latest: "1", behind: false })) }));
 
@@ -69,8 +82,15 @@ vi.mock("../src/web/console.js", async (importOriginal) => ({
 
 const { handleConsoleApi } = await import("../src/web/console-api.js");
 
-const env = { STATE: { get: async () => "https://x.workers.dev" } } as never;
+const env = {
+  STATE: { get: async () => "https://x.workers.dev" },
+  // Only /me reads the database directly; everything else goes through a query.
+  DB: { prepare: () => ({ bind: () => ({ first: async () => ({ label: "Than" }) }) }) },
+} as never;
 
+// The Worker hands the router `url.pathname`, so the query string is on the
+// request and not on the path. Passing it in both places here would test a
+// shape the router never sees.
 const call = (method: string, path: string, body?: unknown) =>
   handleConsoleApi(
     env,
@@ -80,7 +100,7 @@ const call = (method: string, path: string, body?: unknown) =>
         ? {}
         : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
     }),
-    path,
+    path.split("?")[0] ?? path,
   );
 
 /** Exactly the list in packages/console/public/app.js. */
@@ -88,6 +108,13 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["GET", "/overview"],
   ["GET", "/models"],
   ["GET", "/system"],
+  ["GET", "/me"],
+  ["GET", "/agents"],
+  ["GET", "/channels"],
+  ["GET", "/customers?page=1&size=20"],
+  ["GET", "/conversations"],
+  ["GET", "/events?limit=100"],
+  ["GET", "/search?q=cake"],
   ["GET", "/businesses"],
   ["POST", "/businesses", { name: "Sunrise" }],
   ["GET", "/businesses/b1"],

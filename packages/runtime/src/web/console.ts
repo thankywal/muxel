@@ -72,10 +72,17 @@ export async function operatorFor(env: Env, request: Request): Promise<number | 
 /** The headers every answer from this door carries. */
 export const CORS = {
   // The console is a client of this deployment, not a part of it, so it is
-  // served from somewhere else by design.
+  // served from somewhere else by design and calls in from the browser.
+  //
+  // Wide open on purpose: every one of these paths already refuses anyone
+  // without this deployment's own bearer token, so an origin allowlist would
+  // add a second lock to a door that is already locked, while breaking the one
+  // property that matters here, which is that the page the owner opens talks
+  // to their Worker with nothing in between.
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, authorization",
-  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers": "content-type, authorization, x-filename, x-caption",
+  "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+  "access-control-max-age": "86400",
 } as const;
 
 export function json(body: unknown, status = 200): Response {

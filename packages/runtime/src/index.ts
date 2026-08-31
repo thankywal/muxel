@@ -39,22 +39,30 @@ function html(body: string, status = 200): Response {
 }
 
 import { handleConsoleApi } from "./web/console-api.js";
-import { handleConsoleRequest } from "./web/console.js";
+import { CORS, handleConsoleRequest } from "./web/console.js";
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
+    // Answered with cross origin headers because the console is a page the
+    // owner opens somewhere else, and this is the first thing it asks. It
+    // carries no secret: what it reports is whether the deployment is
+    // configured, which anyone who can reach the URL can already tell.
     if (url.pathname === "/health") {
+      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
       const missing = missingConfiguration(env);
       const configured = (await peekMasterKey(env)) !== null;
-      return json(
-        {
+      return new Response(
+        JSON.stringify({
           service: "muxel",
           status: missing.length > 0 ? "not_configured" : configured ? "ready" : "awaiting_setup",
           missing,
+        }),
+        {
+          status: missing.length === 0 ? 200 : 503,
+          headers: { "content-type": "application/json; charset=utf-8", ...CORS },
         },
-        missing.length === 0 ? 200 : 503,
       );
     }
 
