@@ -1,2 +1,7 @@
 packages:
   - "packages/*"
+  # The console is a plain Node app that runs on a normal server, not part of
+  # the Worker. Keeping it out means a Cloudflare build never installs express
+  # to deploy a Worker that does not use it, and a dependency added here can
+  # never break a deploy over there.
+  - "!packages/console"
