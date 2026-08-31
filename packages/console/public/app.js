@@ -28,6 +28,15 @@ const h = (value) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const state = {
+  /**
+   * Whether this deployment answers the data API at all.
+   *
+   * A deployment installed before the API existed answers "not found" to every
+   * one of these paths. Each page reading that as an empty result produced a
+   * console that looked like a working one with nothing in it. Asked once,
+   * answered in one place, and every view reads the answer.
+   */
+  api: null,
   tab: "home",
   businessId: null,
   customerId: null,
@@ -54,9 +63,20 @@ async function api(path, options = {}) {
   if (options.blob) {
     return { ok: response.ok, status: response.status, data: response.ok ? await response.blob() : null };
   }
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) toast(data.message || data.error || "That did not work.");
-  return { ok: response.ok, status: response.status, data };
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // A deployment older than this console answers "not found" in plain text.
+    // Turning that into {} is how the Settings page came to report a version of
+    // "unknown", no GitHub token and "up to date", none of which it had read.
+    data = null;
+  }
+  if (!response.ok && data !== null && !options.quiet) {
+    toast(data.message || data.error || "That did not work.");
+  }
+  return { ok: response.ok, status: response.status, data: data ?? {} };
 }
 
 function toast(message) {
@@ -90,12 +110,26 @@ function go(tab, next = {}) {
   render();
 }
 
-function render() {
+async function render() {
   const view = $("view");
   view.innerHTML = '<p class="loading">Loading…</p>';
+  // Advanced talks to the Telegram screens, which every deployment has, so it
+  // keeps working on the deployments the rest of this page cannot serve.
+  if (state.tab !== "advanced" && !(await apiReady())) return viewOutdated();
   ({ home: viewHome, agents: viewAgents, businesses: viewBusinesses, settings: viewSettings, advanced: viewAdvanced }[
     state.tab
   ] ?? viewHome)();
+}
+
+async function apiReady() {
+  // "ready" is remembered; "absent" is asked again on every visit, so the
+  // console starts working by itself the moment the deployment is updated
+  // rather than needing to be reloaded to notice.
+  if (state.api !== "ready") {
+    const { status } = await api("system", { quiet: true });
+    state.api = status === 404 ? "absent" : "ready";
+  }
+  return state.api === "ready";
 }
 
 /** The overview is the source for both Home and the Agents list. */
@@ -135,6 +169,45 @@ const agentCard = (b) => `
       <div><b>${(b.usage.inputTokens + b.usage.outputTokens).toLocaleString()}</b>tokens today</div>
     </div>
   </div>`;
+
+/**
+ * What this page says when the deployment is older than it is.
+ *
+ * Not an error and not an empty state. The deployment is working: its bots are
+ * answering customers right now and the Telegram console can still drive all of
+ * it. What it cannot do is answer the questions these pages ask, because those
+ * paths did not exist when it was installed. Saying exactly that, and exactly
+ * what to do, is the whole job here.
+ */
+function viewOutdated() {
+  $("view").innerHTML = `
+    <div class="page-head">
+      <div><h1>Your deployment is older than this console</h1>
+      <p>It is running and answering customers. It just does not have the pages this app asks for yet.</p></div>
+    </div>
+
+    <div class="card" style="padding:24px;max-width:760px;margin-bottom:18px">
+      <p style="margin:0 0 14px">Home, Agents, Businesses and Settings all read a data API that was added
+        after your deployment was installed. Until it is updated, those four pages have nothing to read,
+        which is why they would otherwise sit empty.</p>
+      <p style="margin:0 0 14px"><b>Advanced still works.</b> Every screen your Telegram console bot has is
+        there, and so is everything you can do with it: businesses, conversations, documents, the price
+        list, your GitHub token and the update itself.</p>
+      <button class="btn btn-primary btn-sm" id="goAdv">Open Advanced</button>
+    </div>
+
+    <div class="card" style="padding:24px;max-width:760px;border-color:#fed7aa;background:#fff7ed">
+      <h3 style="margin:0 0 8px;font-size:16px;color:var(--orange-ink)">Before you press Update</h3>
+      <p style="margin:0 0 12px">The update in your current build copies every file from upstream, and that
+        includes <code>wrangler.jsonc</code>, which is the file naming your Worker and the database holding
+        your conversations. Upstream's copy has placeholders in those places. Running that update would
+        point this deployment at a database that does not exist.</p>
+      <p style="margin:0">That is fixed upstream. Getting the fix takes one sync that leaves
+        <code>wrangler.jsonc</code> alone, and after it every update from this page is a single click.
+        Ask whoever set this up to run <code>scripts/first-sync.sh</code> once.</p>
+    </div>`;
+  $("goAdv").onclick = () => go("advanced");
+}
 
 // ---------------------------------------------------------------------- home
 
@@ -632,7 +705,8 @@ async function loadModels() {
 // ------------------------------------------------------------------ settings
 
 async function viewSettings() {
-  const { data } = await api("system");
+  const { ok, data } = await api("system");
+  if (!ok) return viewOutdated();
   const v = data.version ?? {};
   $("view").innerHTML = `
     <div class="page-head">
