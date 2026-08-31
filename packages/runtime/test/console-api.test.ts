@@ -148,6 +148,17 @@ describe("the console data API", () => {
     expect(body.totals).toMatchObject({ businesses: 1, customers: 1 });
   });
 
+  it("keeps one meaning for `customers`, so the card can print it", async () => {
+    // The detail response spreads the card and then adds lists. Naming a list
+    // `customers` overwrote the count with an array, and the console drew
+    // "[object Object]" in the place a number belonged.
+    const body = (await (await call("GET", "/businesses/b1")).json()) as Record<string, unknown>;
+    expect(typeof body.customers).toBe("number");
+    expect(Array.isArray(body.recentCustomers)).toBe(true);
+    expect(Array.isArray(body.products)).toBe(true);
+    expect(Array.isArray(body.documents)).toBe(true);
+  });
+
   it("says whether a delete reached the chat, rather than implying it did", async () => {
     // wireFor returns null here, so there is no copy to withdraw. The answer
     // has to say so: the operator is the only one who can see the difference.

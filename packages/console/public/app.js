@@ -51,6 +51,9 @@ async function api(path, options = {}) {
       ? {}
       : { body: options.raw ? options.body : JSON.stringify(options.body) }),
   });
+  if (options.blob) {
+    return { ok: response.ok, status: response.status, data: response.ok ? await response.blob() : null };
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) toast(data.message || data.error || "That did not work.");
   return { ok: response.ok, status: response.status, data };
@@ -295,10 +298,11 @@ function drawConversation() {
           const who = m.role === "user" ? "user" : m.sentBy === "human" ? "human" : "bot";
           const label = who === "user" ? h(nameOf(customer)) : who === "human" ? "You" : "Agent";
           return `<div class="msg ${who}" data-message="${h(m.id)}">
-              <span class="who">${label} · ${h(ago(m.createdAt))}</span>${h(m.content)}
-              <div style="margin-top:6px;display:flex;gap:10px">
-                ${who === "user" ? "" : `<a href="#" class="muted" data-edit="${h(m.id)}" style="font-size:11.5px">Edit</a>`}
-                <a href="#" class="muted" data-del="${h(m.id)}" style="font-size:11.5px">Delete</a>
+              <span class="who">${label} · ${h(ago(m.createdAt))}</span><span class="body">${h(m.content)}</span>
+              ${m.media ? `<div class="att" data-media="${h(m.id)}" data-kind="${h(m.media.kind)}"></div>` : ""}
+              <div class="acts">
+                ${who === "user" ? "" : `<a href="#" data-edit="${h(m.id)}">Edit</a>`}
+                <a href="#" data-del="${h(m.id)}">Delete</a>
               </div>
             </div>`;
         })
@@ -324,6 +328,29 @@ function drawConversation() {
   $("say").onsubmit = sendText;
   pane.querySelectorAll("[data-edit]").forEach((a) => (a.onclick = (e) => (e.preventDefault(), editMessage(a.dataset.edit))));
   pane.querySelectorAll("[data-del]").forEach((a) => (a.onclick = (e) => (e.preventDefault(), deleteMessage(a.dataset.del))));
+  pane.querySelectorAll("[data-media]").forEach(loadAttachment);
+}
+
+/**
+ * Fetches an attachment and puts it in the bubble.
+ *
+ * Loaded with the token in a header and handed to the page as an object URL,
+ * because an <img src> cannot carry authentication and a link that did not need
+ * it would be a customer's photo readable by anyone who guessed the address.
+ */
+async function loadAttachment(box) {
+  const { ok, data } = await api(`messages/${box.dataset.media}/media`, { blob: true });
+  if (!ok || !data) {
+    box.innerHTML = `<span class="muted" style="font-size:12.5px">${h(box.dataset.kind)} · no longer available</span>`;
+    return;
+  }
+  const url = URL.createObjectURL(data);
+  box.innerHTML =
+    data.type.startsWith("image/")
+      ? `<img src="${url}" alt="${h(box.dataset.kind)}">`
+      : data.type.startsWith("video/")
+        ? `<video src="${url}" controls></video>`
+        : `<a href="${url}" download class="muted" style="font-size:13px">Download the ${h(box.dataset.kind)}</a>`;
 }
 
 async function handoverTo(what) {

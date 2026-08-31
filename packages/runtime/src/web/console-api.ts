@@ -36,6 +36,7 @@ import {
   deleteConversationById,
   deleteMessageRow,
   deleteProduct,
+  getMedia,
   getMessageRow,
   getConsoleBot,
   updateBusinessModel,
@@ -224,13 +225,16 @@ export async function handleConsoleApi(
     if (!(await canAccessBusiness(env, userId, businessId))) return json({ error: "no_access" }, 403);
 
     if (method === "GET" && segments.length === 2) {
-      const [card, products, documents, customers] = await Promise.all([
+      const [card, products, documents, recentCustomers] = await Promise.all([
         businessCard(env, businessId),
         listProducts(env, businessId),
         listDocuments(env, businessId),
         listCustomers(env, businessId, 50),
       ]);
-      return json({ ...card, products, documents, customers });
+      // Deliberately not `customers`. The card already carries that name for
+      // the count, and spreading a list over it left the console drawing
+      // "[object Object]" where a number belonged. One name, one meaning.
+      return json({ ...card, products, documents, recentCustomers });
     }
     if (method === "DELETE" && segments.length === 2) {
       await deleteBusiness(env, businessId);
@@ -434,6 +438,36 @@ export async function handleConsoleApi(
       return json({ error: "no_access" }, 403);
     }
     const wire = await wireFor(env, messageId);
+
+    // The bytes of an attachment a customer sent.
+    //
+    // Streamed through the Worker rather than linked. A Telegram file link
+    // carries the bot token in its path, so handing one to a browser would put
+    // the business's own credential in an address bar, a proxy log and a
+    // history file. The token stays here and only the file leaves.
+    if (method === "GET" && segments[2] === "media") {
+      const media = await getMedia(env, messageId);
+      if (media === null) return notFound();
+      const client = await clientForBot(env, media.botId);
+      if (client === null) return notFound();
+      try {
+        const link = await client.getFileLink(media.fileId);
+        const file = await fetch(link);
+        if (!file.ok) return notFound();
+        return new Response(file.body, {
+          status: 200,
+          headers: {
+            ...CORS,
+            "content-type": file.headers.get("content-type") ?? "application/octet-stream",
+            // Telegram's own link expires; this one is only as good as the
+            // request that made it, which is the honest lifetime for it.
+            "cache-control": "private, max-age=300",
+          },
+        });
+      } catch {
+        return notFound();
+      }
+    }
 
     if (method === "PATCH") {
       const body = (await request.json().catch(() => ({}))) as { text?: string };
