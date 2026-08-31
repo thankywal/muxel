@@ -345,7 +345,12 @@ async function render() {
   const view = $("view");
   if (!view) return;
   view.innerHTML = '<p class="loading">Loading…</p>';
-  if (state.view !== "advanced" && !(await apiReady())) return viewOutdated();
+  // Advanced used to be exempt, back when these calls went through a proxy and
+  // the Telegram screens were reachable even on a deployment with no data API.
+  // They are not any more: a build old enough to lack the API answers the
+  // browser's preflight with an error, so nothing on it can be reached from a
+  // page at all. Every view reads the one fact.
+  if (!(await apiReady())) return viewOutdated();
   const draw = {
     overview: viewOverview,
     agents: viewAgents,
@@ -1392,26 +1397,27 @@ async function screen(action, args = [], answer) {
 function viewOutdated() {
   $("view").innerHTML = `
     <div class="card" style="padding:24px;max-width:760px;margin-bottom:16px">
-      <h2 style="margin:0 0 8px;font-size:17px">Your deployment is older than this console</h2>
-      <p style="margin:0 0 13px;color:var(--ink-2)">It is running and answering customers. It just does not
-        have the pages this app asks for: Overview, Agents, Businesses, Channels, Customers, Messages, Logs
-        and Settings all read a data API that was added after it was installed.</p>
-      <p style="margin:0 0 14px;color:var(--ink-2)"><b>Advanced still works.</b> Every screen your Telegram
-        console bot has is there, and so is everything you can do with it: businesses, conversations,
-        documents, the price list, your GitHub token and the update itself.</p>
-      <button class="btn btn-primary btn-sm" id="goAdv">Open Advanced</button>
+      <h2 style="margin:0 0 8px;font-size:17px">This browser cannot reach your deployment</h2>
+      <p style="margin:0 0 13px;color:var(--ink-2)">Your deployment is running and answering customers
+        normally. The problem is only between it and this page: builds from before the web console existed
+        answer the browser's permission check with an error, so the browser refuses every call this page
+        makes. Not some of them, all of them, which is why nothing here has anything in it.</p>
+      <p style="margin:0 0 14px;color:var(--ink-2)"><b>Your Telegram console bot still does everything.</b>
+        Businesses, conversations, documents, the price list, your GitHub token and the update itself are
+        all there and unaffected. Nothing has been lost.</p>
     </div>
     <div class="card" style="padding:24px;max-width:760px;border-color:var(--brand-line);background:var(--brand-soft)">
-      <h3 style="margin:0 0 8px;font-size:16px;color:var(--brand-ink)">Before you press Update</h3>
+      <h3 style="margin:0 0 8px;font-size:16px;color:var(--brand-ink)">Do not press Update in the bot yet</h3>
       <p style="margin:0 0 12px">The update in your current build copies every file from upstream, and that
         includes <code>wrangler.jsonc</code>, the file naming your Worker and the database holding your
         conversations. Upstream's copy has placeholders in those places, so running that update would point
-        this deployment at a database that does not exist.</p>
-      <p style="margin:0">That is fixed upstream. Getting the fix takes one sync that leaves
-        <code>wrangler.jsonc</code> alone, and after it every update from this page is a single click.
-        Ask whoever set this up to run <code>scripts/first-sync.sh</code> once.</p>
+        this deployment at a database that does not exist. Nothing would be deleted, and nothing would be
+        able to find it either.</p>
+      <p style="margin:0">That is fixed upstream, and the fix cannot be fetched by the thing it fixes.
+        One sync that leaves <code>wrangler.jsonc</code> alone repairs both this page and the update button
+        at the same time: <code>scripts/first-sync.sh</code>, once. Nothing needs deleting or redeploying,
+        and your database, bots and conversations stay exactly where they are.</p>
     </div>`;
-  $("goAdv").onclick = () => go("advanced");
 }
 
 // ------------------------------------------------------------------- palette
