@@ -38,6 +38,7 @@ function html(body: string, status = 200): Response {
   });
 }
 
+import { handleConsoleApi } from "./web/console-api.js";
 import { handleConsoleRequest } from "./web/console.js";
 
 export default {
@@ -86,7 +87,14 @@ export default {
     // the console bot, so the same operator checks apply as on Telegram.
     if (url.pathname.startsWith("/admin/")) {
       await ensureSchema(env);
-      const handled = await handleConsoleRequest(env, request, url.pathname.slice("/admin".length));
+      const rest = url.pathname.slice("/admin".length);
+      // The data API the web console lays out for itself, checked first so a
+      // path under it never falls through to the screen renderer.
+      if (rest.startsWith("/api/")) {
+        const answered = await handleConsoleApi(env, request, rest.slice("/api".length));
+        if (answered !== null) return answered;
+      }
+      const handled = await handleConsoleRequest(env, request, rest);
       if (handled !== null) return handled;
     }
 

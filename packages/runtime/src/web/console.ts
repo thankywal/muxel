@@ -61,7 +61,7 @@ async function pair(env: Env, code: string): Promise<Response> {
 }
 
 /** Resolves a bearer token back to the operator it was issued for. */
-async function operatorFor(env: Env, request: Request): Promise<number | null> {
+export async function operatorFor(env: Env, request: Request): Promise<number | null> {
   const header = request.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (token.length < 32) return null;
@@ -70,7 +70,7 @@ async function operatorFor(env: Env, request: Request): Promise<number | null> {
 }
 
 /** The headers every answer from this door carries. */
-const CORS = {
+export const CORS = {
   // The console is a client of this deployment, not a part of it, so it is
   // served from somewhere else by design.
   "access-control-allow-origin": "*",
@@ -78,7 +78,7 @@ const CORS = {
   "access-control-allow-methods": "POST, OPTIONS",
 } as const;
 
-function json(body: unknown, status = 200): Response {
+export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
