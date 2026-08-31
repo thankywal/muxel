@@ -69,16 +69,21 @@ async function operatorFor(env: Env, request: Request): Promise<number | null> {
   return owner === null ? null : Number(owner);
 }
 
+/** The headers every answer from this door carries. */
+const CORS = {
+  // The console is a client of this deployment, not a part of it, so it is
+  // served from somewhere else by design.
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "content-type, authorization",
+  "access-control-allow-methods": "POST, OPTIONS",
+} as const;
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json",
-      // The console is served from a different origin by design: it is a client
-      // of this deployment, not a part of it.
-      "access-control-allow-origin": "*",
-      "access-control-allow-headers": "content-type, authorization",
-      "access-control-allow-methods": "POST, OPTIONS",
+      ...CORS,
       "cache-control": "no-store",
     },
   });
@@ -93,7 +98,13 @@ export async function handleConsoleRequest(
   request: Request,
   path: string,
 ): Promise<Response | null> {
-  if (request.method === "OPTIONS") return json({}, 204);
+  // A preflight is answered with no body at all. Handing 204 a body is a
+  // TypeError in Workers, which surfaced as a 500 on every OPTIONS.
+  // A preflight is answered with no body at all. Handing 204 a body is a
+  // TypeError in Workers, which surfaced as a 500 on every OPTIONS.
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS });
+  }
   if (request.method !== "POST") return null;
 
   if (path === "/pair") {
