@@ -684,7 +684,14 @@ async function viewSettings() {
         out.ok
           ? '<p class="muted" style="margin:8px 0 0;font-size:13.5px">Cloudflare builds and deploys it from your repository. Give it a couple of minutes, then reload.</p>'
           : ""
-      }`;
+      }
+      ${(out.notes ?? [])
+        .map(
+          (note) =>
+            `<p style="margin:10px 0 0;padding:11px 14px;background:#fff7ed;border:1px solid #fed7aa;
+              border-radius:11px;font-size:13.5px;color:var(--orange-ink)">${h(note)}</p>`,
+        )
+        .join("")}`;
   };
 }
 
