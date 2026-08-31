@@ -148,8 +148,24 @@ export interface ModelPreset {
   readonly requiresProviderKey: boolean;
 }
 
-/** Selectable models, cheapest first, addressed by index to keep payloads short. */
+/**
+ * Selectable models, addressed by index to keep callback payloads short. The
+ * index never leaves a single callback: `setmdl` resolves it and stores
+ * `preset.id`, so this list can be reordered without moving anyone's choice.
+ *
+ * Ordered by what a shop should reach for first rather than by price. Qwen 3.8
+ * leads because it is the only entry that carries a long context, tool calling
+ * and vision at once without asking the operator for a provider key, which is
+ * what a shop answering photographed price lists actually needs. It is not on
+ * Cloudflare's paid billing list, so it stays inside the free daily allowance
+ * the setup guide promises.
+ */
 export const MODEL_PRESETS: readonly ModelPreset[] = [
+  {
+    label: "Qwen 3.8 27B",
+    id: "workers-ai/@cf/qwen/qwen3.8-27b",
+    requiresProviderKey: false,
+  },
   {
     label: "Gemma 4 26B",
     id: "workers-ai/@cf/google/gemma-4-26b-a4b-it",
