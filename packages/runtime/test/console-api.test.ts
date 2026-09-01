@@ -158,7 +158,8 @@ vi.mock("../src/cloudflare/allowance.js", () => ({
   neuronsFor: (a: { rate: Record<string, number> }, u: { model: string; inputTokens: number; outputTokens: number }) =>
     a.rate[u.model] === undefined ? null : Math.round((u.inputTokens + u.outputTokens) * a.rate[u.model]),
 }));
-vi.mock("../src/cloudflare/account.js", () => ({
+vi.mock("../src/cloudflare/account.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   accountName: vi.fn(async () => "Than Kywal's Account"),
 }));
 
@@ -337,5 +338,25 @@ describe("the console data API", () => {
     const response = await call("OPTIONS", "/overview");
     expect(response.status).toBe(204);
     expect(response.body).toBeNull();
+  });
+});
+
+describe("who the console says you are", () => {
+  it("names the Cloudflare account, not the role", async () => {
+    operator = "u1";
+    const me = (await (await call("GET", "/me")).json()) as { label: string; subdomain: string | null };
+    expect(me.label).toBe("Than Kywal's Account");
+  });
+
+  it("carries the handle out of the address it was asked at", async () => {
+    // For a browser talking to a deployment whose read token has not been
+    // added yet: the account is in the hostname, and costs nothing to read.
+    operator = "u1";
+    const response = await handleConsoleApi(
+      env,
+      new Request("https://sunrise.nandar.workers.dev/admin/api/me"),
+      "/me",
+    );
+    expect(((await response.json()) as { subdomain: string | null }).subdomain).toBe("nandar");
   });
 });

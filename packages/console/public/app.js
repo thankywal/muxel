@@ -585,11 +585,34 @@ async function whoAmI() {
     if (ok && data.locale) state.locale = data.locale;
   });
   const { ok, data } = await api("me", { quiet: true });
-  if (!ok || !data.label) return;
-  const label = data.label || "Operator";
+  if (!ok) return;
+  // A deployment that predates this sends neither name, and its "Owner" is a
+  // role. The address it is being talked to is in this browser either way, and
+  // the account's workers.dev subdomain is inside it, so the name is right on
+  // an old deployment as well as a new one.
+  const label = data.account || data.subdomain || subdomainOf(worker) || data.label || "Operator";
   if ($("whoName")) $("whoName").textContent = label;
   if ($("whoRole")) $("whoRole").textContent = data.role ?? "signed in";
   if ($("avatar")) $("avatar").textContent = label.trim().charAt(0).toUpperCase() || "·";
+}
+
+/**
+ * The account's workers.dev handle, out of its own address.
+ *
+ * `sunrise.nandar.workers.dev` is served from the account whose subdomain is
+ * `nandar`. Null on a custom domain, where the hostname says nothing about
+ * whose account is behind it.
+ */
+function subdomainOf(address) {
+  let host;
+  try {
+    host = new URL(address).hostname;
+  } catch {
+    return null;
+  }
+  if (!host.endsWith(".workers.dev")) return null;
+  const labels = host.slice(0, -".workers.dev".length).split(".");
+  return labels.length >= 2 ? labels[labels.length - 1] || null : null;
 }
 
 // -------------------------------------------------------------------- router

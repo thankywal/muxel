@@ -89,7 +89,7 @@ import { versionStatus } from "../updates.js";
 import { ask } from "../assistant/loop.js";
 import { decide } from "../assistant/decide.js";
 import { allowanceNow, neuronsFor, type Allowance } from "../cloudflare/allowance.js";
-import { accountName } from "../cloudflare/account.js";
+import { accountName, workersSubdomain } from "../cloudflare/account.js";
 import { cloudflareAccess, forgetAccess } from "../cloudflare/access.js";
 import {
   chatTranscript,
@@ -815,14 +815,22 @@ export async function handleConsoleApi(
       accountName(env),
     ]);
     // Whoever this deployment belongs to, named by the account it runs in.
-    // "Owner" is a role, and it was the only thing on the badge for anyone who
-    // had not set a label. It stays as the last resort, not the first answer.
+    //
+    // The account's real name first, when a read token has been added. Failing
+    // that, the workers.dev subdomain, which is in the address this request
+    // arrived at and so costs nothing and needs no permission. The label from
+    // the operator row is below both because nothing sets it today. "Owner" is
+    // a role, not a person, and it is the last resort rather than the first
+    // answer it used to be.
+    const subdomain = workersSubdomain(request.url);
     return json({
       label:
-        row?.label?.trim() ||
         account ||
+        subdomain ||
+        row?.label?.trim() ||
         (operator?.role === "owner" ? "Owner" : "Operator"),
       account,
+      subdomain,
       role: operator?.role ?? "operator",
     });
   }

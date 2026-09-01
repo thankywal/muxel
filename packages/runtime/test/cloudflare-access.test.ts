@@ -15,6 +15,7 @@ vi.mock("../src/web/secrets-vault.js", () => ({
 }));
 
 const { cloudflareAccess } = await import("../src/cloudflare/access.js");
+const { workersSubdomain } = await import("../src/cloudflare/account.js");
 
 /** A KV that actually remembers, so the caching is real and not asserted. */
 function kv() {
@@ -114,5 +115,22 @@ describe("when there is no token", () => {
     vi.stubGlobal("fetch", vi.fn(async () => accounts([{ id: "acc1", name: "One" }])));
     const access = await cloudflareAccess({ STATE: kv(), CF_API_TOKEN: "stale" } as never);
     expect(access?.token).toBe("pasted");
+  });
+});
+
+describe("naming the owner without a token", () => {
+  it("takes the account's handle out of the address it was asked at", () => {
+    // Every account has a workers.dev subdomain and it is in the hostname, so
+    // this needs no token and no permission. It beats calling someone "Owner".
+    expect(workersSubdomain("https://muxel.nandar.workers.dev/admin/api/me")).toBe("nandar");
+    expect(workersSubdomain("https://sunrise-bakery.thankywal.workers.dev/")).toBe("thankywal");
+  });
+
+  it("says nothing on a custom domain, where the hostname names nobody", () => {
+    expect(workersSubdomain("https://bot.sunrisebakery.com/admin/api/me")).toBeNull();
+    // The account's own bare subdomain has no worker in front of it, so there
+    // is no account half to read.
+    expect(workersSubdomain("https://nandar.workers.dev/")).toBeNull();
+    expect(workersSubdomain("not a url")).toBeNull();
   });
 });
