@@ -52,6 +52,7 @@ const state = {
   agent: null,
   openCustomer: null,
   skills: null,
+  assistant: null,
   locale: "en",
 };
 
@@ -130,6 +131,7 @@ const nameOf = (c) => c?.displayName || (c?.username ? `@${c.username}` : "") ||
 
 const ICONS = {
   overview: '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z"/>',
+  assistant: '<path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4z"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z"/>',
   diagnostics: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   agents: '<rect x="3.5" y="8" width="17" height="11" rx="3.5"/><path d="M12 3.5v4.5M8.5 13h.01M15.5 13h.01"/><circle cx="12" cy="3" r="1.4"/><path d="M1.5 12v3M22.5 12v3"/>',
@@ -234,6 +236,7 @@ function donut(parts, total) {
 const NAV = [
   { group: "MAIN", items: [
     { id: "overview", label: "Overview" },
+    { id: "assistant", label: "Assistant" },
     { id: "inbox", label: "Inbox" },
     { id: "agents", label: "Agents" },
     { id: "businesses", label: "Businesses" },
@@ -267,6 +270,7 @@ const NEEDS = {
   settings: 1,
   advanced: 1,
   inbox: 2,
+  assistant: 7,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -277,6 +281,7 @@ const NEEDS = {
 const TITLES = {
   overview: ["Overview", "Monitor your agents, channels, and conversations."],
   inbox: ["Inbox", "Conversations a customer is waiting on a person for."],
+  assistant: ["Assistant", "It reads everything, and changes nothing without asking you first."],
   diagnostics: ["Diagnostics", "What this deployment can and cannot do right now."],
   agents: ["Agents", "Create and manage the assistants that answer for you."],
   businesses: ["Businesses", "What each agent answers about, and where it answers."],
@@ -413,6 +418,7 @@ async function render() {
   const draw = {
     overview: viewOverview,
     inbox: viewInbox,
+    assistant: viewAssistant,
     diagnostics: viewDiagnostics,
     agents: viewAgents,
     businesses: viewBusinesses,
@@ -772,6 +778,173 @@ async function viewDiagnostics() {
     </div>`;
   wireGoto();
   $("openAdvanced").onclick = () => go("advanced");
+}
+
+const APPROVAL_TAG = {
+  waiting: '<span class="tag amber">Waiting for you</span>',
+  approved: '<span class="tag green">Done</span>',
+  declined: '<span class="tag grey"><span class="d"></span>Declined</span>',
+  failed: '<span class="tag amber">Failed</span>',
+};
+
+/**
+ * The owner talking to their own deployment.
+ *
+ * It reads anything and changes nothing on its own. A change arrives as a card
+ * saying exactly what would happen, and it does not happen until the button is
+ * pressed. That is enforced in the deployment, not here: this page draws what
+ * it is told and cannot approve anything by accident.
+ */
+async function viewAssistant() {
+  const { ok, data } = await api("assistant");
+  if (!ok) return;
+  state.assistant = data;
+  drawAssistant();
+}
+
+function drawAssistant() {
+  const { messages = [], approvals = [] } = state.assistant ?? {};
+  const waiting = approvals.filter((a) => a.state === "waiting");
+  const cardsFor = (messageId) => approvals.filter((a) => a.messageId === messageId);
+
+  $("view").innerHTML = `
+    <div class="card chat" style="max-width:900px;height:76vh">
+      <div class="chat-head">
+        <div><b style="font-size:14.5px">Your assistant</b>
+          <div style="font-size:12px;color:var(--muted)">${
+            waiting.length > 0
+              ? `${waiting.length} change${waiting.length === 1 ? "" : "s"} waiting for you`
+              : "Reads everything, changes nothing without asking"
+          }</div></div>
+        <button class="btn btn-ghost btn-sm" id="clearChat">Start again</button>
+      </div>
+      <div class="msgs" id="asMsgs">${
+        messages.length === 0
+          ? `<div class="empty" style="margin:auto;max-width:520px">
+               <h3>Ask it anything</h3>
+               <p>It can read your businesses, your price lists, what the agents were asked and what they
+                  answered. It can propose changes too, and every one of those waits for you.</p>
+               <div class="suggests">${[
+                 "What is waiting for me?",
+                 "Why did Sunrise Bakery say it did not know about delivery?",
+                 "Add a rule: no deliveries on Sunday",
+                 "Which agent answered the most today?",
+               ]
+                 .map((q) => `<button class="btn btn-ghost btn-sm" data-ask="${h(q)}">${h(q)}</button>`)
+                 .join("")}</div>
+             </div>`
+          : messages
+              .map((m) => {
+                const cards = m.role === "assistant" ? cardsFor(m.id) : [];
+                return `<div class="msg ${m.role === "user" ? "human" : "bot"}" style="max-width:76%">
+                    <span class="who">${m.role === "user" ? "You" : "Assistant"} · ${h(ago(m.createdAt))}</span>
+                    <span class="body">${h(m.content)}</span>
+                  </div>
+                  ${cards.map(approvalCard).join("")}`;
+              })
+              .join("")
+      }</div>
+      <form class="composer" id="asSay">
+        <input id="asText" placeholder="Ask about your businesses, or tell it what to change" autocomplete="off">
+        <button class="btn btn-primary btn-sm" type="submit" id="asSend">Send</button>
+      </form>
+    </div>`;
+
+  const box = $("asMsgs");
+  box.scrollTop = box.scrollHeight;
+  $("asSay").onsubmit = sendToAssistant;
+  $("clearChat").onclick = async () => {
+    const choice = await ask("Start again", "This clears the conversation. Nothing you already approved is undone.", [
+      { key: "yes", label: "Clear it", primary: true },
+    ]);
+    if (!choice) return;
+    const { ok } = await api("assistant", { method: "DELETE" });
+    if (ok) viewAssistant();
+  };
+  $("view").querySelectorAll("[data-ask]").forEach((b) => {
+    b.onclick = () => {
+      $("asText").value = b.dataset.ask;
+      sendToAssistant(new Event("submit"));
+    };
+  });
+  $("view").querySelectorAll("[data-approve]").forEach((b) => {
+    b.onclick = () => answerApproval(b.dataset.approve, b.dataset.yes === "1");
+  });
+}
+
+/** One proposed change, and the two buttons that decide it. */
+const approvalCard = (a) => `
+  <div class="approval ${a.state}">
+    <div class="approval-head">
+      <b>${h(a.summary)}</b>
+      ${APPROVAL_TAG[a.state] ?? ""}
+    </div>
+    <div class="approval-what">${h(a.tool)}${
+      Object.keys(a.args).length === 0
+        ? ""
+        : ` · ${h(
+            Object.entries(a.args)
+              .filter(([key]) => key !== "business_id")
+              .map(([key, value]) => `${key}: ${String(value).slice(0, 60)}`)
+              .join(" · "),
+          )}`
+    }</div>
+    ${
+      a.state === "waiting"
+        ? `<div class="approval-acts">
+             <button class="btn btn-ghost btn-sm" data-approve="${h(a.id)}" data-yes="0">No</button>
+             <button class="btn btn-primary btn-sm" data-approve="${h(a.id)}" data-yes="1">Do it</button>
+           </div>`
+        : a.result
+          ? `<div class="approval-what">${h(a.result)}</div>`
+          : ""
+    }
+  </div>`;
+
+async function sendToAssistant(event) {
+  event.preventDefault?.();
+  const input = $("asText");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  input.disabled = true;
+  $("asSend").disabled = true;
+
+  // Its own turn is shown at once, and a line saying it is working, because a
+  // tool loop can take several seconds and a still screen reads as a failure.
+  const box = $("asMsgs");
+  box.insertAdjacentHTML(
+    "beforeend",
+    `<div class="msg human" style="max-width:76%"><span class="who">You · just now</span>
+       <span class="body">${h(text)}</span></div>
+     <div class="msg bot" id="asThinking" style="max-width:76%"><span class="body">Looking…</span></div>`,
+  );
+  box.scrollTop = box.scrollHeight;
+
+  const { ok, data } = await api("assistant", { method: "POST", body: { text } });
+  input.disabled = false;
+  $("asSend").disabled = false;
+  if (!ok) {
+    $("asThinking")?.remove();
+    input.value = text;
+    return;
+  }
+  state.assistant = data;
+  drawAssistant();
+  $("asText").focus();
+}
+
+async function answerApproval(approvalId, yes) {
+  $("view").querySelectorAll("[data-approve]").forEach((b) => (b.disabled = true));
+  const { ok, data } = await api(`assistant/approvals/${approvalId}`, {
+    method: "POST",
+    body: { yes },
+  });
+  if (!ok) return drawAssistant();
+  state.assistant = { ...state.assistant, approvals: data.approvals };
+  state.overview = null;
+  toast(data.message ?? (yes ? "Done." : "Left as it was."));
+  drawAssistant();
 }
 
 // -------------------------------------------------------------------- agents

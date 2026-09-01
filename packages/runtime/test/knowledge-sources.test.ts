@@ -45,6 +45,8 @@ describe("the notes document", () => {
   });
 });
 
+const ingestSrc = readFileSync(new URL("../src/rag/ingest.ts", import.meta.url), "utf8");
+
 describe("the documents nobody uploaded", () => {
   it("names both of them in one list", () => {
     // Adding a third generated kind should be one entry here, not a search for
@@ -52,8 +54,20 @@ describe("the documents nobody uploaded", () => {
     expect([...GENERATED_DOCUMENTS]).toEqual([OWNER_UPDATES_FILENAME, NOTES_FILENAME]);
   });
 
+  it("reads a file in and reads its price list out in one act", () => {
+    // These always happen together and were written out at one call site and
+    // forgotten at the other, so a price list uploaded from the web console was
+    // searchable straight away and produced no items for up to an hour.
+    expect(ingestSrc).toContain("export async function addDocument");
+    expect(ingestSrc).toContain("runExtraction(");
+    for (const path of ["web/console-api.ts", "telegram/admin.ts"]) {
+      const text = readFileSync(new URL("../src/" + path, import.meta.url), "utf8");
+      expect(text, path).not.toContain("ingestDocument(");
+    }
+  });
+
   it("rebuilds each one through the same replacement", () => {
-    const src = readFileSync(new URL("../src/rag/ingest.ts", import.meta.url), "utf8");
+    const src = ingestSrc;
     // Removed before it is written, and removal is what takes the vectors with
     // it. A rebuild that only added would leave the old answer retrievable.
     expect(src).toContain("async function replaceGenerated");

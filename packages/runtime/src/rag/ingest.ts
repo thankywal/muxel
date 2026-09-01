@@ -18,13 +18,14 @@ import {
   createDocument,
   deleteDocument,
   findDocumentByName,
+  getBusiness,
   insertChunks,
   listNotes,
   setDocumentStatus,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
 import { listCorrections, renderOwnerUpdates } from "../products.js";
-import { OWNER_UPDATES_FILENAME } from "./extract.js";
+import { markExtractionPending, OWNER_UPDATES_FILENAME, runExtraction } from "./extract.js";
 import { extractPdfText } from "./pdf.js";
 
 /** Largest upload accepted. Telegram itself caps bot downloads at 20 MB. */
@@ -453,6 +454,46 @@ export async function removeDocument(
   if (ids.length > 0) {
     await env.KNOWLEDGE.deleteByIds(ids);
   }
+}
+
+/**
+ * Takes a file the owner gave, in one act.
+ *
+ * Reading it into the index and reading the price list out of it are two steps
+ * that always happen together, and they were written out at one call site and
+ * forgotten at the other: a price list uploaded from the web console was
+ * searchable straight away and produced no price list items until a scheduled
+ * run came round, which could be an hour.
+ *
+ * Extraction failing is not the upload failing. The document is in and
+ * findable; the items are a second reading of it, and the scheduled run picks
+ * up anything this could not finish.
+ */
+export async function addDocument(env: Env, input: IngestInput): Promise<IngestResult> {
+  const result = await ingestDocument(env, input);
+
+  // A generated document is this deployment's own rendering of rows it already
+  // has. Reading a price list back out of one would be extracting from itself.
+  if ((GENERATED_DOCUMENTS as readonly string[]).includes(input.filename)) {
+    return result;
+  }
+
+  await markExtractionPending(env, { businessId: input.businessId, documentId: result.documentId })
+    .then(async () => {
+      const business = await getBusiness(env, input.businessId);
+      await runExtraction(env, {
+        businessId: input.businessId,
+        documentId: result.documentId,
+        model: business.model,
+      });
+    })
+    .catch((error: unknown) => {
+      console.error("extraction after upload failed", {
+        businessId: input.businessId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  return result;
 }
 
 /** The name the owner's typed notes are indexed under. */

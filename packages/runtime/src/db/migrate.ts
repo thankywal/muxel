@@ -506,6 +506,45 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS business_note_idx ON business_note (business_id, updated_at DESC)`,
     ],
   },
+  {
+    version: 14,
+    statements: [
+      // The owner's own conversation with their deployment.
+      //
+      // Kept apart from `message`, which is a customer talking to a business.
+      // This is the owner talking to the thing that runs the businesses, and
+      // folding the two together would put an owner's instructions into a
+      // transcript the assistant reads back to customers.
+      `CREATE TABLE IF NOT EXISTS operator_message (
+         id         TEXT PRIMARY KEY,
+         user_id    INTEGER NOT NULL,
+         role       TEXT NOT NULL,
+         content    TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS operator_message_idx ON operator_message (user_id, created_at)`,
+
+      // A change the assistant wants to make, waiting for a yes.
+      //
+      // The model never runs a write. It describes one, it lands here, and the
+      // owner's answer runs it. So the record of what was asked exists before
+      // anything happens, and an approval that is never given leaves a row
+      // saying what was declined rather than nothing at all.
+      `CREATE TABLE IF NOT EXISTS operator_approval (
+         id          TEXT PRIMARY KEY,
+         user_id     INTEGER NOT NULL,
+         message_id  TEXT NOT NULL,
+         tool        TEXT NOT NULL,
+         args        TEXT NOT NULL,
+         summary     TEXT NOT NULL,
+         state       TEXT NOT NULL DEFAULT 'waiting',
+         result      TEXT NOT NULL DEFAULT '',
+         created_at  TEXT NOT NULL,
+         decided_at  TEXT
+       )`,
+      `CREATE INDEX IF NOT EXISTS operator_approval_idx ON operator_approval (user_id, state, created_at)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

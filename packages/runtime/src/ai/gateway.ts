@@ -52,6 +52,20 @@ interface CompletionResponse {
  */
 const DEFAULT_OUTPUT_TOKENS = 3000;
 
+/** A tool the model may call, in the shape the chat completions API expects. */
+export interface ToolSpec {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: Record<string, unknown>;
+}
+
+export interface ToolCall {
+  readonly id: string;
+  readonly name: string;
+  /** Whatever the model sent. Never trusted; the caller validates it. */
+  readonly args: Record<string, unknown>;
+}
+
 export interface GenerateInput {
   readonly model: string;
   readonly system: string;
@@ -60,7 +74,21 @@ export interface GenerateInput {
   readonly maxOutputTokens?: number;
   /** Propagated to the gateway so spend can be attributed per business. */
   readonly businessId: string;
+  /** Offered to the model. Absent means an ordinary reply is the only option. */
+  readonly tools?: readonly ToolSpec[];
+  /**
+   * Turns already taken this exchange, including the tool results.
+   *
+   * A tool calling loop has to send back what it did, or the model asks for the
+   * same thing again. These are appended after the user message, in order.
+   */
+  readonly steps?: readonly ChatMessage[];
 }
+
+/** One message in the wire format, so a loop can replay its own working. */
+export type ChatMessage =
+  | { role: "assistant"; content: string | null; tool_calls?: unknown }
+  | { role: "tool"; tool_call_id: string; content: string };
 
 interface Attempt {
   readonly text: string;
@@ -68,6 +96,9 @@ interface Attempt {
   readonly model: string;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
+  readonly toolCalls: readonly ToolCall[];
+  /** The assistant message exactly as it came, to replay into the next turn. */
+  readonly raw: unknown;
 }
 
 /**
@@ -104,6 +135,25 @@ export async function generate(env: Env, input: GenerateInput): Promise<Inferenc
     });
   }
   return toResult(second);
+}
+
+export interface ToolTurn extends InferenceResult {
+  readonly toolCalls: readonly ToolCall[];
+  /** The assistant message as it came, to replay into the next turn. */
+  readonly raw: unknown;
+}
+
+/**
+ * One turn of a tool calling loop.
+ *
+ * Deliberately not `generate`. That retries an empty reply once, because for a
+ * customer answer an empty string is a failure. Here it is the normal shape of
+ * a turn that only called tools, and retrying it would ask the model to do the
+ * same work twice and then act on both answers.
+ */
+export async function converse(env: Env, input: GenerateInput): Promise<ToolTurn> {
+  const attempted = await attempt(env, input, input.maxOutputTokens ?? DEFAULT_OUTPUT_TOKENS);
+  return { ...toResult(attempted), toolCalls: attempted.toolCalls, raw: attempted.raw };
 }
 
 function toResult(attempted: Attempt): InferenceResult {
@@ -143,11 +193,14 @@ const PLATFORM_PREFIX = "workers-ai/";
  */
 const THINKING_OFF = { chat_template_kwargs: { enable_thinking: false } } as const;
 
-function buildMessages(input: GenerateInput): { role: string; content: string }[] {
+function buildMessages(input: GenerateInput): unknown[] {
   return [
     { role: "system", content: input.system },
     ...input.history.map((turn) => ({ role: turn.role, content: turn.content })),
     { role: "user", content: input.userMessage },
+    // What the loop has already done this exchange, in order. Without these the
+    // model is asked the same question again and calls the same tool again.
+    ...(input.steps ?? []),
   ];
 }
 
@@ -182,10 +235,26 @@ async function attemptOnPlatform(
       messages: buildMessages(input),
       max_tokens: maxOutputTokens,
       ...THINKING_OFF,
+      ...(input.tools === undefined || input.tools.length === 0
+        ? {}
+        : {
+            tools: input.tools.map((tool) => ({
+              type: "function",
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              },
+            })),
+          }),
     } as never,
   )) as {
     response?: string;
-    choices?: readonly { message?: { content?: string }; finish_reason?: string }[];
+    tool_calls?: unknown;
+    choices?: readonly {
+      message?: { content?: string; tool_calls?: unknown };
+      finish_reason?: string;
+    }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
 
@@ -193,12 +262,18 @@ async function attemptOnPlatform(
   // use the chat completion shape. Both are accepted so a model swap does not
   // become a code change.
   const choice = raw.choices?.[0];
+  // The binding puts tool calls beside `response` on the older shape and inside
+  // the message on the newer one, so both are read for the same reason the text
+  // is: a model swap should not become a code change.
+  const message = choice?.message ?? { tool_calls: raw.tool_calls };
   return {
     text: choice?.message?.content ?? raw.response ?? "",
     finishReason: choice?.finish_reason ?? null,
     model: input.model,
     inputTokens: raw.usage?.prompt_tokens ?? null,
     outputTokens: raw.usage?.completion_tokens ?? null,
+    toolCalls: readToolCalls(message),
+    raw: message,
   };
 }
 
@@ -229,6 +304,18 @@ async function attemptOnGateway(
       model: input.model,
       max_tokens: maxOutputTokens,
       messages: buildMessages(input),
+      ...(input.tools === undefined || input.tools.length === 0
+        ? {}
+        : {
+            tools: input.tools.map((tool) => ({
+              type: "function",
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters,
+              },
+            })),
+          }),
     }),
   });
 
@@ -253,7 +340,43 @@ async function attemptOnGateway(
     model: payload.model ?? input.model,
     inputTokens: payload.usage?.prompt_tokens ?? null,
     outputTokens: payload.usage?.completion_tokens ?? null,
+    toolCalls: readToolCalls(choice?.message),
+    raw: choice?.message ?? null,
   };
+}
+
+/**
+ * Reads the tool calls out of a reply.
+ *
+ * The arguments arrive as a JSON string the model wrote, so they can be
+ * anything, including not JSON at all. A call whose arguments will not parse is
+ * dropped rather than guessed at: the model asked for something unreadable, and
+ * inventing what it probably meant is how a delete runs on the wrong row.
+ */
+function readToolCalls(message: unknown): ToolCall[] {
+  const raw = (message as { tool_calls?: unknown } | undefined)?.tool_calls;
+  if (!Array.isArray(raw)) return [];
+  const calls: ToolCall[] = [];
+  for (const [index, entry] of raw.entries()) {
+    const call = entry as { id?: string; function?: { name?: string; arguments?: unknown } };
+    const name = call.function?.name;
+    if (typeof name !== "string" || name.length === 0) continue;
+    const args = call.function?.arguments;
+    let parsed: Record<string, unknown> = {};
+    if (typeof args === "string" && args.trim().length > 0) {
+      try {
+        const value = JSON.parse(args) as unknown;
+        if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+        parsed = value as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+    } else if (typeof args === "object" && args !== null && !Array.isArray(args)) {
+      parsed = args as Record<string, unknown>;
+    }
+    calls.push({ id: call.id ?? `call_${index}`, name, args: parsed });
+  }
+  return calls;
 }
 
 /**

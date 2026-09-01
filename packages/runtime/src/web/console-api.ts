@@ -86,9 +86,12 @@ import { clearSecret, hasSecret, putSecret } from "./secrets-vault.js";
 import { runSelfUpdate, sourceRepoFor, SOURCE_REPO_KEY } from "./self-update.js";
 import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
+import { ask } from "../assistant/loop.js";
+import { decide } from "../assistant/decide.js";
+import { clearOperatorTranscript, listApprovals, operatorTranscript } from "../assistant/store.js";
 import {
+  addDocument,
   GENERATED_DOCUMENTS,
-  ingestDocument,
   NOTES_FILENAME,
   removeDocument,
   syncNotes,
@@ -148,8 +151,9 @@ async function businessCard(env: Env, businessId: string) {
  *   4  agent configuration: rules and features
  *   5  telling the deployment its own source repository
  *   6  notes, and the knowledge view over every source
+ *   7  the owner's assistant, and the changes it asks permission for
  */
-export const API_REVISION = 6;
+export const API_REVISION = 7;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -443,6 +447,41 @@ export async function handleConsoleApi(
     if (token.length === 0) return json({ error: "bad_token" }, 400);
     const moved = await moveConsoleBot(env, token);
     return moved.ok ? json(moved) : json({ error: moved.reason }, 400);
+  }
+
+  // The owner's own assistant.
+  if (segments[0] === "assistant") {
+    if (method === "GET" && segments.length === 1) {
+      const [messages, approvals] = await Promise.all([
+        operatorTranscript(env, userId, 60),
+        listApprovals(env, userId, 40),
+      ]);
+      return json({ messages, approvals });
+    }
+    if (method === "POST" && segments.length === 1) {
+      const body = (await request.json().catch(() => ({}))) as { text?: string };
+      const text = String(body.text ?? "").trim();
+      if (text.length === 0) return json({ error: "empty" }, 400);
+      const reply = await ask(env, userId, text.slice(0, 4000));
+      return json({
+        ...reply,
+        messages: await operatorTranscript(env, userId, 60),
+        approvals: await listApprovals(env, userId, 40),
+      });
+    }
+    if (method === "DELETE" && segments.length === 1) {
+      await clearOperatorTranscript(env, userId);
+      return json({ ok: true, messages: [], approvals: [] });
+    }
+    // POST /assistant/approvals/:id  { yes: boolean }
+    if (method === "POST" && segments[1] === "approvals" && segments[2] !== undefined) {
+      const body = (await request.json().catch(() => ({}))) as { yes?: boolean };
+      const outcome = await decide(env, userId, segments[2], body.yes === true);
+      return json({
+        ...outcome,
+        approvals: await listApprovals(env, userId, 40),
+      });
+    }
   }
 
   // GET /agents — the same businesses, with what the table column needs.
@@ -988,7 +1027,7 @@ export async function handleConsoleApi(
         if (file.byteLength === 0) return json({ error: "no_file" }, 400);
         const filename = (request.headers.get("x-filename") ?? "document").slice(0, 120);
         try {
-          const result = await ingestDocument(env, {
+          const result = await addDocument(env, {
             businessId,
             filename,
             contentType: request.headers.get("content-type") ?? "application/octet-stream",

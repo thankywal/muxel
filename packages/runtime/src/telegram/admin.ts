@@ -73,7 +73,7 @@ import { CapturingClient } from "../web/capture.js";
 import { clearSecret, hasSecret, putSecret } from "../web/secrets-vault.js";
 import { runSelfUpdate } from "../web/self-update.js";
 import {
-  ingestDocument,
+  addDocument,
   MAX_DOCUMENT_BYTES,
   removeDocument,
 } from "../rag/ingest.js";
@@ -2053,7 +2053,7 @@ async function handleDataUpload(
     const file = await download(client, input.message);
     const name = escapeHtml(file.filename);
 
-    const result = await ingestDocument(env, {
+    const result = await addDocument(env, {
       businessId,
       filename: file.filename,
       contentType: file.contentType,
@@ -2107,18 +2107,10 @@ async function handleDataUpload(
         .catch(() => undefined);
     }
 
-    // The products view reads what this file says. Attempted now for
-    // immediate feedback; the scheduled run finishes it if this invocation
-    // runs out of road.
-    if (file.filename !== OWNER_UPDATES_FILENAME) {
-      await markExtractionPending(env, { businessId, documentId: result.documentId });
-      const business = await getBusiness(env, businessId);
-      await runExtraction(env, {
-        businessId,
-        documentId: result.documentId,
-        model: business.model,
-      }).catch(() => undefined);
-    }
+    // The products view reads what this file says, and addDocument has already
+    // attempted it: reading the file in and reading the price list out of it
+    // are one act, and doing the second here is what left the web console's
+    // uploads waiting for a scheduled run.
   } catch (error) {
     console.error("data upload failed", {
       businessId,

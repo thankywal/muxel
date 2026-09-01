@@ -258,6 +258,17 @@ tbody tr.click:hover { background: var(--surface-2); }
 .answer-row input:focus { outline: none; border-color: var(--blue); }
 .answer-note { margin: 9px 0 0; font-size: 12.5px; color: var(--muted); max-width: 620px; }
 
+/* ---- the assistant's proposed changes ---- */
+.approval { align-self: flex-end; max-width: 76%; border: 1px solid var(--brand-line);
+            background: var(--brand-soft); border-radius: 13px; padding: 12px 14px; }
+.approval.approved { border-color: var(--line); background: var(--green-soft); }
+.approval.declined, .approval.failed { border-color: var(--line); background: var(--surface-2); }
+.approval-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.approval-head b { font-size: 13.5px; }
+.approval-what { color: var(--muted); font-size: 12px; margin-top: 5px; word-break: break-word; }
+.approval-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 11px; }
+.suggests { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+
 /* ---- forms ---- */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field label { font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
