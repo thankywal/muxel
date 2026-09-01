@@ -295,6 +295,25 @@ input[type="color"] { border: 1px solid var(--line); border-radius: 9px; backgro
 .facts div { font-size: 13px; color: var(--ink-2); padding: 6px 10px; background: var(--surface-2);
              border: 1px solid var(--line); border-radius: 8px; }
 
+/* ---- switches and feature rows ---- */
+.feature { display: flex; align-items: center; gap: 16px; padding: 13px 0;
+           border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+.feature:last-of-type { border-bottom: none; }
+.feature > div { flex: 1; min-width: 0; }
+.feature b { display: block; font-size: 13.5px; }
+.feature small { color: var(--muted); font-size: 12.5px; line-height: 1.5; display: block; margin-top: 2px; }
+.feature.off { opacity: .55; cursor: default; }
+.switch { flex: none; }
+.switch input { appearance: none; width: 38px; height: 22px; border-radius: 999px;
+                background: var(--line); position: relative; cursor: pointer; transition: background .15s; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+                       border-radius: 50%; background: #fff; transition: transform .15s;
+                       box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.switch input:checked { background: var(--green); }
+.switch input:checked::after { transform: translateX(16px); }
+.switch input:disabled { opacity: .5; cursor: default; }
+tr.dim td { opacity: .5; }
+
 /* ---- overlays ---- */
 .modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,.4); display: grid; place-items: center;
             z-index: 60; padding: 20px; backdrop-filter: blur(2px); }

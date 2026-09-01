@@ -46,6 +46,8 @@ const state = {
   /** How many conversations are waiting, for the badge beside Inbox. */
   waiting: 0,
   bizTab: "overview",
+  agentTab: "model",
+  agent: null,
   openCustomer: null,
   skills: null,
   locale: "en",
@@ -746,7 +748,7 @@ async function viewDiagnostics() {
 // -------------------------------------------------------------------- agents
 
 async function viewAgents() {
-  if (state.businessId) return agentConversations();
+  if (state.businessId) return agentConfig();
   const { data } = await api("agents");
   const all = data.agents ?? [];
   const shown = all.filter((a) => (state.filter === "all" ? true : state.filter === "live" ? a.live : !a.live));
@@ -794,60 +796,407 @@ async function viewAgents() {
 }
 
 /** One agent, its conversations, and the transcript beside them. */
-async function agentConversations() {
-  const d = await overview();
-  const agent = (d.businesses ?? []).find((b) => b.id === state.businessId);
-  if (agent === undefined) {
+/**
+ * One agent, and every setting that changes how it answers.
+ *
+ * Not its conversations. Those are in Messages and in the Inbox, where they
+ * belong: reading a chat and configuring the thing that writes the chats are
+ * two jobs, and putting them on one screen meant the settings had nowhere to
+ * live at all.
+ *
+ * Model, persona, skills, rules and features, which is the shape a person
+ * already expects. Every switch under Features is one the deployment actually
+ * reads before it answers; there is nothing here that only looks like it does
+ * something.
+ */
+async function agentConfig() {
+  const { ok, data } = await api(`businesses/${state.businessId}/agent`);
+  if (!ok) {
     state.businessId = null;
     return render();
   }
+  state.agent = data;
+  const TABS = [
+    ["model", "Model"],
+    ["persona", "Persona"],
+    ["skills", "Skills"],
+    ["rules", "Rules"],
+    ["features", "Features"],
+  ];
+
   $("view").innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
       <a href="#" id="back" style="color:var(--muted);font-size:13px">← All agents</a>
-      <b style="font-size:15px">${h(agent.name)}</b>
-      ${[agent.telegram ? chanTag("telegram") : "", agent.web ? chanTag("web") : ""].filter(Boolean).join(" ")}
+      <b style="font-size:16px">${h(data.name)}</b>
+      ${[
+        data.features.telegram ? chanTag("telegram") : "",
+        data.features.web ? chanTag("web") : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       <span style="flex:1"></span>
-      <button class="btn btn-ghost btn-sm" id="openBiz">Open its business</button>
+      <button class="btn btn-ghost btn-sm" id="openChats">Conversations</button>
+      <button class="btn btn-ghost btn-sm" id="openBiz">Its business</button>
     </div>
-    <div class="split">
-      <div class="card list" id="convList"><p class="loading">Loading…</p></div>
-      <div id="convPane"></div>
-    </div>`;
+    <div class="subnav">${TABS.map(
+      ([id, label]) => `<button data-atab="${id}" class="${state.agentTab === id ? "on" : ""}">${label}</button>`,
+    ).join("")}</div>
+    <div id="agentTab"><p class="loading">Loading…</p></div>`;
+
   $("back").onclick = (e) => (e.preventDefault(), go("agents", { businessId: null, customerId: null }));
-  $("openBiz").onclick = () => go("businesses", { businessId: agent.id });
-  loadCustomers();
+  $("openChats").onclick = () => go("messages", { customerId: null });
+  $("openBiz").onclick = () => go("businesses", { businessId: state.businessId });
+  $("view").querySelectorAll("[data-atab]").forEach(
+    (t) => (t.onclick = () => ((state.agentTab = t.dataset.atab), agentConfig())),
+  );
+
+  ({
+    model: agentModel,
+    persona: agentPersona,
+    skills: agentSkills,
+    rules: agentRules,
+    features: agentFeatures,
+  }[state.agentTab] ?? agentModel)();
 }
 
-async function loadCustomers() {
-  const { data } = await api(`businesses/${state.businessId}/customers`);
-  const customers = data.customers ?? [];
-  const list = $("convList");
-  if (!list) return;
-  if (customers.length === 0) {
-    list.innerHTML = '<p class="loading">Nobody has written to this agent yet.</p>';
-    $("convPane").innerHTML =
-      '<div class="card empty"><h3>No conversations</h3><p>They appear the moment a customer sends the first message.</p></div>';
-    return;
-  }
-  list.innerHTML = customers
-    .map(
-      (c) => `<div class="it ${c.id === state.customerId ? "on" : ""}" data-customer="${h(c.id)}">
-        <div class="grow"><b>${h(nameOf(c))}</b><small>${c.messageCount} messages · ${h(ago(c.lastSeen))}</small></div>
-      </div>`,
-    )
-    .join("");
-  list.querySelectorAll(".it").forEach((it) => {
-    it.onclick = () => {
-      state.customerId = it.dataset.customer;
-      list.querySelectorAll(".it").forEach((o) => o.classList.toggle("on", o === it));
-      openConversation();
+function agentModel() {
+  const a = state.agent;
+  $("agentTab").innerHTML = `
+    <div class="card" style="max-width:720px">
+      <div class="card-head"><h2>Which model answers</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13px;margin:0 0 14px">Every one of these runs inside your own
+          Cloudflare account, on your own daily allowance. A bigger model reads more of your documents before
+          it answers and spends more of that allowance doing it.</p>
+        <div class="picks">${(a.models ?? [])
+          .map(
+            (m) => `<label class="pick"><input type="radio" name="mdl" value="${h(m.id)}" ${
+              m.id === a.model ? "checked" : ""
+            }>
+              <div><b>${h(m.label)}</b><small>${h(m.id)}</small></div></label>`,
+          )
+          .join("")}</div>
+        <p style="color:var(--muted);font-size:12.5px;margin:0">Today this agent has answered
+          ${num(a.usage?.messages)} messages, using
+          ${num((a.usage?.inputTokens ?? 0) + (a.usage?.outputTokens ?? 0))} tokens.</p>
+      </div>
+    </div>`;
+  $("agentTab").querySelectorAll('input[name="mdl"]').forEach((radio) => {
+    radio.onchange = async () => {
+      const { ok } = await api(`businesses/${state.businessId}`, {
+        method: "PATCH",
+        body: { model: radio.value },
+      });
+      if (!ok) return;
+      state.overview = null;
+      toast("Model changed.");
     };
   });
-  if (!state.customerId || !customers.some((c) => c.id === state.customerId)) {
-    state.customerId = customers[0].id;
-    list.querySelector(".it")?.classList.add("on");
-  }
-  openConversation();
+}
+
+/** The persona is the business's instructions; this is the same words. */
+async function agentPersona() {
+  const a = state.agent;
+  $("agentTab").innerHTML = `
+    <div class="card" style="max-width:760px">
+      <div class="card-head"><h2>How it should speak</h2>
+        <span style="font-size:12.5px;color:var(--muted)"><span id="personaCount">${
+          (a.persona ?? "").length
+        }</span> / 8000</span></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13px;margin:0 0 12px">Its tone, what it will and will not
+          promise, anything your price list and documents do not say. Standing instructions that can be
+          switched on and off one at a time belong under Rules instead.</p>
+        <textarea id="persona" rows="14" style="width:100%;resize:vertical"
+          placeholder="Answer in a warm, short style. Never promise a delivery date. If someone asks for a discount, tell them to ask the owner."
+        >${h(a.persona ?? "")}</textarea>
+        <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="savePersona">Save</button>
+          <span style="flex:1"></span>
+          <span id="personaSaved" style="font-size:12.5px;color:var(--green)"></span>
+        </div>
+      </div>
+    </div>`;
+  const box = $("persona");
+  box.oninput = () => ($("personaCount").textContent = box.value.length);
+  $("savePersona").onclick = async () => {
+    $("savePersona").disabled = true;
+    const { ok } = await api(`businesses/${state.businessId}/prompt`, {
+      method: "PUT",
+      body: { prompt: box.value },
+    });
+    $("savePersona").disabled = false;
+    if (!ok) return;
+    state.agent.persona = box.value;
+    $("personaSaved").textContent = "Saved";
+    setTimeout(() => ($("personaSaved").textContent = ""), 2500);
+  };
+}
+
+/**
+ * The ready made personas.
+ *
+ * Said plainly: using one replaces what is written under Persona. They are
+ * starting points, not capabilities that stack, and calling them anything else
+ * would be the console describing a product it does not have.
+ */
+function agentSkills() {
+  const a = state.agent;
+  const locale = state.locale ?? "en";
+  $("agentTab").innerHTML = `
+    <div class="card" style="max-width:760px">
+      <div class="card-head"><h2>Start from a ready made persona</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13px;margin:0 0 13px">Each of these writes a full persona you
+          can then edit. It <b>replaces</b> what is under Persona now, and that goes into the undo history
+          first, so nothing is lost.</p>
+        ${(a.skills ?? [])
+          .map(
+            (skill) => `<div class="skill" data-skill="${h(skill.id)}">
+              <div><b>${h(skill.label[locale] ?? skill.label.en)}</b>
+                <small>${h(skill.summary[locale] ?? skill.summary.en)}</small></div>
+              <button class="btn btn-ghost btn-sm">Use</button></div>`,
+          )
+          .join("")}
+      </div>
+    </div>`;
+  $("agentTab").querySelectorAll("[data-skill]").forEach(
+    (el) =>
+      (el.onclick = async () => {
+        const choice = await ask(
+          "Use this persona",
+          "It replaces what is written under Persona now. That goes into the undo history, so this is reversible.",
+          [{ key: "yes", label: "Use it", primary: true }],
+        );
+        if (!choice) return;
+        const { ok } = await api(`businesses/${state.businessId}/skill`, {
+          method: "POST",
+          body: { id: el.dataset.skill },
+        });
+        if (!ok) return;
+        toast("Persona replaced.");
+        state.agentTab = "persona";
+        agentConfig();
+      }),
+  );
+}
+
+const RULE_LABEL = {
+  faq: "A question you are often asked",
+  escalation: "When to fetch a person",
+  delivery: "Delivery",
+  payment: "Payment",
+  refund: "Refunds and returns",
+  other: "Standing instruction",
+};
+
+function agentRules() {
+  const a = state.agent;
+  const rules = a.rules ?? [];
+  $("agentTab").innerHTML = `
+    <div class="card" style="max-width:860px">
+      <div class="card-head"><h2>Standing instructions</h2>
+        <button class="btn btn-primary btn-sm" id="addRule">Add a rule</button></div>
+      ${
+        rules.length === 0
+          ? `<div class="empty"><h3>No rules yet</h3>
+               <p>A rule is one instruction the agent follows every time: what to say about delivery, when
+                  to stop and fetch you, the answer to a question you are asked weekly. They can be switched
+                  off one at a time, which a paragraph in the persona cannot.</p>
+               <button class="btn btn-primary" id="addRule2">Add your first rule</button></div>`
+          : `<table><thead><tr><th style="width:200px">Kind</th><th>What it says</th>
+              <th style="width:90px">Order</th><th style="width:80px">On</th><th style="width:110px"></th></tr></thead>
+             <tbody>${rules
+               .map(
+                 (r) => `<tr class="${r.active ? "" : "dim"}">
+                   <td><span class="tag">${h(RULE_LABEL[r.kind] ?? r.kind)}</span></td>
+                   <td>${h(r.content)}</td>
+                   <td style="color:var(--muted)">${r.priority}</td>
+                   <td><label class="switch"><input type="checkbox" data-toggle="${h(r.id)}" ${
+                     r.active ? "checked" : ""
+                   }></label></td>
+                   <td style="text-align:right;white-space:nowrap">
+                     <a href="#" data-edit="${h(r.id)}" style="color:var(--muted);font-size:12.5px">Edit</a>
+                     <a href="#" data-del="${h(r.id)}" style="color:var(--muted);font-size:12.5px;margin-left:11px">Remove</a>
+                   </td></tr>`,
+               )
+               .join("")}</tbody></table>
+             <div class="tfoot"><span>${rules.filter((r) => r.active).length} of ${rules.length} switched on</span>
+               <span>Lower numbers are read first.</span></div>`
+      }
+    </div>`;
+
+  for (const id of ["addRule", "addRule2"]) if ($(id)) $(id).onclick = () => ruleDialog(null);
+  $("agentTab").querySelectorAll("[data-edit]").forEach(
+    (el) => (el.onclick = (e) => (e.preventDefault(), ruleDialog(rules.find((r) => r.id === el.dataset.edit)))),
+  );
+  $("agentTab").querySelectorAll("[data-toggle]").forEach((el) => {
+    el.onchange = async () => {
+      const rule = rules.find((r) => r.id === el.dataset.toggle);
+      const { ok, data } = await api(`businesses/${state.businessId}/rules`, {
+        method: "POST",
+        body: { id: rule.id, kind: rule.kind, content: rule.content, priority: rule.priority, active: el.checked },
+      });
+      if (!ok) return;
+      state.agent.rules = data.rules;
+      agentRules();
+    };
+  });
+  $("agentTab").querySelectorAll("[data-del]").forEach((el) => {
+    el.onclick = async (e) => {
+      e.preventDefault();
+      const choice = await ask("Remove this rule", "The agent stops following it immediately.", [
+        { key: "yes", label: "Remove", primary: true },
+      ]);
+      if (!choice) return;
+      const { ok, data } = await api(`businesses/${state.businessId}/rules/${el.dataset.del}`, {
+        method: "DELETE",
+      });
+      if (!ok) return;
+      state.agent.rules = data.rules;
+      agentRules();
+    };
+  });
+}
+
+function ruleDialog(rule) {
+  const editing = rule != null;
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `<div class="modal">
+    <h3>${editing ? "Edit this rule" : "Add a rule"}</h3>
+    <p class="sub">One instruction the agent follows every time. Keep it to one thing, so you can switch
+      that one thing off later without touching the rest.</p>
+    <div class="field"><label>What kind</label>
+      <select id="rKind">${Object.entries(RULE_LABEL)
+        .map(
+          ([id, label]) => `<option value="${id}" ${editing && rule.kind === id ? "selected" : ""}>${label}</option>`,
+        )
+        .join("")}</select></div>
+    <div class="field"><label>What it says</label>
+      <textarea id="rContent" rows="4"
+        placeholder="Delivery inside Bangkok is 60 THB and takes one day. Outside Bangkok, tell them to ask us.">${
+          editing ? h(rule.content) : ""
+        }</textarea></div>
+    <div class="field"><label>Order</label>
+      <input id="rPriority" type="number" min="0" max="1000" value="${editing ? rule.priority : 100}">
+      <small>Lower numbers are read first. Useful when two rules touch the same subject.</small></div>
+    <div class="actions">
+      <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="save">${editing ? "Save" : "Add"}</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector("#cancel").onclick = close;
+  bg.onclick = (e) => e.target === bg && close();
+  bg.querySelector("#rContent").focus();
+  bg.querySelector("#save").onclick = async () => {
+    const content = bg.querySelector("#rContent").value.trim();
+    if (!content) return;
+    bg.querySelector("#save").disabled = true;
+    const { ok, data } = await api(`businesses/${state.businessId}/rules`, {
+      method: "POST",
+      body: {
+        ...(editing ? { id: rule.id, active: rule.active } : {}),
+        kind: bg.querySelector("#rKind").value,
+        content,
+        priority: Number(bg.querySelector("#rPriority").value) || 100,
+      },
+    });
+    if (!ok) return (bg.querySelector("#save").disabled = false);
+    close();
+    state.agent.rules = data.rules;
+    agentRules();
+  };
+}
+
+/**
+ * The switches, each of which the deployment reads before it answers.
+ *
+ * Turning Telegram off really stops it: the reply path selects bots with
+ * enabled = 1. Turning the website off really stops it: the widget route checks
+ * the same flag. Turning remembering off stops the writing as well as the
+ * reading, before the model is asked, not after. A switch that only changed a
+ * label here would be worse than not offering it.
+ */
+function agentFeatures() {
+  const f = state.agent.features ?? {};
+  const row = (id, title, note, checked, disabled) => `
+    <label class="feature ${disabled ? "off" : ""}">
+      <div><b>${title}</b><small>${note}</small></div>
+      <span class="switch"><input type="checkbox" data-feature="${id}" ${checked ? "checked" : ""} ${
+        disabled ? "disabled" : ""
+      }></span>
+    </label>`;
+
+  $("agentTab").innerHTML = `
+    <div class="card" style="max-width:760px">
+      <div class="card-head"><h2>What it does</h2></div>
+      <div class="pad">
+        ${row(
+          "telegram",
+          "Answer on Telegram",
+          // One line on purpose: a break inside this string put the full stop
+          // on its own line, after the bold username wrapped.
+          f.telegram
+            ? `Customers messaging <b>@${h(f.telegram.username)}</b>. Switching this off stops it replying. The bot stays attached and the conversations stay here.`
+            : "No Telegram bot is attached to this business yet.",
+          f.telegram?.enabled === true,
+          f.telegram === null,
+        )}
+        ${row(
+          "web",
+          "Answer on your website",
+          f.web
+            ? "The chat bubble on your own pages. Switching this off makes the widget stop loading."
+            : "This business has no website channel.",
+          f.web?.enabled === true,
+          f.web == null,
+        )}
+        ${row(
+          "rememberCustomers",
+          "Remember what customers tell it",
+          "Notes like an allergy or a delivery preference, so it does not ask twice. Switched off it stops reading them and stops writing new ones. What was already remembered stays until you clear it on the customer.",
+          f.rememberCustomers === true,
+          false,
+        )}
+        ${
+          f.web
+            ? `<div class="field" style="max-width:260px;margin:16px 0 0">
+                 <label>Daily message cap on the website</label>
+                 <input id="dailyLimit" type="number" min="1" max="100000" value="${f.web.dailyLimit}">
+                 <small>What one page can spend in a day, so a busy day or a bad actor cannot use up your
+                   whole Cloudflare allowance. Telegram is not capped.</small>
+                 <button class="btn btn-ghost btn-sm" id="saveLimit" style="margin-top:8px;align-self:flex-start">Save</button>
+               </div>`
+            : ""
+        }
+      </div>
+    </div>`;
+
+  $("agentTab").querySelectorAll("[data-feature]").forEach((el) => {
+    el.onchange = async () => {
+      const { ok } = await api(`businesses/${state.businessId}/features`, {
+        method: "PATCH",
+        body: { [el.dataset.feature]: el.checked },
+      });
+      if (!ok) {
+        el.checked = !el.checked;
+        return;
+      }
+      state.overview = null;
+      toast(el.checked ? "Switched on." : "Switched off.");
+      agentConfig();
+    };
+  });
+  if ($("saveLimit"))
+    $("saveLimit").onclick = async () => {
+      const { ok } = await api(`businesses/${state.businessId}/features`, {
+        method: "PATCH",
+        body: { dailyLimit: Number($("dailyLimit").value) },
+      });
+      if (ok) toast("Daily cap saved.");
+    };
 }
 
 // ------------------------------------------------------------------ messages

@@ -300,6 +300,162 @@ export async function renameBusiness(env: Env, businessId: string, name: string)
     .run();
 }
 
+/** The kinds of standing instruction the console offers. */
+export const RULE_KINDS = [
+  "faq",
+  "escalation",
+  "delivery",
+  "payment",
+  "refund",
+  "other",
+] as const;
+export type RuleKind = (typeof RULE_KINDS)[number];
+
+export interface BusinessRule {
+  id: string;
+  kind: RuleKind;
+  content: string;
+  active: boolean;
+  priority: number;
+  updatedAt: string;
+}
+
+export async function listRules(env: Env, businessId: string): Promise<BusinessRule[]> {
+  assertValidId(businessId, "businessId");
+  const result = await env.DB.prepare(
+    "SELECT * FROM business_rule WHERE business_id = ? ORDER BY priority, created_at",
+  )
+    .bind(businessId)
+    .all<{
+      id: string;
+      kind: string;
+      content: string;
+      active: number;
+      priority: number;
+      updated_at: string;
+    }>();
+  return result.results.map((row) => ({
+    id: row.id,
+    kind: row.kind as RuleKind,
+    content: row.content,
+    active: row.active === 1,
+    priority: row.priority,
+    updatedAt: row.updated_at,
+  }));
+}
+
+/** Upsert by id: an id updates that rule, no id adds one. Nothing else moves. */
+export async function saveRule(
+  env: Env,
+  businessId: string,
+  input: { id?: string; kind: RuleKind; content: string; active?: boolean; priority?: number },
+): Promise<BusinessRule[]> {
+  assertValidId(businessId, "businessId");
+  const stamp = now();
+  if (input.id === undefined) {
+    await env.DB.prepare(
+      `INSERT INTO business_rule (id, business_id, kind, content, active, priority, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        generateId(),
+        businessId,
+        input.kind,
+        input.content.trim().slice(0, 2000),
+        input.active === false ? 0 : 1,
+        input.priority ?? 100,
+        stamp,
+        stamp,
+      )
+      .run();
+  } else {
+    assertValidId(input.id, "ruleId");
+    await env.DB.prepare(
+      `UPDATE business_rule SET kind = ?, content = ?, active = ?, priority = ?, updated_at = ?
+        WHERE id = ? AND business_id = ?`,
+    )
+      .bind(
+        input.kind,
+        input.content.trim().slice(0, 2000),
+        input.active === false ? 0 : 1,
+        input.priority ?? 100,
+        stamp,
+        input.id,
+        businessId,
+      )
+      .run();
+  }
+  return listRules(env, businessId);
+}
+
+export async function deleteRule(
+  env: Env,
+  businessId: string,
+  ruleId: string,
+): Promise<BusinessRule[]> {
+  assertValidId(businessId, "businessId");
+  assertValidId(ruleId, "ruleId");
+  await env.DB.prepare("DELETE FROM business_rule WHERE id = ? AND business_id = ?")
+    .bind(ruleId, businessId)
+    .run();
+  return listRules(env, businessId);
+}
+
+export interface AgentSetting {
+  rememberCustomers: boolean;
+}
+
+/** A business with no row here gets the defaults, so nothing was backfilled. */
+export async function getAgentSetting(env: Env, businessId: string): Promise<AgentSetting> {
+  assertValidId(businessId, "businessId");
+  const row = await env.DB.prepare("SELECT * FROM agent_setting WHERE business_id = ?")
+    .bind(businessId)
+    .first<{ remember_customers: number }>();
+  return { rememberCustomers: row === null ? true : row.remember_customers === 1 };
+}
+
+export async function saveAgentSetting(
+  env: Env,
+  businessId: string,
+  patch: Partial<AgentSetting>,
+): Promise<AgentSetting> {
+  assertValidId(businessId, "businessId");
+  const next = { ...(await getAgentSetting(env, businessId)), ...patch };
+  await env.DB.prepare(
+    `INSERT INTO agent_setting (business_id, remember_customers, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT (business_id) DO UPDATE SET
+       remember_customers = excluded.remember_customers, updated_at = excluded.updated_at`,
+  )
+    .bind(businessId, next.rememberCustomers ? 1 : 0, now())
+    .run();
+  return next;
+}
+
+/**
+ * Switches a bot on or off.
+ *
+ * The reply path already selects bots with `enabled = 1`, so this genuinely
+ * stops it answering rather than only hiding it in the console.
+ */
+export async function setBotEnabled(
+  env: Env,
+  businessId: string,
+  enabled: boolean,
+): Promise<void> {
+  assertValidId(businessId, "businessId");
+  // Hidden bots excluded, exactly as listBots excludes them. The website
+  // channel owns a bot row so its conversations have something to reference,
+  // and switching Telegram off must not reach across and touch it.
+  await env.DB.prepare(
+    `UPDATE bot SET enabled = ?
+      WHERE business_id = ? AND role = 'reply'
+        AND id NOT IN (SELECT bot_id FROM hidden_bot)`,
+  )
+    .bind(enabled ? 1 : 0, businessId)
+    .run();
+}
+
 export async function updateBusinessModel(
   env: Env,
   businessId: string,

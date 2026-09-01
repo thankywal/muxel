@@ -35,11 +35,18 @@ import {
   forgetCustomer,
   forgetFacts,
   getOperatorLocale,
+  getAgentSetting,
   getProfile,
   listFacts,
   listHandovers,
   previousPrompt,
+  deleteRule,
+  listRules,
   renameBusiness,
+  RULE_KINDS,
+  saveAgentSetting,
+  saveRule,
+  setBotEnabled,
   saveProfile,
   setBusinessPrompt,
   setCustomerNote,
@@ -692,6 +699,99 @@ export async function handleConsoleApi(
         );
       }
       return json({ ok: true, queued, products: await productsView(env, businessId) });
+    }
+
+    // GET /businesses/:id/agent — everything the configuration screen shows.
+    //
+    // One call, because these are read together and separately they would drift
+    // out of step on a page that lets you change all of them.
+    if (method === "GET" && segments[2] === "agent" && segments.length === 3) {
+      const [card, business, setting, rules, channel, bots] = await Promise.all([
+        businessCard(env, businessId),
+        getBusiness(env, businessId),
+        getAgentSetting(env, businessId),
+        listRules(env, businessId),
+        getChannelForBusiness(env, businessId),
+        listBots(env, businessId),
+      ]);
+      const telegram = bots.find((bot) => bot.role === "reply") ?? null;
+      return json({
+        id: card.id,
+        name: card.name,
+        model: card.model,
+        modelLabel: card.modelLabel,
+        models: MODEL_PRESETS,
+        persona: business.systemPrompt,
+        rules,
+        ruleKinds: RULE_KINDS,
+        skills: SKILLS.map((skill) => ({ id: skill.id, label: skill.label, summary: skill.summary })),
+        features: {
+          telegram:
+            telegram === null ? null : { username: telegram.username, enabled: telegram.enabled },
+          web: channel === null ? null : { enabled: channel.enabled, dailyLimit: channel.dailyLimit },
+          rememberCustomers: setting.rememberCustomers,
+        },
+        usage: card.usage,
+      });
+    }
+
+    // PATCH /businesses/:id/features — the switches, each of which the runtime
+    // already reads. Nothing here is a label on something that does not happen.
+    if (method === "PATCH" && segments[2] === "features" && segments.length === 3) {
+      const body = (await request.json().catch(() => ({}))) as {
+        telegram?: boolean;
+        web?: boolean;
+        dailyLimit?: number;
+        rememberCustomers?: boolean;
+      };
+      if (typeof body.telegram === "boolean") {
+        await setBotEnabled(env, businessId, body.telegram);
+      }
+      if (typeof body.web === "boolean" || typeof body.dailyLimit === "number") {
+        const channel = await getChannelForBusiness(env, businessId);
+        if (channel !== null) {
+          await updateChannel(env, channel.id, {
+            ...(typeof body.web === "boolean" ? { enabled: body.web } : {}),
+            ...(typeof body.dailyLimit === "number" ? { dailyLimit: body.dailyLimit } : {}),
+          });
+        }
+      }
+      if (typeof body.rememberCustomers === "boolean") {
+        await saveAgentSetting(env, businessId, { rememberCustomers: body.rememberCustomers });
+      }
+      return json({ ok: true });
+    }
+
+    // Standing instructions, one to a row.
+    if (segments[2] === "rules") {
+      if (method === "GET" && segments.length === 3) {
+        return json({ rules: await listRules(env, businessId) });
+      }
+      if (method === "POST" && segments.length === 3) {
+        const body = (await request.json().catch(() => ({}))) as {
+          id?: string;
+          kind?: string;
+          content?: string;
+          active?: boolean;
+          priority?: number;
+        };
+        const kind = RULE_KINDS.includes(body.kind as never) ? (body.kind as never) : "other";
+        const content = String(body.content ?? "").trim();
+        if (content.length === 0) return json({ error: "empty" }, 400);
+        return json({
+          rules: await saveRule(env, businessId, {
+            id: body.id,
+            kind,
+            content,
+            active: body.active,
+            priority: body.priority,
+          }),
+        });
+      }
+      const ruleId = segments[3];
+      if (method === "DELETE" && ruleId !== undefined) {
+        return json({ rules: await deleteRule(env, businessId, ruleId) });
+      }
     }
 
     // What the business is and where to find it.

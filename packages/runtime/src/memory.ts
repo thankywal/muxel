@@ -15,7 +15,7 @@
 import type { ChatTurn, CustomerFact } from "@muxel/core";
 
 import { generate } from "./ai/gateway.js";
-import { addFacts, listFacts, trimFacts } from "./db/queries.js";
+import { addFacts, getAgentSetting, listFacts, trimFacts } from "./db/queries.js";
 import type { Env } from "./env.js";
 
 /**
@@ -151,6 +151,14 @@ export interface RememberInput {
  */
 export async function remember(env: Env, input: RememberInput): Promise<string[]> {
   if (input.turns.length === 0) {
+    return [];
+  }
+
+  // Checked here rather than at each of the two call sites, so an owner who
+  // switched remembering off has it stopped wherever a reply came from. It
+  // stops before the model call, not after: distilling facts and then throwing
+  // them away would still have sent the conversation to be read.
+  if (!(await getAgentSetting(env, input.businessId)).rememberCustomers) {
     return [];
   }
 

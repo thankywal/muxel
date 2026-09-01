@@ -438,6 +438,48 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 12,
+    statements: [
+      // Standing instructions, one to a row.
+      //
+      // These were a paragraph inside the persona, which is fine until there
+      // are nine of them and one is wrong: you cannot switch off a sentence, or
+      // say which of two contradicting ones wins. A row can be turned off,
+      // reordered and edited on its own, and the assistant reads a rendering of
+      // the active ones, the same way it reads the profile and the price
+      // corrections.
+      `CREATE TABLE IF NOT EXISTS business_rule (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         kind        TEXT NOT NULL,
+         content     TEXT NOT NULL,
+         active      INTEGER NOT NULL DEFAULT 1,
+         priority    INTEGER NOT NULL DEFAULT 100,
+         created_at  TEXT NOT NULL,
+         updated_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS business_rule_idx ON business_rule (business_id, active, priority)`,
+
+      // How this agent behaves, as opposed to what its business is.
+      //
+      // Its own table rather than a column on business, because this file
+      // already says why: a migration that is a CREATE is safe to run twice and
+      // an ALTER is not, and a batch that fails halfway leaves the version
+      // unrecorded and the whole batch to run again. A missing row means the
+      // defaults, so nothing has to be backfilled.
+      //
+      // Remembering is on by default, because that is what every existing
+      // deployment has been doing. Turning it off has to actually stop it
+      // rather than only hide it, so the reply path reads this before it
+      // recalls or records anything.
+      `CREATE TABLE IF NOT EXISTS agent_setting (
+         business_id        TEXT PRIMARY KEY REFERENCES business (id) ON DELETE CASCADE,
+         remember_customers INTEGER NOT NULL DEFAULT 1,
+         updated_at         TEXT NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

@@ -113,7 +113,9 @@ export async function createChannel(
 export async function updateChannel(
   env: Env,
   channelId: string,
-  patch: Partial<Pick<WebChannel, "title" | "greeting" | "accent" | "allowedOrigins" | "enabled">>,
+  patch: Partial<
+    Pick<WebChannel, "title" | "greeting" | "accent" | "allowedOrigins" | "enabled" | "dailyLimit">
+  >,
 ): Promise<void> {
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -136,6 +138,13 @@ export async function updateChannel(
   if (patch.enabled !== undefined) {
     sets.push("enabled = ?");
     values.push(patch.enabled ? 1 : 0);
+  }
+  if (patch.dailyLimit !== undefined) {
+    // Clamped here rather than at the caller, so every door that sets it lands
+    // in the same range. withinDailyLimit reads this column directly, so a
+    // number written here is a number that takes effect.
+    sets.push("daily_limit = ?");
+    values.push(Math.max(1, Math.min(100000, Math.round(patch.dailyLimit))));
   }
   if (sets.length === 0) {
     return;

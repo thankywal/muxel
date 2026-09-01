@@ -15,7 +15,15 @@
 import type { Business, ChatTurn, CustomerFact } from "@muxel/core";
 
 import { generate } from "./ai/gateway.js";
-import { getProfile, recentTurns, recordUsage, type BusinessProfile } from "./db/queries.js";
+import {
+  getAgentSetting,
+  getProfile,
+  listRules,
+  recentTurns,
+  recordUsage,
+  type BusinessProfile,
+  type BusinessRule,
+} from "./db/queries.js";
 import type { Env } from "./env.js";
 import { HANDOVER_SENTINEL, stripSentinel, wantsHandover } from "./escalation.js";
 import { formatFacts, recall } from "./memory.js";
@@ -84,12 +92,47 @@ export function renderProfile(name: string, profile: BusinessProfile | null): st
   ].join("\n");
 }
 
+/** How each kind of rule is introduced to the assistant. */
+const RULE_LABEL: Record<string, string> = {
+  faq: "A question you are often asked, and the answer",
+  escalation: "When to stop and fetch a person",
+  delivery: "Delivery",
+  payment: "Payment",
+  refund: "Refunds and returns",
+  other: "Standing instruction",
+};
+
+/**
+ * The owner's standing instructions, as separate lines.
+ *
+ * Kept apart from the persona because they are switchable: an inactive rule is
+ * not shown at all, which is what switching one off has to mean. Ordered by the
+ * priority the owner gave them, so that when two of them touch the same subject
+ * there is an answer to which one they meant first.
+ */
+export function renderRules(rules: readonly BusinessRule[]): string {
+  const active = rules.filter((rule) => rule.active && rule.content.trim().length > 0);
+  if (active.length === 0) return "";
+  return [
+    "",
+    "Standing instructions from the owner. Follow them over anything you infer,",
+    "and treat them as instructions rather than as material to quote.",
+    "",
+    "<<<RULES",
+    ...active.map(
+      (rule) => `${RULE_LABEL[rule.kind] ?? RULE_LABEL.other}: ${rule.content.trim()}`,
+    ),
+    "RULES>>>",
+  ].join("\n");
+}
+
 export function buildSystemPrompt(
   business: Business,
   context: string,
   facts: readonly CustomerFact[],
   productIndex: readonly string[] = [],
   profile: BusinessProfile | null = null,
+  rules: readonly BusinessRule[] = [],
 ): string {
   // The operator's own instructions are trusted and sit in the base prompt. The
   // guardrail follows them, so an instruction document cannot license the
@@ -113,6 +156,11 @@ export function buildSystemPrompt(
   const profileBlock = renderProfile(business.name, profile);
   if (profileBlock.length > 0) {
     sections.push(profileBlock);
+  }
+
+  const rulesBlock = renderRules(rules);
+  if (rulesBlock.length > 0) {
+    sections.push(rulesBlock);
   }
 
   if (facts.length > 0) {
@@ -184,10 +232,17 @@ export async function answerQuestion(
     question: string;
   },
 ): Promise<Answer> {
-  const [history, facts, profile] = await Promise.all([
+  // Whether it may remember at all is read before it recalls, not after, so
+  // turning it off is a thing that stops happening rather than a thing that
+  // happens and is hidden.
+  const setting = await getAgentSetting(env, input.business.id);
+  const [history, facts, profile, rules] = await Promise.all([
     recentTurns(env, input.conversationId),
-    input.customerId === null ? Promise.resolve([]) : recall(env, input.customerId),
+    input.customerId === null || !setting.rememberCustomers
+      ? Promise.resolve([])
+      : recall(env, input.customerId),
     getProfile(env, input.business.id),
+    listRules(env, input.business.id),
   ]);
 
   const chunks = await retrieve(env, input.business.id, input.question);
@@ -198,7 +253,7 @@ export async function answerQuestion(
 
   const result = await generate(env, {
     model: input.business.model,
-    system: buildSystemPrompt(input.business, formatContext(chunks), facts, index, profile),
+    system: buildSystemPrompt(input.business, formatContext(chunks), facts, index, profile, rules),
     history,
     userMessage: input.question,
     businessId: input.business.id,

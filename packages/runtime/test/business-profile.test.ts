@@ -11,8 +11,8 @@
  * to invent one.
  */
 import { describe, expect, it } from "vitest";
-import { buildSystemPrompt, renderProfile } from "../src/answer.js";
-import type { BusinessProfile } from "../src/db/queries.js";
+import { buildSystemPrompt, renderProfile, renderRules } from "../src/answer.js";
+import type { BusinessProfile, BusinessRule } from "../src/db/queries.js";
 
 const empty: BusinessProfile = {
   kind: "",
@@ -84,6 +84,61 @@ describe("the prompt the model receives", () => {
     // An empty profile must not add an empty section: every line in a prompt
     // is a line the model reads.
     expect(buildSystemPrompt(business, "", [], [], empty)).toBe(
+      buildSystemPrompt(business, "", [], [], null),
+    );
+  });
+});
+
+
+const rule = (over: Partial<BusinessRule>): BusinessRule => ({
+  id: "r1",
+  kind: "delivery",
+  content: "Delivery inside Bangkok is 60 THB and takes one day.",
+  active: true,
+  priority: 100,
+  updatedAt: "2026-01-01T00:00:00Z",
+  ...over,
+});
+
+describe("the standing instructions", () => {
+  it("says nothing when there are none", () => {
+    expect(renderRules([])).toBe("");
+  });
+
+  it("leaves out a rule that was switched off", () => {
+    // This is the whole reason a rule is a row and not a paragraph. If a
+    // switched off rule still reached the model, the switch would be a label.
+    const text = renderRules([rule({ active: false })]);
+    expect(text).toBe("");
+    const mixed = renderRules([
+      rule({ id: "r1", active: false, content: "Old delivery price is 40 THB." }),
+      rule({ id: "r2", active: true, content: "Delivery is 60 THB." }),
+    ]);
+    expect(mixed).toContain("60 THB");
+    expect(mixed).not.toContain("40 THB");
+  });
+
+  it("leaves out a rule with nothing written in it", () => {
+    expect(renderRules([rule({ content: "   " })])).toBe("");
+  });
+
+  it("names what kind of instruction each one is", () => {
+    expect(renderRules([rule({ kind: "escalation", content: "Anything about a refund." })])).toContain(
+      "When to stop and fetch a person: Anything about a refund.",
+    );
+  });
+
+  it("keeps them in the order the owner gave", () => {
+    const text = renderRules([
+      rule({ id: "r1", content: "First." }),
+      rule({ id: "r2", content: "Second." }),
+    ]);
+    expect(text.indexOf("First.")).toBeLessThan(text.indexOf("Second."));
+  });
+
+  it("reaches the prompt, and adds nothing when empty", () => {
+    expect(buildSystemPrompt(business, "", [], [], null, [rule({})])).toContain("60 THB");
+    expect(buildSystemPrompt(business, "", [], [], null, [])).toBe(
       buildSystemPrompt(business, "", [], [], null),
     );
   });
