@@ -1725,8 +1725,9 @@ async function businessDetail(businessId) {
   const TABS = [
     ["overview", "Overview"],
     ["profile", "Profile"],
-    ["instructions", "Instructions"],
+    ["knowledge", "Knowledge"],
     ["prices", "Price list"],
+    ["notes", "Notes"],
     ["documents", "Documents"],
     ["website", "Website"],
   ];
@@ -1761,7 +1762,8 @@ async function businessDetail(businessId) {
   ({
     overview: bizOverview,
     profile: bizProfile,
-    instructions: bizInstructions,
+    knowledge: bizKnowledge,
+    notes: bizNotes,
     prices: bizPrices,
     documents: bizDocuments,
     website: bizWebsite,
@@ -1845,6 +1847,157 @@ async function bizOverview(businessId, b) {
 }
 
 /**
+ * Everything the assistant can draw on, in one list.
+ *
+ * Split across four screens, "why did it say that" has four places to look and
+ * no answer in any of them. The two halves are named for what actually happens
+ * to them: some are searched when a question resembles them, and some are small
+ * enough to go with every question and so cannot be missed by a search that did
+ * not match.
+ */
+async function bizKnowledge(businessId) {
+  const { ok, data } = await api(`businesses/${businessId}/knowledge`);
+  if (!ok) return;
+  const row = (s, clickable) => `
+    <tr class="${clickable ? "click" : ""}" ${clickable ? `data-goto-tab="${h(clickable)}"` : ""}>
+      <td><b>${h(s.name)}</b><div style="color:var(--muted);font-size:12px">${h(s.detail)}</div></td>
+      <td>${
+        s.status === "ready"
+          ? '<span class="tag green">Ready</span>'
+          : s.status === "empty"
+            ? '<span class="tag grey"><span class="d"></span>Nothing in it</span>'
+            : s.error
+              ? `<span class="tag amber">Failed</span> <span style="color:var(--muted)">${h(s.error)}</span>`
+              : `<span class="tag">${h(s.status)}</span>`
+      }</td>
+      <td>${s.pieces === undefined ? "—" : num(s.pieces)}</td>
+      <td style="color:var(--muted)">${s.updatedAt ? h(ago(s.updatedAt)) : "—"}</td>
+    </tr>`;
+
+  $("bizTab").innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><h2>Searched when a question matches</h2>
+        <span style="font-size:12.5px;color:var(--muted)">One index, whatever shape it arrived in</span></div>
+      <table><thead><tr><th>Source</th><th>State</th><th>Pieces</th><th>Last change</th></tr></thead>
+        <tbody>${data.searched
+          .map((s) => row(s, s.kind === "products" ? "prices" : s.kind === "notes" ? "notes" : "documents"))
+          .join("")}</tbody></table>
+      <div class="tfoot"><span>${data.searched.length} sources</span>
+        <span>Every edit is indexed as you make it, not on a schedule.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Sent with every question</h2>
+        <span style="font-size:12.5px;color:var(--muted)">Too small and too often needed to be searched for</span></div>
+      <table><thead><tr><th>Source</th><th>State</th><th></th><th></th></tr></thead>
+        <tbody>${data.alwaysSent
+          .map((s) => row(s, s.kind === "profile" ? "profile" : null))
+          .join("")}</tbody></table>
+      <div class="tfoot"><span>Standing instructions are on the agent, under Rules.</span></div>
+    </div>`;
+
+  $("bizTab").querySelectorAll("[data-goto-tab]").forEach(
+    (r) => (r.onclick = () => ((state.bizTab = r.dataset.gotoTab), businessDetail(businessId))),
+  );
+}
+
+/**
+ * The facts an owner has in their head and no file for.
+ *
+ * Delivery areas, which day the supplier comes, what to say about the car park.
+ * They used to go into the instructions or nowhere, and instructions are read
+ * every turn whether or not they are relevant, which is the wrong place for a
+ * hundred small facts. These are indexed and found when they are asked about.
+ */
+async function bizNotes(businessId) {
+  const { ok, data } = await api(`businesses/${businessId}/notes`);
+  if (!ok) return;
+  const notes = data.notes ?? [];
+  $("bizTab").innerHTML = `
+    <div class="card" style="max-width:860px">
+      <div class="card-head"><h2>Notes</h2>
+        <button class="btn btn-primary btn-sm" id="addNote">Add a note</button></div>
+      ${
+        notes.length === 0
+          ? `<div class="empty"><h3>Nothing written down yet</h3>
+               <p>Anything you know that is not in a file and is not a price. Where you deliver, which day
+                  the supplier comes, what to tell someone asking about parking. The assistant finds these
+                  the same way it finds a document, and you can edit one line without touching the rest.</p>
+               <button class="btn btn-primary" id="addNote2">Write your first note</button></div>`
+          : `<table><thead><tr><th style="width:220px">About</th><th>What it says</th>
+              <th style="width:120px">Changed</th><th style="width:110px"></th></tr></thead>
+             <tbody>${notes
+               .map(
+                 (n) => `<tr><td><b>${h(n.title || "Untitled")}</b></td>
+                   <td style="color:var(--muted)">${h(n.body.length > 180 ? n.body.slice(0, 180) + "…" : n.body)}</td>
+                   <td style="color:var(--muted)">${h(ago(n.updatedAt))}</td>
+                   <td style="text-align:right;white-space:nowrap">
+                     <a href="#" data-edit="${h(n.id)}" style="color:var(--muted);font-size:12.5px">Edit</a>
+                     <a href="#" data-del="${h(n.id)}" style="color:var(--muted);font-size:12.5px;margin-left:11px">Remove</a>
+                   </td></tr>`,
+               )
+               .join("")}</tbody></table>
+             <div class="tfoot"><span>${notes.length} note${notes.length === 1 ? "" : "s"}</span>
+               <span>Indexed as you save, so the agent can find one the moment you write it.</span></div>`
+      }
+    </div>`;
+
+  for (const id of ["addNote", "addNote2"]) if ($(id)) $(id).onclick = () => noteDialog(businessId, null);
+  $("bizTab").querySelectorAll("[data-edit]").forEach(
+    (a) => (a.onclick = (e) => (e.preventDefault(), noteDialog(businessId, notes.find((n) => n.id === a.dataset.edit)))),
+  );
+  $("bizTab").querySelectorAll("[data-del]").forEach((a) => {
+    a.onclick = async (e) => {
+      e.preventDefault();
+      const choice = await ask("Remove this note", "The agent stops finding it immediately.", [
+        { key: "yes", label: "Remove", primary: true },
+      ]);
+      if (!choice) return;
+      await api(`businesses/${businessId}/notes/${a.dataset.del}`, { method: "DELETE" });
+      bizNotes(businessId);
+    };
+  });
+}
+
+function noteDialog(businessId, note) {
+  const editing = note != null;
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `<div class="modal" style="max-width:560px">
+    <h3>${editing ? "Edit this note" : "Write a note"}</h3>
+    <p class="sub">Anything you know that is not a file and not a price. Write it the way you would say it.</p>
+    <div class="field"><label>What it is about</label>
+      <input id="nTitle" placeholder="Delivery areas" value="${editing ? h(note.title) : ""}"></div>
+    <div class="field"><label>What it says</label>
+      <textarea id="nBody" rows="6"
+        placeholder="We deliver anywhere inside Bangkok. Nonthaburi and Samut Prakan on Fridays only. Anywhere else, we post it and it takes two days.">${
+          editing ? h(note.body) : ""
+        }</textarea></div>
+    <div class="actions">
+      <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="save">${editing ? "Save" : "Add"}</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector("#cancel").onclick = close;
+  bg.onclick = (e) => e.target === bg && close();
+  bg.querySelector("#nBody").focus();
+  bg.querySelector("#save").onclick = async () => {
+    const body = bg.querySelector("#nBody").value.trim();
+    if (!body) return;
+    bg.querySelector("#save").disabled = true;
+    const { ok } = await api(`businesses/${businessId}/notes`, {
+      method: "POST",
+      body: { ...(editing ? { id: note.id } : {}), title: bg.querySelector("#nTitle").value, body },
+    });
+    if (!ok) return (bg.querySelector("#save").disabled = false);
+    close();
+    toast("Saved and indexed.");
+    bizNotes(businessId);
+  };
+}
+
+/**
  * The facts about the business, as the fields they are.
  *
  * These go to the assistant as plain lines it can quote, and only the ones with
@@ -1878,104 +2031,6 @@ async function bizProfile(businessId, b) {
   };
 }
 
-/**
- * The instructions the assistant answers by.
- *
- * A textarea, because that is what this is: the operator's own words, up to the
- * same ceiling the Telegram console states. Undo writes the previous version
- * back rather than deleting this one, so the undo is itself undoable.
- */
-async function bizInstructions(businessId) {
-  const { data } = await api(`businesses/${businessId}/prompt`);
-  const skills = state.skills ?? (state.skills = (await api("skills")).data.skills ?? []);
-  const locale = state.locale ?? "en";
-
-  $("bizTab").innerHTML = `
-    <div class="grid g2">
-      <div class="card">
-        <div class="card-head"><h2>Instructions</h2>
-          <span style="font-size:12.5px;color:var(--muted)"><span id="promptCount">${
-            (data.prompt ?? "").length
-          }</span> / 8000</span></div>
-        <div class="pad">
-          <p style="color:var(--muted);font-size:13px;margin:0 0 12px">How this business wants to be represented:
-            its tone, what it will and will not promise, anything the price list and documents do not say.</p>
-          <textarea id="prompt" rows="16" style="width:100%;resize:vertical"
-            placeholder="Answer in a warm, short style. Never promise a delivery date. If someone asks for a discount, tell them to ask the owner."
-          >${h(data.prompt ?? "")}</textarea>
-          <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
-            <button class="btn btn-primary btn-sm" id="savePrompt">Save</button>
-            <button class="btn btn-ghost btn-sm" id="undoPrompt" ${data.previous ? "" : "disabled"}>Undo last change</button>
-            <span style="flex:1"></span>
-            <span id="promptSaved" style="font-size:12.5px;color:var(--green)"></span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head"><h2>Start from a ready made one</h2></div>
-        <div class="pad">
-          <p style="color:var(--muted);font-size:13px;margin:0 0 13px">Each of these writes a full set of
-            instructions you can then edit. Your current ones go into the undo history first.</p>
-          ${skills
-            .map(
-              (skill) => `<div class="skill" data-skill="${h(skill.id)}">
-                <div><b>${h(skill.label[locale] ?? skill.label.en)}</b>
-                  <small>${h(skill.summary[locale] ?? skill.summary.en)}</small></div>
-                <button class="btn btn-ghost btn-sm">Use</button></div>`,
-            )
-            .join("")}
-        </div>
-      </div>
-    </div>`;
-
-  const box = $("prompt");
-  box.oninput = () => ($("promptCount").textContent = box.value.length);
-  $("savePrompt").onclick = async () => {
-    $("savePrompt").disabled = true;
-    const { ok } = await api(`businesses/${businessId}/prompt`, {
-      method: "PUT",
-      body: { prompt: box.value },
-    });
-    $("savePrompt").disabled = false;
-    if (!ok) return;
-    $("promptSaved").textContent = "Saved";
-    setTimeout(() => ($("promptSaved").textContent = ""), 2500);
-  };
-  $("undoPrompt").onclick = async () => {
-    const { ok } = await api(`businesses/${businessId}/prompt/undo`, { method: "POST" });
-    if (ok) bizInstructions(businessId);
-  };
-  $("bizTab").querySelectorAll("[data-skill]").forEach(
-    (el) =>
-      (el.onclick = async () => {
-        const choice = await ask(
-          "Use this set of instructions",
-          "It replaces what is there now. The current instructions go into the undo history, so this is reversible.",
-          [{ key: "yes", label: "Use it", primary: true }],
-        );
-        if (!choice) return;
-        const { ok } = await api(`businesses/${businessId}/skill`, {
-          method: "POST",
-          body: { id: el.dataset.skill },
-        });
-        if (ok) {
-          toast("Instructions replaced.");
-          bizInstructions(businessId);
-        }
-      }),
-  );
-}
-
-/**
- * The list the assistant quotes from, which is not a table of typed rows.
- *
- * It is what was pulled out of the uploaded documents with the operator's
- * corrections over the top, so an item can come from a file, from this page, or
- * from a file and then be corrected here. The Source column says which, because
- * "where did that price come from" is the first thing anyone asks when one is
- * wrong.
- */
 async function bizPrices(businessId) {
   const { data } = await api(`businesses/${businessId}/products`);
   const items = data.products ?? [];

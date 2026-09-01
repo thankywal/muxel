@@ -480,6 +480,32 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 13,
+    statements: [
+      // Anything the owner knows that is not a document and not a price.
+      //
+      // Until now there was nowhere for it. Delivery areas, which day the
+      // supplier comes, what to say about the car park: facts a shop has in its
+      // head and no file. They went into the instructions or nowhere, and
+      // instructions are read every turn whether or not they are relevant,
+      // which is the wrong place for a hundred small facts.
+      //
+      // Rows, so one can be edited or removed on its own, rendered into a
+      // single document and indexed through the same door as an upload. The
+      // assistant does not know these came from a form rather than a file, and
+      // does not need to.
+      `CREATE TABLE IF NOT EXISTS business_note (
+         id          TEXT PRIMARY KEY,
+         business_id TEXT NOT NULL REFERENCES business (id) ON DELETE CASCADE,
+         title       TEXT NOT NULL DEFAULT '',
+         body        TEXT NOT NULL,
+         created_at  TEXT NOT NULL,
+         updated_at  TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS business_note_idx ON business_note (business_id, updated_at DESC)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

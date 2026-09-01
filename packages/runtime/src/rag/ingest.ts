@@ -19,6 +19,7 @@ import {
   deleteDocument,
   findDocumentByName,
   insertChunks,
+  listNotes,
   setDocumentStatus,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
@@ -454,6 +455,92 @@ export async function removeDocument(
   }
 }
 
+/** The name the owner's typed notes are indexed under. */
+export const NOTES_FILENAME = "Notes (console)";
+
+/**
+ * The generated documents, and what rebuilds each one.
+ *
+ * Two things reach the assistant as documents without ever having been a file:
+ * the owner's price corrections and their typed notes. Each is stored as rows
+ * so it can be edited a line at a time, and rendered wholesale into one
+ * document because a shop has tens of these, not thousands, and tracking which
+ * vector belongs to which row would buy nothing.
+ *
+ * Listed here rather than remembered, so that adding a third kind is one entry
+ * and not a search for every place that rebuilds.
+ */
+export const GENERATED_DOCUMENTS = [OWNER_UPDATES_FILENAME, NOTES_FILENAME] as const;
+
+/**
+ * Replaces one generated document with the text it should now hold.
+ *
+ * Removed first, which also removes its vectors, so a fact the owner deleted
+ * stops being retrievable in the same call rather than at the next scheduled
+ * anything. Empty text leaves nothing behind: a source with nothing in it is a
+ * source the assistant should not find.
+ */
+async function replaceGenerated(
+  env: Env,
+  businessId: string,
+  filename: string,
+  text: string,
+): Promise<void> {
+  const existing = await findDocumentByName(env, businessId, filename);
+  if (existing !== null) {
+    await removeDocument(env, businessId, existing);
+  }
+  if (text.length === 0) {
+    return;
+  }
+  await indexText(env, {
+    businessId,
+    filename,
+    contentType: "text/plain",
+    byteSize: text.length,
+    text,
+  });
+}
+
+/** Rebuilds the document carrying the owner's typed notes. */
+export async function syncNotes(env: Env, businessId: string): Promise<void> {
+  await replaceGenerated(env, businessId, NOTES_FILENAME, renderNotes(await listNotes(env, businessId)));
+}
+
+/**
+ * Renders the notes into the document the assistant reads.
+ *
+ * A title is a heading and the body follows it, so retrieval can match either
+ * the subject or the wording. A note with no body is skipped: a heading alone
+ * is an invitation to answer from nothing.
+ */
+export function renderNotes(notes: readonly { title: string; body: string }[]): string {
+  const usable = notes.filter((note) => note.body.trim().length > 0);
+  if (usable.length === 0) {
+    return "";
+  }
+  return [
+    "Notes from the shop owner.",
+    "",
+    ...usable.flatMap((note) =>
+      note.title.trim().length > 0
+        ? [`## ${note.title.trim()}`, note.body.trim(), ""]
+        : [note.body.trim(), ""],
+    ),
+  ].join("\n");
+}
+
+/**
+ * Rebuilds everything the assistant reads that is not a file it was given.
+ *
+ * One door, so a new write path cannot arrive knowing about one generated
+ * document and not the other.
+ */
+export async function syncKnowledge(env: Env, businessId: string): Promise<void> {
+  await syncOwnerUpdates(env, businessId);
+  await syncNotes(env, businessId);
+}
+
 /**
  * Rebuilds the document that carries the owner's corrections into RAG.
  *
@@ -464,21 +551,10 @@ export async function removeDocument(
  * which vector belongs to which row would buy nothing.
  */
 export async function syncOwnerUpdates(env: Env, businessId: string): Promise<void> {
-  const existing = await findDocumentByName(env, businessId, OWNER_UPDATES_FILENAME);
-  if (existing !== null) {
-    await removeDocument(env, businessId, existing);
-  }
-
-  const text = renderOwnerUpdates(await listCorrections(env, businessId));
-  if (text.length === 0) {
-    return;
-  }
-
-  await indexText(env, {
+  await replaceGenerated(
+    env,
     businessId,
-    filename: OWNER_UPDATES_FILENAME,
-    contentType: "text/plain",
-    byteSize: text.length,
-    text,
-  });
+    OWNER_UPDATES_FILENAME,
+    renderOwnerUpdates(await listCorrections(env, businessId)),
+  );
 }

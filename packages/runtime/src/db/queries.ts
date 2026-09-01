@@ -456,6 +456,68 @@ export async function setBotEnabled(
     .run();
 }
 
+export interface BusinessNote {
+  id: string;
+  title: string;
+  body: string;
+  updatedAt: string;
+}
+
+export async function listNotes(env: Env, businessId: string): Promise<BusinessNote[]> {
+  assertValidId(businessId, "businessId");
+  const result = await env.DB.prepare(
+    "SELECT id, title, body, updated_at FROM business_note WHERE business_id = ? ORDER BY updated_at DESC",
+  )
+    .bind(businessId)
+    .all<{ id: string; title: string; body: string; updated_at: string }>();
+  return result.results.map((row) => ({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    updatedAt: row.updated_at,
+  }));
+}
+
+/** Upsert by id, like a rule: an id edits that note, no id adds one. */
+export async function saveNote(
+  env: Env,
+  businessId: string,
+  input: { id?: string; title: string; body: string },
+): Promise<BusinessNote[]> {
+  assertValidId(businessId, "businessId");
+  const stamp = now();
+  const title = input.title.trim().slice(0, 120);
+  const body = input.body.trim().slice(0, 8000);
+  if (input.id === undefined) {
+    await env.DB.prepare(
+      "INSERT INTO business_note (id, business_id, title, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+      .bind(generateId(), businessId, title, body, stamp, stamp)
+      .run();
+  } else {
+    assertValidId(input.id, "noteId");
+    await env.DB.prepare(
+      "UPDATE business_note SET title = ?, body = ?, updated_at = ? WHERE id = ? AND business_id = ?",
+    )
+      .bind(title, body, stamp, input.id, businessId)
+      .run();
+  }
+  return listNotes(env, businessId);
+}
+
+export async function deleteNote(
+  env: Env,
+  businessId: string,
+  noteId: string,
+): Promise<BusinessNote[]> {
+  assertValidId(businessId, "businessId");
+  assertValidId(noteId, "noteId");
+  await env.DB.prepare("DELETE FROM business_note WHERE id = ? AND business_id = ?")
+    .bind(noteId, businessId)
+    .run();
+  return listNotes(env, businessId);
+}
+
 export async function updateBusinessModel(
   env: Env,
   businessId: string,

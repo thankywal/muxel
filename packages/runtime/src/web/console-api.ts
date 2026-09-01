@@ -40,11 +40,14 @@ import {
   listHandovers,
   previousPrompt,
   deleteRule,
+  listNotes,
   listRules,
   renameBusiness,
   RULE_KINDS,
   saveAgentSetting,
+  saveNote,
   saveRule,
+  deleteNote,
   setBotEnabled,
   saveProfile,
   setBusinessPrompt,
@@ -83,7 +86,13 @@ import { clearSecret, hasSecret, putSecret } from "./secrets-vault.js";
 import { runSelfUpdate, sourceRepoFor, SOURCE_REPO_KEY } from "./self-update.js";
 import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
-import { ingestDocument, removeDocument } from "../rag/ingest.js";
+import {
+  GENERATED_DOCUMENTS,
+  ingestDocument,
+  NOTES_FILENAME,
+  removeDocument,
+  syncNotes,
+} from "../rag/ingest.js";
 import { SKILLS } from "../telegram/skills.js";
 import { LOCALE_NAMES, LOCALES, isLocale } from "../telegram/i18n.js";
 import { missingConfiguration } from "../env.js";
@@ -138,8 +147,9 @@ async function businessCard(env: Env, businessId: string) {
  *   3  the business profile
  *   4  agent configuration: rules and features
  *   5  telling the deployment its own source repository
+ *   6  notes, and the knowledge view over every source
  */
-export const API_REVISION = 5;
+export const API_REVISION = 6;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -857,6 +867,115 @@ export async function handleConsoleApi(
       if (skill === undefined) return json({ error: "unknown_skill" }, 400);
       await setBusinessPrompt(env, businessId, skill.body);
       return json({ ok: true, prompt: skill.body });
+    }
+
+    // GET /businesses/:id/knowledge — everything the assistant can draw on,
+    // in one list, whatever shape it was given in.
+    //
+    // The point of the page is that an owner can see the whole of it. Split
+    // across four screens, the question "why did it say that" has four places
+    // to look and no answer in any of them.
+    if (method === "GET" && segments[2] === "knowledge" && segments.length === 3) {
+      const [documents, products, notes, profile, rules] = await Promise.all([
+        listDocuments(env, businessId, 100),
+        productsView(env, businessId),
+        listNotes(env, businessId),
+        getProfile(env, businessId),
+        listRules(env, businessId),
+      ]);
+      const uploaded = documents.filter(
+        (document) => !GENERATED_DOCUMENTS.includes(document.filename as never),
+      );
+      const generated = documents.filter((document) =>
+        GENERATED_DOCUMENTS.includes(document.filename as never),
+      );
+      const profileFilled = Object.values(profile).filter((value) => value.trim().length > 0).length;
+      return json({
+        // Searched: found by looking, when a question resembles what is in them.
+        searched: [
+          ...uploaded.map((document) => ({
+            kind: "document",
+            id: document.id,
+            name: document.filename,
+            detail: document.contentType,
+            pieces: document.chunkCount,
+            status: document.status,
+            error: document.error,
+            updatedAt: document.updatedAt,
+          })),
+          {
+            kind: "products",
+            id: "products",
+            name: "Price list",
+            detail: `${products.length} item${products.length === 1 ? "" : "s"}`,
+            pieces:
+              generated.find((d) => d.filename === OWNER_UPDATES_FILENAME)?.chunkCount ?? 0,
+            status: products.length === 0 ? "empty" : "ready",
+            error: null,
+            updatedAt:
+              generated.find((d) => d.filename === OWNER_UPDATES_FILENAME)?.updatedAt ?? null,
+          },
+          {
+            kind: "notes",
+            id: "notes",
+            name: "Notes",
+            detail: `${notes.length} note${notes.length === 1 ? "" : "s"}`,
+            pieces: generated.find((d) => d.filename === NOTES_FILENAME)?.chunkCount ?? 0,
+            status: notes.length === 0 ? "empty" : "ready",
+            error: null,
+            updatedAt: generated.find((d) => d.filename === NOTES_FILENAME)?.updatedAt ?? null,
+          },
+        ],
+        // Always sent: small enough to go with every question, so they are
+        // never missed by a search that did not match.
+        alwaysSent: [
+          {
+            kind: "profile",
+            id: "profile",
+            name: "About the business",
+            detail: `${profileFilled} of 9 fields filled in`,
+            status: profileFilled === 0 ? "empty" : "ready",
+          },
+          {
+            kind: "rules",
+            id: "rules",
+            name: "Standing instructions",
+            detail: `${rules.filter((rule) => rule.active).length} of ${rules.length} switched on`,
+            status: rules.length === 0 ? "empty" : "ready",
+          },
+        ],
+      });
+    }
+
+    // Facts the owner types rather than uploads.
+    if (segments[2] === "notes") {
+      if (method === "GET" && segments.length === 3) {
+        return json({ notes: await listNotes(env, businessId) });
+      }
+      if (method === "POST" && segments.length === 3) {
+        const body = (await request.json().catch(() => ({}))) as {
+          id?: string;
+          title?: string;
+          body?: string;
+        };
+        const text = String(body.body ?? "").trim();
+        if (text.length === 0) return json({ error: "empty" }, 400);
+        const notes = await saveNote(env, businessId, {
+          id: body.id,
+          title: String(body.title ?? ""),
+          body: text,
+        });
+        // Indexed in the same call. A note the owner just wrote and the agent
+        // cannot find yet is the shape of a feature that looks broken.
+        await syncNotes(env, businessId);
+        return json({ notes });
+      }
+      const noteId = segments[3];
+      if (method === "DELETE" && noteId !== undefined) {
+        const notes = await deleteNote(env, businessId, noteId);
+        await syncNotes(env, businessId);
+        return json({ notes });
+      }
     }
 
     // What the assistant reads before it answers.

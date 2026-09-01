@@ -30,6 +30,9 @@ vi.mock("../src/db/queries.js", () => ({
   getAgentSetting: vi.fn(async () => ({ rememberCustomers: true })),
   saveAgentSetting: vi.fn(async () => ({ rememberCustomers: false })),
   listRules: vi.fn(async () => []),
+  listNotes: vi.fn(async () => []),
+  saveNote: vi.fn(async () => []),
+  deleteNote: vi.fn(async () => []),
   saveRule: vi.fn(async () => []),
   deleteRule: vi.fn(async () => []),
   setBotEnabled: vi.fn(async () => undefined),
@@ -114,6 +117,9 @@ vi.mock("../src/rag/extract.js", () => ({
 vi.mock("../src/rag/ingest.js", () => ({
   ingestDocument: vi.fn(async () => ({ documentId: "d1", chunkCount: 3, searchable: true })),
   removeDocument: vi.fn(async () => undefined),
+  syncNotes: vi.fn(async () => undefined),
+  GENERATED_DOCUMENTS: ["Owner updates (console)", "Notes (console)"],
+  NOTES_FILENAME: "Notes (console)",
 }));
 vi.mock("../src/updates.js", () => ({ versionStatus: vi.fn(async () => ({ running: "1", latest: "1", behind: false })) }));
 
@@ -174,6 +180,10 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["PUT", "/businesses/b1/prompt", { prompt: "be brief" }],
   ["POST", "/businesses/b1/prompt/undo"],
   ["POST", "/businesses/b1/skill", { id: "nope" }],
+  ["GET", "/businesses/b1/knowledge"],
+  ["GET", "/businesses/b1/notes"],
+  ["POST", "/businesses/b1/notes", { title: "Parking", body: "Three spaces." }],
+  ["DELETE", "/businesses/b1/notes/n1"],
   ["GET", "/businesses/b1/documents"],
   ["POST", "/businesses/b1/documents"],
   ["DELETE", "/businesses/b1/documents/d1"],
