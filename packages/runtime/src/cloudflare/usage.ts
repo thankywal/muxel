@@ -10,6 +10,7 @@
  */
 
 import type { Env } from "../env.js";
+import { cloudflareAccess } from "./access.js";
 
 const GRAPHQL_ENDPOINT = "https://api.cloudflare.com/client/v4/graphql";
 
@@ -106,11 +107,13 @@ function window(now: Date): { today: string; month: string; from: string; to: st
 }
 
 export async function accountUsage(env: Env, now: Date = new Date()): Promise<UsageResult> {
-  const account = env.CF_ACCOUNT_ID?.trim();
-  const token = env.CF_API_TOKEN?.trim();
-  if (!account || !token) {
+  // One record of how this deployment reaches Cloudflare. Reading the env here
+  // as well would let this and the badge disagree about whether it is set up.
+  const access = await cloudflareAccess(env);
+  if (access === null) {
     return { ok: false, problem: "not_configured" };
   }
+  const { accountId: account, token } = access;
 
   const { today, month, from, to } = window(now);
 

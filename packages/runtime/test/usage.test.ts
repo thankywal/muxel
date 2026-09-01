@@ -10,9 +10,27 @@ import type { Env } from "../src/env.js";
  * rather than a hardcoded per model rate.
  */
 
+/**
+ * A deployment that has already worked out which account it belongs to.
+ *
+ * That lookup happens once a day and is cached, so this is the ordinary state
+ * and the one these assertions are about: with it, the only call `accountUsage`
+ * makes is the analytics query itself.
+ */
 const CONFIGURED = {
   CF_ACCOUNT_ID: "acc123",
   CF_API_TOKEN: "token123",
+  STATE: {
+    get: async (_key: string, kind?: string) =>
+      kind === "json" ? { token: "token123", accountId: "acc123", name: "Test Account" } : null,
+    put: async () => undefined,
+    delete: async () => undefined,
+  },
+} as unknown as Env;
+
+/** No token anywhere: not in the vault, not on the deploy form. */
+const UNCONFIGURED = {
+  STATE: { get: async () => null, put: async () => undefined, delete: async () => undefined },
 } as unknown as Env;
 
 const AT = new Date("2026-08-10T09:00:00Z");
@@ -52,7 +70,7 @@ describe("accountUsage", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await accountUsage({} as Env, AT);
+    const result = await accountUsage(UNCONFIGURED, AT);
 
     expect(result).toEqual({ ok: false, problem: "not_configured" });
     expect(fetchMock).not.toHaveBeenCalled();

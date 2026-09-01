@@ -80,7 +80,7 @@ export const CORS = {
   // property that matters here, which is that the page the owner opens talks
   // to their Worker with nothing in between.
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, authorization, x-filename, x-caption",
+  "access-control-allow-headers": "content-type, authorization, accept, x-filename, x-caption",
   "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
   "access-control-max-age": "86400",
 } as const;

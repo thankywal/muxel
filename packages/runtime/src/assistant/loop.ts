@@ -86,6 +86,19 @@ const SYSTEM = [
   "beside their work, not in a report.",
 ].join("\n");
 
+/**
+ * What the loop is doing, as it does it.
+ *
+ * Reported at the moment it happens rather than summarised at the end, because
+ * a tool loop takes several seconds and the owner is watching a still screen
+ * for all of them. Every one of these is an event that occurred; none is a
+ * guess about what is coming next.
+ */
+export type LoopEvent =
+  | { readonly type: "status"; readonly label: string }
+  | { readonly type: "step"; readonly tool: string; readonly ok: boolean }
+  | { readonly type: "text"; readonly text: string };
+
 export interface AssistantReply {
   readonly text: string;
   readonly approvals: readonly Approval[];
@@ -104,9 +117,17 @@ export interface AssistantReply {
  */
 export async function ask(
   env: Env,
-  input: { userId: number; chatId: string; question: string; model: string },
+  input: {
+    userId: number;
+    chatId: string;
+    question: string;
+    model: string;
+    /** Called as the loop works, when someone is watching. */
+    onEvent?: (event: LoopEvent) => void;
+  },
 ): Promise<AssistantReply> {
   const { userId, chatId, question } = input;
+  const say = input.onEvent ?? (() => undefined);
   const businesses = await listBusinesses(env, userId);
   const ctx: ToolContext = { env, userId };
   const messageId = await addOperatorMessage(env, { chatId, userId, role: "user", content: question });
@@ -130,6 +151,7 @@ export async function ask(
   // number for the turn, not for the last leg of it.
   const spent = { model, inputTokens: 0, outputTokens: 0 };
   for (let step = 0; step < MAX_STEPS; step += 1) {
+    say({ type: "status", label: step === 0 ? "Thinking" : "Working" });
     const turn = await converse(env, {
       model,
       system: `${SYSTEM}\n\nThe businesses here: ${
@@ -164,6 +186,7 @@ export async function ask(
           content: `No tool called ${call.name}. Available: ${TOOL_SPECS.map((t) => t.name).join(", ")}`,
         });
         took.push({ tool: call.name, ok: false });
+        say({ type: "step", tool: call.name, ok: false });
         continue;
       }
 
@@ -187,6 +210,7 @@ export async function ask(
             + "Tell them what you are proposing and why, and do not say it has been made.",
         });
         took.push({ tool: tool.name, ok: true });
+        say({ type: "step", tool: tool.name, ok: true });
         continue;
       }
 
@@ -198,6 +222,7 @@ export async function ask(
           content: JSON.stringify(result).slice(0, 6000),
         });
         took.push({ tool: tool.name, ok: true });
+        say({ type: "step", tool: tool.name, ok: true });
       } catch (error) {
         steps.push({
           role: "tool",
@@ -205,6 +230,7 @@ export async function ask(
           content: `Failed: ${error instanceof Error ? error.message : "unknown error"}`,
         });
         took.push({ tool: tool.name, ok: false });
+        say({ type: "step", tool: tool.name, ok: false });
       }
     }
   }
@@ -218,6 +244,7 @@ export async function ask(
         : "I could not finish that. Ask me again, more narrowly.";
   }
 
+  say({ type: "text", text });
   const answerId = await addOperatorMessage(env, {
     chatId,
     userId,

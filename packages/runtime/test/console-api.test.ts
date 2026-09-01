@@ -81,8 +81,13 @@ vi.mock("../src/human-reply.js", () => ({
 }));
 vi.mock("../src/web/secrets-vault.js", () => ({
   clearSecret: vi.fn(async () => undefined),
+  getSecret: vi.fn(async () => null),
   hasSecret: vi.fn(async () => false),
   putSecret: vi.fn(async () => undefined),
+}));
+vi.mock("../src/cloudflare/access.js", () => ({
+  cloudflareAccess: vi.fn(async () => ({ token: "t", accountId: "acc123", name: "Test Account" })),
+  forgetAccess: vi.fn(async () => undefined),
 }));
 vi.mock("../src/db/insights.js", () => ({
   channelSplit: vi.fn(async () => ({ telegram: 3, web: 1 })),
@@ -246,6 +251,8 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["DELETE", "/secrets/github_token"],
   ["POST", "/update"],
   ["PUT", "/source-repo", { repo: "a/b" }],
+  ["PUT", "/secrets/cloudflare_token", { token: "cf-token" }],
+  ["DELETE", "/secrets/cloudflare_token"],
   ["GET", "/assistant"],
   ["GET", "/assistant?chat=k1"],
   ["POST", "/assistant", { text: "what is waiting?" }],

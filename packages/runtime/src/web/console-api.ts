@@ -90,6 +90,7 @@ import { ask } from "../assistant/loop.js";
 import { decide } from "../assistant/decide.js";
 import { allowanceNow, neuronsFor, type Allowance } from "../cloudflare/allowance.js";
 import { accountName } from "../cloudflare/account.js";
+import { cloudflareAccess, forgetAccess } from "../cloudflare/access.js";
 import {
   chatTranscript,
   stepsFor,
@@ -169,8 +170,10 @@ async function businessCard(env: Env, businessId: string) {
  *   9  the working behind each answer, and the model changed on its own
  *  10  what each answer cost, where the day's neurons stand, and the name on
  *      the Cloudflare account this runs in
+ *  11  the answer streamed as it is worked out, and the Cloudflare token
+ *      collected in the console instead of at deploy time
  */
-export const API_REVISION = 10;
+export const API_REVISION = 11;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -476,6 +479,76 @@ export async function handleConsoleApi(
      * who switches the picker mid conversation would otherwise see yesterday's
      * replies relabelled with today's model.
      */
+    /**
+     * The same turn, reported as it happens.
+     *
+     * The body is opened before the loop starts and written to as the loop
+     * works, so the owner sees the tool it is running rather than a still
+     * screen for the several seconds it takes. The last event carries exactly
+     * the payload the non streaming path returns, so the console has one shape
+     * to draw from either way.
+     */
+    const streamed = (
+      env: Env,
+      userId: number,
+      chat: { id: string; model: string },
+      question: string,
+    ): Response => {
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      const encoder = new TextEncoder();
+      const send = (event: unknown): void => {
+        writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => undefined);
+      };
+
+      // Deliberately not awaited: the response has to be returned now for the
+      // browser to start reading it.
+      void (async () => {
+        try {
+          const reply = await ask(env, {
+            userId,
+            chatId: chat.id,
+            question,
+            model: chat.model,
+            onEvent: send,
+          });
+          const allowance = await allowanceNow(env);
+          send({
+            type: "done",
+            ...reply,
+            chats: await listChats(env, userId, 40),
+            chat,
+            messages: await chatTranscript(env, chat.id, 60),
+            steps: await stepsFor(env, chat.id),
+            usage: priced(await usageFor(env, chat.id), allowance),
+            allowance: {
+              neuronsToday: allowance.neuronsToday,
+              perDay: allowance.perDay,
+              problem: allowance.problem,
+            },
+            approvals: await listApprovals(env, userId, 60),
+          });
+        } catch (error) {
+          // Sent down the same channel. A stream that just stops leaves the
+          // console waiting for an answer that is never coming.
+          send({
+            type: "failed",
+            message: error instanceof Error ? error.message : "that did not finish",
+          });
+        } finally {
+          await writer.close().catch(() => undefined);
+        }
+      })();
+
+      return new Response(readable, {
+        headers: {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-store",
+          "access-control-allow-origin": "*",
+        },
+      });
+    };
+
     const priced = (
       spent: Record<string, { model: string; inputTokens: number; outputTokens: number }>,
       allowance: Allowance,
@@ -553,6 +626,13 @@ export async function handleConsoleApi(
       } else if (typeof body.model === "string" && MODEL_PRESETS.some((p) => p.id === body.model)) {
         await setChatModel(env, userId, chat.id, body.model);
         chat = { ...chat, model: body.model };
+      }
+
+      // A watching browser asks for the events; anything else gets the whole
+      // answer in one piece, which is what the API did before and what a script
+      // calling it still wants.
+      if ((request.headers.get("accept") ?? "").includes("text/event-stream")) {
+        return streamed(env, userId, chat, text.slice(0, 4000));
       }
 
       const reply = await ask(env, {
@@ -1376,10 +1456,11 @@ export async function handleConsoleApi(
 
   // What this deployment is running, and whether anything is waiting for it.
   if (method === "GET" && segments[0] === "system") {
-    const [version, hasToken, usage] = await Promise.all([
+    const [version, hasToken, usage, access] = await Promise.all([
       versionStatus(),
       hasSecret(env, "github_token"),
       todayUsageAll(env),
+      cloudflareAccess(env),
     ]);
     return json({
       apiRevision: API_REVISION,
@@ -1389,6 +1470,8 @@ export async function handleConsoleApi(
       // update cannot work, and that is worth saying before it is pressed.
       sourceRepo: await sourceRepoFor(env),
       githubToken: hasToken,
+      // Whether the neuron figures can be read, and whose account they are for.
+      cloudflare: access === null ? null : { account: access.name, accountId: access.accountId },
       origin: (await env.STATE.get(ORIGIN_KEY)) ?? "",
       usage,
     });
@@ -1415,6 +1498,38 @@ export async function handleConsoleApi(
     }
     if (method === "DELETE") {
       await clearSecret(env, "github_token");
+      return json({ ok: true });
+    }
+  }
+
+  /**
+   * The Cloudflare read token, which is the only thing standing between this
+   * deployment and its own usage figures.
+   *
+   * Stored the same way the GitHub token is, and checked before it is kept: a
+   * token that cannot see an account is discovered here rather than as a
+   * permanently blank cost line. What is deliberately not asked for is the
+   * account id — the token belongs to one, and Cloudflare says which.
+   */
+  if (segments[0] === "secrets" && segments[1] === "cloudflare_token") {
+    if (method === "PUT") {
+      const body = (await request.json().catch(() => ({}))) as { token?: string };
+      const token = String(body.token ?? "").trim();
+      if (token.length === 0) return json({ error: "empty" }, 400);
+      await putSecret(env, "cloudflare_token", token);
+      // Anything learned from the previous token belongs to the previous token.
+      await forgetAccess(env);
+      const access = await cloudflareAccess(env);
+      if (access === null) {
+        await clearSecret(env, "cloudflare_token");
+        await forgetAccess(env);
+        return json({ error: "token_rejected" }, 400);
+      }
+      return json({ ok: true, account: access.name ?? "", accountId: access.accountId });
+    }
+    if (method === "DELETE") {
+      await clearSecret(env, "cloudflare_token");
+      await forgetAccess(env);
       return json({ ok: true });
     }
   }

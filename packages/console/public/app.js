@@ -65,6 +65,7 @@ const state = {
   newChat: false,
   /** The turn in flight, so the stop square has something to stop. */
   pending: null,
+  stopped: false,
   locale: "en",
 };
 
@@ -323,7 +324,7 @@ const NEEDS = {
   settings: 1,
   advanced: 1,
   inbox: 2,
-  assistant: 10,
+  assistant: 11,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -1345,7 +1346,7 @@ function costLine(usage) {
   }
   const why =
     problem === "not_configured"
-      ? "Neurons need a Cloudflare read token in Settings"
+      ? "Add a Cloudflare read token in Settings to see your neuron allowance"
       : problem === "unreachable"
         ? "Cloudflare did not answer for the neuron figures"
         : "";
@@ -1462,9 +1463,15 @@ async function sendToAssistant(event) {
   // The arrow becomes a stop square for as long as the turn is running, so the
   // one control in reach is the one that does something.
   state.pending = new AbortController();
+  state.stopped = false;
   $("asSend").hidden = true;
   $("asStop").hidden = false;
-  $("asStop").onclick = () => state.pending?.abort();
+  $("asStop").onclick = () => {
+    // Stops the typing as well as the request; otherwise the words keep
+    // appearing after the owner has said to stop.
+    state.stopped = true;
+    state.pending?.abort();
+  };
 
   // The turn appears the moment it is sent, with a line saying it is working,
   // because a tool loop takes several seconds and a still screen reads as a
@@ -1479,18 +1486,19 @@ async function sendToAssistant(event) {
     "beforeend",
     `<div class="turn user"><div class="ubub">${md(text)}</div></div>
      <div class="turn ai" id="asThinking">
+       <div class="steps"></div>
        <div class="ai-head"><img class="ai-av" src="/assets/logo.jpg" alt="">
-         <b>${h(modelLabel())}</b></div>
+         <b>${h(modelLabel())}</b>
+         <span class="work-label">Thinking</span></div>
        <div class="ai-body thinking"><span></span><span></span><span></span></div>
      </div>`,
   );
   thread.scrollTop = thread.scrollHeight;
 
-  const { ok, data, aborted } = await api("assistant", {
-    method: "POST",
-    body: { text, chatId: state.chatId ?? undefined, model: state.chatModel ?? undefined },
-    signal: state.pending.signal,
-  });
+  const { ok, data, aborted } = await askAssistant(
+    { text, chatId: state.chatId ?? undefined, model: state.chatModel ?? undefined },
+    state.pending.signal,
+  );
   state.pending = null;
   input.disabled = false;
   if ($("asSend")) {
@@ -1518,6 +1526,129 @@ async function sendToAssistant(event) {
     bindChatRail();
   }
   drawAssistant();
+}
+
+/**
+ * Asks, and shows the answer arriving.
+ *
+ * The deployment writes events down the response as it works, so what appears
+ * on screen is what is happening: the tool it is running now, and the answer
+ * as it comes. The last event carries the same payload the plain JSON call
+ * returns, so the screen it settles into is drawn from one shape either way.
+ *
+ * A deployment too old to stream answers with JSON, which parses here as one
+ * "done" and skips straight to the finished screen.
+ */
+async function askAssistant(body, signal) {
+  let response;
+  try {
+    response = await fetch(`${worker}/admin/api/assistant`, {
+      method: "POST",
+      headers: {
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        "content-type": "application/json",
+        accept: "text/event-stream",
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") return { ok: false, aborted: true, data: {} };
+    return { ok: false, data: {} };
+  }
+  if (!response.ok) return { ok: false, data: {} };
+
+  if (!(response.headers.get("content-type") ?? "").includes("text/event-stream")) {
+    return { ok: true, data: await response.json().catch(() => ({})) };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let done = null;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      // SSE frames are separated by a blank line, and a chunk can end mid
+      // frame, so the tail is kept until its blank line arrives.
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        const line = frame.split("\n").find((l) => l.startsWith("data: "));
+        if (line === undefined) continue;
+        let event;
+        try {
+          event = JSON.parse(line.slice(6));
+        } catch {
+          continue;
+        }
+        if (event.type === "done") done = event;
+        else if (event.type === "failed") return { ok: false, data: {} };
+        else showProgress(event);
+      }
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return { ok: false, aborted: true, data: {} };
+    return { ok: false, data: {} };
+  }
+  if (done === null) return { ok: false, data: {} };
+  // The words are typed out before the finished screen replaces them, so the
+  // answer appears the way it was written rather than all at once.
+  await typeOut(done.text ?? "");
+  return { ok: true, data: done };
+}
+
+/** What the deployment says it is doing, drawn into the waiting turn. */
+function showProgress(event) {
+  const turn = $("asThinking");
+  if (turn === null) return;
+  if (event.type === "status") {
+    const label = turn.querySelector(".work-label");
+    if (label) label.textContent = event.label;
+    return;
+  }
+  if (event.type === "step") {
+    const steps = turn.querySelector(".steps");
+    if (steps) steps.insertAdjacentHTML("beforeend", stepLine(event));
+    scrollThread();
+  }
+}
+
+/** How fast the answer appears. Fast enough to read along with, not to wait on. */
+const TYPE_MS_PER_CHAR = 6;
+
+/**
+ * Reveals the answer.
+ *
+ * The text is not rewritten on its way here and nothing is held back: this
+ * paints what arrived, in order, at a readable rate, and stops the moment the
+ * owner presses the stop square.
+ */
+async function typeOut(text) {
+  const turn = $("asThinking");
+  if (turn === null || text.length === 0) return;
+  const body = turn.querySelector(".ai-body");
+  body.classList.remove("thinking");
+  const label = turn.querySelector(".work-label");
+  if (label) label.remove();
+  const at = performance.now();
+  for (let cut = 0; cut <= text.length; cut += Math.max(1, Math.ceil(text.length / 220))) {
+    if (state.stopped) break;
+    body.innerHTML = md(text.slice(0, cut));
+    scrollThread();
+    await new Promise((r) => setTimeout(r, TYPE_MS_PER_CHAR));
+    // A very long answer would otherwise hold the screen for a minute.
+    if (performance.now() - at > 6000) break;
+  }
+  body.innerHTML = md(text);
+  scrollThread();
+}
+
+function scrollThread() {
+  const thread = $("asThread");
+  if (thread) thread.scrollTop = thread.scrollHeight;
 }
 
 async function answerApproval(approvalId, yes) {
@@ -3269,6 +3400,36 @@ async function viewSettings() {
     </div>
 
     <div class="card" style="max-width:700px;margin-top:16px">
+      <div class="card-head"><h2>Cloudflare read access</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">
+          One read only token, and this deployment can show you what each answer costs against your daily
+          neuron allowance, and put your account's name on your own badge. We cannot make this token for
+          you: Cloudflare does not let a Worker create an API token for the account it runs in, and it is
+          right not to. You make it once.</p>
+        ${
+          data.cloudflare
+            ? `<p style="margin:0 0 14px">Connected to
+                 <b>${h(data.cloudflare.account || data.cloudflare.accountId)}</b>.
+                 <a href="#" id="delCf">Remove it</a></p>`
+            : ""
+        }
+        <div class="field" style="margin:0">
+          <label>${data.cloudflare ? "Replace the token" : "Add a token"}</label>
+          <div style="display:flex;gap:8px">
+            <input id="cfTok" type="password" placeholder="Cloudflare API token" autocomplete="off" style="flex:1">
+            <button class="btn btn-primary btn-sm" id="saveCf">Save</button></div>
+          <small>On
+            <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">
+              Cloudflare → My Profile → API Tokens</a>, create a custom token with
+            <b>Account Analytics: Read</b> and <b>Account Settings: Read</b>, scoped to the account this
+            deployment runs in. Nothing here can write. You are not asked for an account id: the token
+            belongs to one, and we ask Cloudflare which.</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="max-width:700px;margin-top:16px">
       <div class="card-head"><h2>Console bot</h2></div>
       <div class="pad">
         <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">The Telegram bot that is your private
@@ -3301,6 +3462,29 @@ async function viewSettings() {
       toast(`The console is now @${out.username}.`);
     }
   };
+
+  $("saveCf").onclick = async () => {
+    const value = $("cfTok").value.trim();
+    if (!value) return;
+    $("saveCf").disabled = true;
+    const { ok: saved, data: out } = await api("secrets/cloudflare_token", {
+      method: "PUT",
+      body: { token: value },
+    });
+    $("saveCf").disabled = false;
+    if (!saved) return toast("Cloudflare would not accept that token.");
+    toast(out.account ? `Connected to ${out.account}.` : "Connected.");
+    // The badge and the cost lines both read from this, so both are stale now.
+    state.health = null;
+    viewSettings();
+    whoAmI();
+  };
+  if ($("delCf"))
+    $("delCf").onclick = async (e) => {
+      e.preventDefault();
+      await api("secrets/cloudflare_token", { method: "DELETE" });
+      viewSettings();
+    };
 
   $("saveTok").onclick = async () => {
     const value = $("tok").value.trim();

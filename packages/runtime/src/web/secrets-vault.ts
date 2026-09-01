@@ -17,7 +17,7 @@ import type { Env } from "../env.js";
 import { resolveMasterKey } from "../secrets.js";
 
 /** The names a deployment understands, so a typo cannot create a dead entry. */
-export const SECRET_NAMES = ["github_token"] as const;
+export const SECRET_NAMES = ["github_token", "cloudflare_token"] as const;
 export type SecretName = (typeof SECRET_NAMES)[number];
 
 const key = (name: SecretName): string => `secret:${name}`;
