@@ -1000,7 +1000,6 @@ export const STRINGS = {
     my: "customer ကို ဖြေမည့် model ရွေးပါ။ key လိုသည်ဟု မှတ်ထားသော model များအတွက် သင့် AI Gateway တွင် provider key လိုအပ်သည်။ မမှတ်ထားသူများကို သင့် Cloudflare account ဖြင့် ရပါသည်။",
   },
   modelCurrent: { en: "current", th: "ใช้อยู่", zh: "当前", my: "လက်ရှိ" },
-  modelNeedsKey: { en: "needs key", th: "ต้องใช้คีย์", zh: "需密钥", my: "key လိုသည်" },
 
   // Language ----------------------------------------------------------------
   langTitle: { en: "Language", th: "ภาษา", zh: "语言", my: "ဘာသာစကား" },

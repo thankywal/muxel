@@ -109,6 +109,7 @@ vi.mock("../src/rag/extract.js", () => ({
 }));
 vi.mock("../src/rag/ingest.js", () => ({
   ingestDocument: vi.fn(async () => ({ documentId: "d1", chunkCount: 3, searchable: true })),
+  removeDocument: vi.fn(async () => undefined),
 }));
 vi.mock("../src/updates.js", () => ({ versionStatus: vi.fn(async () => ({ running: "1", latest: "1", behind: false })) }));
 

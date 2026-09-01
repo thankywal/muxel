@@ -28,6 +28,8 @@ const h = (v) =>
 const state = {
   /** Whether the deployment answers the data API. Asked once, read everywhere. */
   api: null,
+  /** What the deployment's data API can do. See NEEDS. */
+  apiRevision: 1,
   view: "overview",
   businessId: null,
   customerId: null,
@@ -250,6 +252,28 @@ const NAV = [
   ] },
 ];
 
+/**
+ * The API revision each page needs from the deployment.
+ *
+ * The console updates on its own and the deployment updates when its owner
+ * presses a button, so the two are routinely out of step. A page that needs
+ * more than the deployment has says so, with the one button that fixes it,
+ * rather than asking for a path that is not there and showing a 404.
+ */
+const NEEDS = {
+  overview: 1,
+  businesses: 1,
+  messages: 1,
+  settings: 1,
+  advanced: 1,
+  inbox: 2,
+  diagnostics: 2,
+  logs: 2,
+  channels: 2,
+  customers: 2,
+  agents: 4,
+};
+
 const TITLES = {
   overview: ["Overview", "Monitor your agents, channels, and conversations."],
   inbox: ["Inbox", "Conversations a customer is waiting on a person for."],
@@ -384,6 +408,8 @@ async function render() {
   // browser's preflight with an error, so nothing on it can be reached from a
   // page at all. Every view reads the one fact.
   if (!(await apiReady())) return viewOutdated();
+  const needs = NEEDS[state.view] ?? 1;
+  if (state.apiRevision < needs) return viewNeedsUpdate(state.view, needs);
   const draw = {
     overview: viewOverview,
     inbox: viewInbox,
@@ -404,8 +430,11 @@ async function apiReady() {
   // "ready" is remembered; "absent" is asked again each visit, so the console
   // starts working by itself once the deployment catches up.
   if (state.api !== "ready") {
-    const { status } = await api("system", { quiet: true });
+    const { status, data } = await api("system", { quiet: true });
     state.api = status === 404 || status === 0 ? "absent" : "ready";
+    // A deployment from before this field reports nothing, which is revision 1:
+    // the first data API, and everything since then is something it lacks.
+    state.apiRevision = Number(data.apiRevision ?? 1) || 1;
   }
   return state.api === "ready";
 }
@@ -2615,6 +2644,42 @@ function drawScreen(data) {
 }
 
 // ------------------------------------------------------------------ outdated
+
+/**
+ * What a page says when the deployment has not caught up with it.
+ *
+ * Named plainly, because the operator has done nothing wrong and nothing is
+ * broken: this console is simply newer than the code they are running, and one
+ * button fixes it. The pages that do work are still listed, so the answer is
+ * never "come back later" with nothing to do in the meantime.
+ */
+function viewNeedsUpdate(view, needs) {
+  const label = (TITLES[view] ?? ["This page"])[0];
+  const working = Object.entries(NEEDS)
+    .filter(([id, level]) => level <= state.apiRevision && id !== view)
+    .map(([id]) => (TITLES[id] ?? [id])[0]);
+  $("view").innerHTML = `
+    <div class="card" style="padding:24px;max-width:720px;margin-bottom:16px">
+      <h2 style="margin:0 0 8px;font-size:17px">${h(label)} needs your deployment updated</h2>
+      <p style="margin:0 0 13px;color:var(--ink-2)">This console has moved on ahead of the code your
+        deployment is running. Nothing is broken and nothing has been lost; this page just asks your
+        deployment questions it does not know how to answer yet.</p>
+      <p style="margin:0 0 16px;color:var(--muted);font-size:13.5px">Your deployment speaks version
+        ${state.apiRevision} of the console API. This page needs ${needs}.</p>
+      <button class="btn btn-primary btn-sm" id="toUpdate">Update your deployment</button>
+    </div>
+    ${
+      working.length === 0
+        ? ""
+        : `<div class="card" style="padding:20px 24px;max-width:720px">
+             <p style="margin:0;color:var(--muted);font-size:13.5px">Working in the meantime:
+               ${working.map((name) => h(name)).join(", ")}.</p></div>`
+    }`;
+  $("toUpdate").onclick = () => {
+    state.settingsTab = "deployment";
+    go("settings");
+  };
+}
 
 function viewOutdated() {
   $("view").innerHTML = `

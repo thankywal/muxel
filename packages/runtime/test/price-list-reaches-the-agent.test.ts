@@ -86,6 +86,17 @@ describe("who writes the price list", () => {
     }
   });
 
+  it("unindexes a document it deletes, through the one door that does both", () => {
+    // deleteDocument drops the row and hands back the chunk ids for the caller
+    // to remove from the index. The web console called it and threw them away,
+    // so a removed price list kept being retrieved and quoted. removeDocument
+    // is the door that does both, and it is the only caller of the other.
+    for (const path of ["web/console-api.ts", "telegram/admin.ts"]) {
+      expect(src(path), path).not.toContain("deleteDocument(");
+    }
+    expect(src("rag/ingest.ts")).toContain("await env.KNOWLEDGE.deleteByIds(ids)");
+  });
+
   it("puts the two writes in one function rather than at every call site", () => {
     // They were written out longhand three times, which is three chances to
     // forget and one that already had been.

@@ -139,15 +139,6 @@ function progressBar(fraction: number): string {
 export interface ModelPreset {
   readonly label: string;
   readonly id: string;
-  /**
-   * Whether the operator must supply a provider key before this model works.
-   *
-   * A Cloudflare token reaches Workers AI models and nothing else. For any
-   * other provider the gateway forwards that token upstream, where it is
-   * rejected, so the console marks those rather than letting an operator select
-   * a model that will fail on the first customer message.
-   */
-  readonly requiresProviderKey: boolean;
 }
 
 /**
@@ -155,31 +146,24 @@ export interface ModelPreset {
  * index never leaves a single callback: `setmdl` resolves it and stores
  * `preset.id`, so this list can be reordered without moving anyone's choice.
  *
+ * Workers AI only, and deliberately. This project promises that a deployment
+ * runs inside the owner's own Cloudflare account with nothing of ours in the
+ * path, and every other provider breaks that: the gateway would forward a key
+ * to somewhere else, and the owner would be paying a second bill to a company
+ * they did not choose. Two such models used to be listed and marked as needing
+ * a key, which is an option that cannot be taken without giving up the thing
+ * the product is for.
+ *
  * Ordered by what a shop should reach for first rather than by price. Qwen 3.8
  * leads because it is the only entry that carries a long context, tool calling
- * and vision at once without asking the operator for a provider key, which is
- * what a shop answering photographed price lists actually needs. It is not on
- * Cloudflare's paid billing list, so it stays inside the free daily allowance
- * the setup guide promises.
+ * and vision at once, which is what a shop answering photographed price lists
+ * actually needs. None of the three is on Cloudflare's paid billing list, so
+ * they stay inside the free daily allowance the setup guide promises.
  */
 export const MODEL_PRESETS: readonly ModelPreset[] = [
-  {
-    label: "Qwen 3.8 27B",
-    id: "workers-ai/@cf/qwen/qwen3.8-27b",
-    requiresProviderKey: false,
-  },
-  {
-    label: "Gemma 4 26B",
-    id: "workers-ai/@cf/google/gemma-4-26b-a4b-it",
-    requiresProviderKey: false,
-  },
-  {
-    label: "Llama 3.3 70B",
-    id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    requiresProviderKey: false,
-  },
-  { label: "GPT-5.6 Luna", id: "openai/gpt-5.6-luna", requiresProviderKey: true },
-  { label: "Claude Sonnet 4.5", id: "anthropic/claude-sonnet-4-5", requiresProviderKey: true },
+  { label: "Qwen 3.8 27B", id: "workers-ai/@cf/qwen/qwen3.8-27b" },
+  { label: "Gemma 4 26B", id: "workers-ai/@cf/google/gemma-4-26b-a4b-it" },
+  { label: "Llama 3.3 70B", id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
 ];
 
 /**
@@ -792,10 +776,9 @@ function modelScreen(locale: Locale, business: Business): Screen {
     ].join("\n"),
     rows: [
       ...MODEL_PRESETS.map((preset, index) => {
-        const marks = [
-          preset.id === business.model ? t(locale, "modelCurrent") : null,
-          preset.requiresProviderKey ? t(locale, "modelNeedsKey") : null,
-        ].filter((mark) => mark !== null);
+        const marks = [preset.id === business.model ? t(locale, "modelCurrent") : null].filter(
+          (mark) => mark !== null,
+        );
         return row({
           text: marks.length > 0 ? `${preset.label} (${marks.join(", ")})` : preset.label,
           action: "setmdl",

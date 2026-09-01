@@ -31,7 +31,6 @@ import {
   transcript,
   conversationForCustomer,
   createBot,
-  deleteDocument,
   forgetCustomer,
   forgetFacts,
   getOperatorLocale,
@@ -83,7 +82,7 @@ import { escapeHtml } from "../telegram/format.js";
 import { clearSecret, hasSecret, putSecret } from "./secrets-vault.js";
 import { runSelfUpdate } from "./self-update.js";
 import { versionStatus } from "../updates.js";
-import { ingestDocument } from "../rag/ingest.js";
+import { ingestDocument, removeDocument } from "../rag/ingest.js";
 import { SKILLS } from "../telegram/skills.js";
 import { LOCALE_NAMES, LOCALES, isLocale } from "../telegram/i18n.js";
 import { missingConfiguration } from "../env.js";
@@ -118,6 +117,27 @@ async function businessCard(env: Env, businessId: string) {
     customers: customers.length,
   };
 }
+
+/**
+ * What this build's data API can do, as one number.
+ *
+ * The console is served from somewhere else and updates on its own, so it is
+ * routinely newer than the deployment it is pointed at. Without this it finds
+ * out by asking for a path that is not there, and the operator gets a 404 and a
+ * blank page for a feature that simply has not arrived yet.
+ *
+ * Bumped whenever routes are added. A deployment that predates this field
+ * reports nothing, which the console reads as revision 1, and every page that
+ * needs more than that says so instead of failing.
+ *
+ *   1  the first data API: overview, businesses, conversations, messages,
+ *      system, secrets, update
+ *   2  inbox, diagnostics, locale, skills, console bot, prompt, documents,
+ *      the web channel, one customer, rescan
+ *   3  the business profile
+ *   4  agent configuration: rules and features
+ */
+export const API_REVISION = 4;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -872,7 +892,11 @@ export async function handleConsoleApi(
       }
       const documentId = segments[3];
       if (method === "DELETE" && documentId !== undefined) {
-        await deleteDocument(env, businessId, documentId);
+        // removeDocument, not deleteDocument. The second drops the row and
+        // hands back the chunk ids for the caller to unindex; this console
+        // threw them away, so a removed price list went on being retrieved and
+        // quoted. One door, and it is this one.
+        await removeDocument(env, businessId, documentId);
         return json({ documents: await listDocuments(env, businessId, 50) });
       }
     }
@@ -1061,6 +1085,7 @@ export async function handleConsoleApi(
       todayUsageAll(env),
     ]);
     return json({
+      apiRevision: API_REVISION,
       version,
       repo: UPSTREAM_REPO,
       githubToken: hasToken,
