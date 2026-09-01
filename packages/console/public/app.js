@@ -238,10 +238,13 @@ const NAV = [
     { id: "messages", label: "Messages" },
   ] },
   { group: "SETUP", items: [{ id: "settings", label: "Settings" }] },
+  // Advanced is deliberately not here. Nearly everything it reached has a page
+  // of its own now, and leaving it beside them made an unfinished looking
+  // surface a first class destination. It is one click from Diagnostics, which
+  // is where someone goes when a page has not done what they needed.
   { group: "ADVANCED", items: [
     { id: "logs", label: "Logs" },
     { id: "diagnostics", label: "Diagnostics" },
-    { id: "advanced", label: "Advanced" },
   ] },
 ];
 
@@ -257,8 +260,8 @@ const TITLES = {
   settings: ["Settings", "What this deployment is running, and how it updates itself."],
   logs: ["Logs", "What this deployment recorded, newest first."],
   advanced: [
-    "Advanced",
-    "The Telegram console bot's own screens. Most of what is here now has a page of its own; this is what is left, and the fallback if one of them ever misses something.",
+    "The bot's own screens",
+    "The Telegram console, exactly as it sends it. Everything here has a page of its own in this console; this is the fallback, and where a screen the bot grows tomorrow turns up first.",
   ],
 };
 
@@ -709,7 +712,7 @@ async function viewDiagnostics() {
       }
     </div>
 
-    <div class="card">
+    <div class="card" style="margin-bottom:16px">
       <div class="card-head"><h2>Recent failures</h2>
         <a href="#" data-goto="logs">All events</a></div>
       ${
@@ -724,8 +727,20 @@ async function viewDiagnostics() {
               )
               .join("")}</tbody></table>`
       }
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>The bot's own screens</h2></div>
+      <div class="pad" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <p style="margin:0;color:var(--muted);font-size:13.5px;flex:1;min-width:300px">Everything this console
+          does, it does by asking your deployment the same questions the Telegram console bot asks. If a page
+          here has not done what you needed, the bot's own screens are the fallback, and a screen it grows
+          tomorrow appears there before it has a page here.</p>
+        <button class="btn btn-ghost btn-sm" id="openAdvanced">Open them</button>
+      </div>
     </div>`;
   wireGoto();
+  $("openAdvanced").onclick = () => go("advanced");
 }
 
 // -------------------------------------------------------------------- agents
@@ -1537,39 +1552,95 @@ async function bizInstructions(businessId) {
   );
 }
 
-async function bizPrices(businessId, b) {
+/**
+ * The list the assistant quotes from, which is not a table of typed rows.
+ *
+ * It is what was pulled out of the uploaded documents with the operator's
+ * corrections over the top, so an item can come from a file, from this page, or
+ * from a file and then be corrected here. The Source column says which, because
+ * "where did that price come from" is the first thing anyone asks when one is
+ * wrong.
+ */
+async function bizPrices(businessId) {
+  const { data } = await api(`businesses/${businessId}/products`);
+  const items = data.products ?? [];
   $("bizTab").innerHTML = `
     <div class="card">
       <div class="card-head"><h2>Price list</h2>
-        <button class="btn btn-primary btn-sm" id="addProduct">Add item</button></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" id="rescan">Read the documents again</button>
+          <button class="btn btn-primary btn-sm" id="addProduct">Add item</button>
+        </div></div>
+      <div id="rescanState" hidden class="pad" style="padding-bottom:0"></div>
       ${
-        (b.products ?? []).length === 0
+        items.length === 0
           ? `<div class="empty"><h3>Nothing here yet</h3>
-               <p>The agent quotes from this list and nowhere else. With it empty it will say it does not
-                  know a price rather than invent one, which is the right answer but a slow way to sell.</p>
+               <p>The agent quotes from this list and nowhere else. With it empty it says it does not know a
+                  price rather than inventing one, which is the right answer and a slow way to sell. Type the
+                  items in, or upload a price list under Documents and they are read out of it.</p>
                <button class="btn btn-primary" id="addProduct2">Add your first item</button></div>`
-          : `<table><thead><tr><th>Item</th><th>Price</th><th>Description</th><th></th></tr></thead>
-             <tbody>${b.products
+          : `<table><thead><tr><th>Item</th><th>Price</th><th>Description</th><th>Source</th><th></th></tr></thead>
+             <tbody>${items
                .map(
-                 (p) => `<tr><td><b>${h(p.name)}</b></td><td>${h(p.price)}</td>
+                 (p) => `<tr><td><b>${h(p.name)}</b></td><td>${h(p.price || "—")}</td>
                    <td style="color:var(--muted)">${h(p.description)}</td>
-                   <td style="text-align:right"><a href="#" data-prod="${h(p.id)}"
-                     style="color:var(--muted);font-size:12.5px">Remove</a></td></tr>`,
+                   <td>${
+                     p.source
+                       ? `<span class="tag">${h(p.source)}</span>${
+                           p.edited ? ' <span class="tag brand">edited</span>' : ""
+                         }`
+                       : '<span class="tag brand">typed here</span>'
+                   }</td>
+                   <td style="text-align:right;white-space:nowrap">
+                     <a href="#" data-edit="${h(p.key)}" style="color:var(--muted);font-size:12.5px">Edit</a>
+                     <a href="#" data-del="${h(p.key)}" style="color:var(--muted);font-size:12.5px;margin-left:11px">Remove</a>
+                   </td></tr>`,
                )
                .join("")}</tbody></table>
-             <div class="tfoot"><span>${b.products.length} item${b.products.length === 1 ? "" : "s"}</span>
-               <span>Uploading a price list under Documents adds to this too.</span></div>`
+             <div class="tfoot"><span>${items.length} item${items.length === 1 ? "" : "s"}</span>
+               <span>Anything changed here overrides what the documents say.</span></div>`
       }
     </div>`;
-  for (const id of ["addProduct", "addProduct2"]) if ($(id)) $(id).onclick = () => addProductDialog(businessId);
-  $("bizTab").querySelectorAll("[data-prod]").forEach(
+
+  for (const id of ["addProduct", "addProduct2"]) if ($(id)) $(id).onclick = () => productDialog(businessId, null);
+  $("bizTab").querySelectorAll("[data-edit]").forEach(
+    (a) =>
+      (a.onclick = (e) => {
+        e.preventDefault();
+        productDialog(businessId, items.find((p) => p.key === a.dataset.edit));
+      }),
+  );
+  $("bizTab").querySelectorAll("[data-del]").forEach(
     (a) =>
       (a.onclick = async (e) => {
         e.preventDefault();
-        await api(`businesses/${businessId}/products/${a.dataset.prod}`, { method: "DELETE" });
-        businessDetail(businessId);
+        const item = items.find((p) => p.key === a.dataset.del);
+        const choice = await ask(
+          `Remove ${item.name}`,
+          item.source
+            ? `It stays in ${item.source}, and the agent is told not to quote it any more. Reading that file again will not bring it back.`
+            : "The agent stops quoting it.",
+          [{ key: "yes", label: "Remove", primary: true }],
+        );
+        if (!choice) return;
+        await api(`businesses/${businessId}/products/${encodeURIComponent(a.dataset.del)}`, { method: "DELETE" });
+        bizPrices(businessId);
       }),
   );
+  $("rescan").onclick = async () => {
+    $("rescan").disabled = true;
+    $("rescanState").hidden = false;
+    $("rescanState").innerHTML = '<p class="loading" style="padding:0">Reading your documents…</p>';
+    const { ok, data: out } = await api(`businesses/${businessId}/rescan`, { method: "POST" });
+    $("rescan").disabled = false;
+    if (!ok) return;
+    toast(
+      out.queued === 0
+        ? "No documents to read."
+        : `Reading ${out.queued} document${out.queued === 1 ? "" : "s"}. The first is done; the rest finish in the background.`,
+    );
+    bizPrices(businessId);
+  };
 }
 
 /**
@@ -1969,10 +2040,12 @@ async function viewSettings() {
  */
 async function viewAdvanced() {
   $("view").innerHTML = `
+    <p style="margin:0 0 14px"><a href="#" id="backToDiag" style="color:var(--muted);font-size:13px">← Diagnostics</a></p>
     <div class="split">
       <div class="card list" id="advNav"><p class="loading">Loading…</p></div>
       <div class="card" id="advPane"><p class="loading">Loading…</p></div>
     </div>`;
+  $("backToDiag").onclick = (e) => (e.preventDefault(), go("diagnostics"));
   if (state.advNav === null) {
     // The top screen is the deployment's own list of destinations, in the
     // operator's own language. Asking it once beats naming them here, where
@@ -2355,18 +2428,27 @@ function createBusinessDialog() {
   };
 }
 
-function addProductDialog(businessId) {
+/** One dialog for adding and for correcting, because they are one write. */
+function productDialog(businessId, item) {
+  const editing = item != null;
   const bg = document.createElement("div");
   bg.className = "modal-bg";
   bg.innerHTML = `<div class="modal">
-    <h3>Add to the price list</h3>
-    <p class="sub">The agent quotes from this and nowhere else.</p>
-    <div class="field"><label>Item</label><input id="pName" placeholder="Chocolate cake, 1 lb"></div>
-    <div class="field"><label>Price</label><input id="pPrice" placeholder="450 THB"></div>
-    <div class="field"><label>Description</label><input id="pDesc" placeholder="Serves 6 to 8. Order a day ahead."></div>
+    <h3>${editing ? "Correct this item" : "Add to the price list"}</h3>
+    <p class="sub">${
+      editing && item.source
+        ? `Read out of ${h(item.source)}. What you put here overrides it, and survives that file being read again.`
+        : "The agent quotes from this list and nowhere else."
+    }</p>
+    <div class="field"><label>Item</label>
+      <input id="pName" placeholder="Chocolate cake, 1 lb" value="${editing ? h(item.name) : ""}"></div>
+    <div class="field"><label>Price</label>
+      <input id="pPrice" placeholder="450 THB" value="${editing ? h(item.price) : ""}"></div>
+    <div class="field"><label>Description</label>
+      <input id="pDesc" placeholder="Serves 6 to 8. Order a day ahead." value="${editing ? h(item.description) : ""}"></div>
     <div class="actions">
       <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="save">Add</button>
+      <button class="btn btn-primary btn-sm" id="save">${editing ? "Save" : "Add"}</button>
     </div></div>`;
   document.body.appendChild(bg);
   const close = () => bg.remove();
@@ -2376,16 +2458,21 @@ function addProductDialog(businessId) {
   bg.querySelector("#save").onclick = async () => {
     const name = bg.querySelector("#pName").value.trim();
     if (!name) return;
-    await api(`businesses/${businessId}/products`, {
-      method: "POST",
-      body: {
-        name,
-        price: bg.querySelector("#pPrice").value,
-        description: bg.querySelector("#pDesc").value,
-      },
-    });
+    bg.querySelector("#save").disabled = true;
+    const body = {
+      name,
+      price: bg.querySelector("#pPrice").value,
+      description: bg.querySelector("#pDesc").value,
+    };
+    const { ok } = editing
+      ? await api(`businesses/${businessId}/products/${encodeURIComponent(item.key)}`, {
+          method: "PATCH",
+          body,
+        })
+      : await api(`businesses/${businessId}/products`, { method: "POST", body });
+    if (!ok) return (bg.querySelector("#save").disabled = false);
     close();
-    businessDetail(businessId);
+    bizPrices(businessId);
   };
 }
 

@@ -85,6 +85,18 @@ vi.mock("../src/db/insights.js", () => ({
 }));
 vi.mock("../src/web/self-update.js", () => ({ runSelfUpdate: vi.fn(async () => ({ ok: true, message: "done" })) }));
 vi.mock("../src/db/migrate.js", () => ({ currentVersion: vi.fn(async () => 10), TARGET_VERSION: 10 }));
+vi.mock("../src/products.js", () => ({
+  productsView: vi.fn(async () => [
+    { key: "p1", name: "Cake", price: "450", description: "", source: "prices.pdf", edited: false },
+  ]),
+  saveProductEntry: vi.fn(async () => undefined),
+}));
+vi.mock("../src/rag/extract.js", () => ({
+  OWNER_UPDATES_FILENAME: "Owner updates (console)",
+  markExtractionPending: vi.fn(async () => undefined),
+  pendingExtractions: vi.fn(async () => []),
+  runExtraction: vi.fn(async () => undefined),
+}));
 vi.mock("../src/rag/ingest.js", () => ({
   ingestDocument: vi.fn(async () => ({ documentId: "d1", chunkCount: 3, searchable: true })),
 }));
@@ -156,7 +168,9 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["GET", "/businesses/b1/customers"],
   ["GET", "/businesses/b1/products"],
   ["POST", "/businesses/b1/products", { name: "Cake" }],
+  ["PATCH", "/businesses/b1/products/p1", { price: "9" }],
   ["DELETE", "/businesses/b1/products/p1"],
+  ["POST", "/businesses/b1/rescan"],
   ["GET", "/conversations/c1"],
   ["POST", "/conversations/c1/takeover"],
   ["POST", "/conversations/c1/release"],

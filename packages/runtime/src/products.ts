@@ -17,6 +17,7 @@
  */
 
 import { generateId } from "@muxel/core";
+import { syncOwnerUpdates } from "./rag/ingest.js";
 
 import type { Env } from "./env.js";
 
@@ -147,6 +148,34 @@ export async function productsView(env: Env, businessId: string): Promise<Produc
   }
 
   return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/**
+ * Records an owner's price list change and makes the assistant able to read it.
+ *
+ * These are two writes and one act. The correction lands in the database, and
+ * then the owner-updates document is rewritten and re-indexed, because that
+ * document is the only way a correction reaches the assistant. A caller that
+ * does the first and forgets the second stores the new price and leaves the
+ * assistant quoting the old one, which looks exactly like the change not having
+ * been made, except that the console shows it.
+ *
+ * It was written out longhand at three call sites before this, which is three
+ * chances to forget and one that already had been: the web console wrote to a
+ * table nothing reads.
+ */
+export async function saveProductEntry(
+  env: Env,
+  input: {
+    businessId: string;
+    name: string;
+    price: string;
+    description: string;
+    removed: boolean;
+  },
+): Promise<void> {
+  await upsertCorrection(env, input);
+  await syncOwnerUpdates(env, input.businessId);
 }
 
 /** Just the names, for the reply path's empty-retrieval fallback. */

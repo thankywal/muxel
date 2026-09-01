@@ -25,14 +25,12 @@ import {
   listCustomers,
   listDocuments,
   listEvents,
-  listProducts,
   takeOverConversation,
   todayUsage,
   todayUsageAll,
   transcript,
   conversationForCustomer,
   createBot,
-  createProduct,
   deleteDocument,
   forgetCustomer,
   forgetFacts,
@@ -46,7 +44,6 @@ import {
   setOperatorLocale,
   deleteConversationById,
   deleteMessageRow,
-  deleteProduct,
   findOperator,
   getMedia,
   getMessageRow,
@@ -84,6 +81,8 @@ import { TARGET_VERSION, currentVersion } from "../db/migrate.js";
 import { UPSTREAM_REPO } from "../version.js";
 import type { Env } from "../env.js";
 import { MAX_PROMPT_CHARS, MODEL_PRESETS } from "../telegram/admin.js";
+import { productsView, saveProductEntry } from "../products.js";
+import { OWNER_UPDATES_FILENAME, markExtractionPending, pendingExtractions, runExtraction } from "../rag/extract.js";
 import { CORS, json, operatorFor } from "./console.js";
 
 /** A business as the console draws it: what it is, where it answers, what it cost. */
@@ -538,7 +537,7 @@ export async function handleConsoleApi(
     if (method === "GET" && segments.length === 2) {
       const [card, products, documents, recentCustomers] = await Promise.all([
         businessCard(env, businessId),
-        listProducts(env, businessId),
+        productsView(env, businessId),
         listDocuments(env, businessId),
         listCustomers(env, businessId, 50),
       ]);
@@ -575,10 +574,17 @@ export async function handleConsoleApi(
       return json({ customers: await listCustomers(env, businessId, 100) });
     }
 
-    // What the assistant is allowed to quote a price from.
+    // The price list the assistant actually quotes from.
+    //
+    // Not the `product` table: that is read by nothing. The list is what has
+    // been extracted from the uploaded documents, with the owner's corrections
+    // laid over the top, and a correction reaches the assistant by being
+    // written into the owner-updates document and re-indexed. So every write
+    // here goes through the same one function the Telegram console uses, and
+    // an item typed in either place is an item the assistant can quote.
     if (segments[2] === "products") {
       if (method === "GET" && segments.length === 3) {
-        return json({ products: await listProducts(env, businessId) });
+        return json({ products: await productsView(env, businessId) });
       }
       if (method === "POST" && segments.length === 3) {
         const body = (await request.json().catch(() => ({}))) as {
@@ -588,19 +594,71 @@ export async function handleConsoleApi(
         };
         const name = String(body.name ?? "").trim();
         if (name.length === 0) return json({ error: "bad_name" }, 400);
-        await createProduct(env, {
+        // An item typed here is a correction with nothing underneath it, which
+        // is also how the same item typed into the bot is stored.
+        await saveProductEntry(env, {
           businessId,
-          name: name.slice(0, 120),
-          price: String(body.price ?? "").trim().slice(0, 60),
-          description: String(body.description ?? "").trim().slice(0, 500),
+          name,
+          price: String(body.price ?? ""),
+          description: String(body.description ?? ""),
+          removed: false,
         });
-        return json({ products: await listProducts(env, businessId) }, 201);
+        return json({ products: await productsView(env, businessId) }, 201);
       }
-      const productId = segments[3];
-      if (method === "DELETE" && productId !== undefined) {
-        await deleteProduct(env, productId);
-        return json({ products: await listProducts(env, businessId) });
+      // Addressed by name, because that is the key a correction has. An item
+      // pulled out of a document has no id of its own to be addressed by.
+      const key = segments[3];
+      if (key !== undefined && (method === "PATCH" || method === "DELETE")) {
+        const entry = (await productsView(env, businessId)).find((item) => item.key === key);
+        if (entry === undefined) return notFound();
+        if (method === "DELETE") {
+          // A removal is a correction too, because the item may come from a
+          // document this cannot edit. Deleting the row would let the next
+          // extraction bring it straight back.
+          await saveProductEntry(env, {
+            businessId,
+            name: entry.name,
+            price: "",
+            description: "",
+            removed: true,
+          });
+        } else {
+          const body = (await request.json().catch(() => ({}))) as {
+            name?: string;
+            price?: string;
+            description?: string;
+          };
+          await saveProductEntry(env, {
+            businessId,
+            name: String(body.name ?? entry.name),
+            price: String(body.price ?? entry.price),
+            description: String(body.description ?? entry.description),
+            removed: false,
+          });
+        }
+        return json({ products: await productsView(env, businessId) });
       }
+    }
+
+    // Read the uploaded documents again and pull the price list out of them.
+    if (method === "POST" && segments[2] === "rescan" && segments.length === 3) {
+      const documents = await listDocuments(env, businessId, 100);
+      let queued = 0;
+      for (const document of documents) {
+        if (document.filename === OWNER_UPDATES_FILENAME) continue;
+        await markExtractionPending(env, { businessId, documentId: document.id });
+        queued += 1;
+      }
+      // One is read now so the button visibly did something; the scheduled run
+      // works through whatever is left.
+      const [next] = await pendingExtractions(env, 1);
+      if (next !== undefined) {
+        const business = await getBusiness(env, businessId);
+        await runExtraction(env, { businessId, documentId: next.documentId, model: business.model }).catch(
+          () => undefined,
+        );
+      }
+      return json({ ok: true, queued, products: await productsView(env, businessId) });
     }
 
     // The instructions the assistant answers by.

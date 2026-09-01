@@ -76,7 +76,6 @@ import {
   ingestDocument,
   MAX_DOCUMENT_BYTES,
   removeDocument,
-  syncOwnerUpdates,
 } from "../rag/ingest.js";
 import { knowledgeReady } from "../rag/retrieve.js";
 import { describeCustomer } from "../escalation.js";
@@ -86,7 +85,7 @@ import {
   getChannelForBusiness,
   updateChannel,
 } from "../web/channel.js";
-import { productsView, upsertCorrection, type ProductEntry } from "../products.js";
+import { productsView, saveProductEntry, type ProductEntry } from "../products.js";
 import {
   hasPendingExtraction,
   markExtractionPending,
@@ -1474,14 +1473,13 @@ export async function screenFor(
       if (entry !== undefined) {
         // The data learns it first, then the view shows it: a removal the
         // customer could still be quoted is not a removal.
-        await upsertCorrection(env, {
+        await saveProductEntry(env, {
           businessId,
           name: entry.name,
           price: "",
           description: "",
           removed: true,
         });
-        await syncOwnerUpdates(env, businessId);
       }
       return screenFor(env, locale, userId, "prod", [businessId]);
     }
@@ -2358,8 +2356,7 @@ async function handlePendingInput(
     }
     // A typed item is a correction with nothing underneath it. It reaches the
     // assistant through the owner-updates document, like every other fact.
-    await upsertCorrection(env, { businessId, ...item, removed: false });
-    await syncOwnerUpdates(env, businessId);
+    await saveProductEntry(env, { businessId, ...item, removed: false });
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "prod", [businessId]));
     return;
   }
@@ -2381,14 +2378,13 @@ async function handlePendingInput(
       await client.sendMessage({ chatId, text: t(locale, "prodAddInvalid") });
       return;
     }
-    await upsertCorrection(env, {
+    await saveProductEntry(env, {
       businessId,
       name: entry.name,
       price,
       description: description.length > 0 ? description : entry.description,
       removed: false,
     });
-    await syncOwnerUpdates(env, businessId);
     await render(env, client, { chatId }, await screenFor(env, locale, userId, "p", [businessId, key]));
     return;
   }
