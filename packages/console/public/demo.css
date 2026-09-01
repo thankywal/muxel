@@ -22,6 +22,7 @@
   --d-surface-2: var(--paper, var(--surface-2, #f8fafc));
   --d-line: var(--line, #e2e8f0);
   --d-ink: var(--ink, #0f172a);
+  --d-ink-2: var(--ink-2, #334155);
   --d-muted: var(--muted, #64748b);
   --d-brand: var(--orange, var(--brand, #f97316));
   --d-brand-ink: var(--orange-ink, var(--brand-ink, #ea580c));
@@ -38,8 +39,11 @@
 /* A fixed window that scrolls itself. A section that grew with the
    conversation would shove the rest of the page down while somebody read it. */
 .demo-thread { height: 400px; overflow-y: auto; padding: 26px 0 8px; scroll-behavior: smooth; }
+/* Nothing asked yet, so the greeting sits in the middle of the window rather
+   than at the top of an empty one — the same as the console's own blank chat. */
+.demo-thread.blank { display: grid; place-items: center; padding: 0; }
 
-.demo .turn { max-width: 660px; margin: 0 auto 22px; padding: 0 24px; }
+.demo .turn { max-width: 720px; margin: 0 auto 22px; padding: 0 28px; }
 .demo .turn.user { display: flex; justify-content: flex-end; margin-bottom: 18px; }
 .demo .ubub { background: var(--d-surface); border: 1px solid var(--d-line);
   border-radius: 16px 16px 4px 16px; padding: 10px 14px; font-size: 14px; max-width: 78%;
@@ -62,12 +66,13 @@
   color: var(--d-muted); padding: 2px 0; }
 .demo .step svg { color: #10b981; flex: none; }
 
-.demo .greet { max-width: 620px; margin: 26px auto 0; padding: 0 24px; text-align: center; }
-.demo .greet img { width: 42px; height: 42px; border-radius: 11px; }
-.demo .greet h3 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 12px 0 6px; }
-.demo .greet p { margin: 0 auto; max-width: 460px; color: var(--d-muted); font-size: 13.5px; }
+/* The console's own blank chat, to the pixel: same greeting, same chips. */
+.demo .greet { max-width: 720px; margin: 0 auto; padding: 0 28px; text-align: center; }
+.demo .greet img { width: 46px; height: 46px; border-radius: 12px; }
+.demo .greet h3 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 14px 0 6px; }
+.demo .greet p { margin: 0 auto; max-width: 520px; color: var(--d-muted); font-size: 13.5px; }
 
-.demo-foot { max-width: 708px; margin: 0 auto; padding: 8px 24px 22px; }
+.demo-foot { max-width: 720px; margin: 0 auto; padding: 8px 28px 22px; }
 /* The box is the console's, and it is locked: nothing here answers a question
    nobody wrote an answer for, so there is nothing to type into it. */
 .demo .composer { border: 1px solid var(--d-line); background: var(--d-surface);
@@ -87,7 +92,7 @@
 .demo .send[hidden] { display: none; }
 .demo .openers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
 .demo .opener { border: 1px solid var(--d-line); background: var(--d-surface); border-radius: 999px;
-  padding: 7px 13px; font: inherit; font-size: 12.5px; color: var(--d-ink); cursor: pointer; }
+  padding: 7px 13px; font: inherit; font-size: 12.5px; color: var(--d-ink-2); cursor: pointer; }
 .demo .opener:hover { border-color: var(--d-brand-line); color: var(--d-brand-ink);
   background: var(--d-brand-soft); }
 .demo .opener:disabled { opacity: .45; cursor: default; }

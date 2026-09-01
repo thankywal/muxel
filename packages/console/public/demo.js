@@ -82,9 +82,10 @@ const CHECK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" strok
 let answering = false;
 
 function greet() {
+  thread.classList.add("blank");
   thread.innerHTML = `<div class="greet">
-      <img src="/assets/logo.jpg" alt="">
-      <h3>Ask it something</h3>
+      <img src="/assets/logo.png" alt="">
+      <h3>What can I do for you?</h3>
       <p>Pick a question below. It answers the way your own deployment would, from what it was
          given.</p>
     </div>`;
@@ -92,6 +93,7 @@ function greet() {
 greet();
 
 function youSaid(text) {
+  thread.classList.remove("blank");
   document.querySelector(".demo .greet")?.remove();
   thread.insertAdjacentHTML(
     "beforeend",
@@ -106,7 +108,7 @@ async function itSaid(turn) {
     "beforeend",
     `<div class="turn ai">
        <div class="steps"></div>
-       <div class="ai-head"><img class="ai-av" src="/assets/logo.jpg" alt="">
+       <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${esc(MODEL)}</b><span class="work-label">Thinking</span>
          <span class="when">just now</span></div>
        <div class="ai-body"></div>
