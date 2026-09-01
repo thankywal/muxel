@@ -7,6 +7,7 @@
 <meta name="description" content="Muxel answers your customers on Telegram and on your website from your own price list and policies, running entirely inside your own Cloudflare account. No hosted backend. Your data never leaves your account.">
 <link rel="icon" href="/assets/logo.jpg">
 <link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/demo.css">
 <style>
   header { padding: 22px 0; }
   .nav { display: flex; align-items: center; justify-content: space-between; }
@@ -61,23 +62,34 @@
     </div>
   </section>
 
-  <section class="grid">
-    <div class="card"><h3>No account to create</h3>
-      <p>There is nothing to sign up for. The thing you deploy is the whole product.</p></div>
-    <div class="card"><h3>No database of your customers</h3>
-      <p>Not ours to lose, sell, subpoena or leak. It is in your Cloudflare account.</p></div>
-    <div class="card"><h3>Updates in one click</h3>
-      <p>New version upstream? Press the button. No GitHub visit, no redeploy, no workflow to paste.</p></div>
-    <div class="card"><h3>Turn it off and keep it</h3>
-      <p>The source is yours, running on your keys. Nothing stops working because we do.</p></div>
-    <div class="card"><h3>Answers from your own facts</h3>
-      <p>Upload a price list or a policy document. It answers from that, not from a guess.</p></div>
-    <div class="card"><h3>Telegram and your website</h3>
-      <p>One assistant, two front doors. Generate a chat bubble and paste one line into your site.</p></div>
-    <div class="card"><h3>Take over any time</h3>
-      <p>Step into a conversation, reply as yourself, hand it back when you are done.</p></div>
-    <div class="card"><h3>Yours to keep</h3>
-      <p>Your Cloudflare account, your database, your keys. Turn it off and the code is still yours.</p></div>
+  <!--
+    The demonstration.
+
+    This replaces a grid of claims about the product with the product making
+    them. It answers the questions a shop owner actually arrives with, and it
+    says every time that the answers are written rather than generated: a
+    scripted reply presented as a live model would be the one dishonest thing
+    on a page whose whole argument is that nothing here is hidden.
+
+    A visitor who types their own question gets told so, and gets the two steps
+    that would let them ask it for real.
+  -->
+  <section class="demo" id="demo">
+    <div class="demo-bar">
+      <span class="demo-tag">Demonstration</span>
+      <span class="demo-note">These answers are written, not generated. Your own deployment answers
+        from your own price list.</span>
+    </div>
+    <div class="demo-thread" id="thread"></div>
+    <form class="demo-composer" id="demoSay">
+      <input id="demoText" autocomplete="off" aria-label="Ask a question"
+        placeholder="Or ask your own question">
+      <button type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </form>
   </section>
 
   <section class="card own">
@@ -101,5 +113,7 @@
   </footer>
 
 </div>
+
+<script src="/demo.js"></script>
 </body>
 </html>

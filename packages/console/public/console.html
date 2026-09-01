@@ -6,6 +6,7 @@
 <title>Muxel console</title>
 <link rel="icon" href="/assets/logo.jpg">
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/demo.css">
 <style>
   /* The page a deployment's owner sees before they have one. It shares the
      console's tokens so the two do not look like different products. */
@@ -69,15 +70,28 @@
         There is no account here, no session, and no database with your customers in it.
       </p>
 
-      <div class="sec">
-        <h2>How it works</h2>
-        <div class="flow">
-          <div class="card"><b>1 · Deploy</b><p>One click puts Muxel in your Cloudflare account, on the free plan.</p></div>
-          <div class="card"><b>2 · Teach</b><p>Send it your price list or policy. It answers from that, not from a guess.</p></div>
-          <div class="card"><b>3 · Connect</b><p>Point a Telegram bot at it, or paste one line into your website.</p></div>
-          <div class="card"><b>4 · Watch</b><p>It answers on its own. Step in whenever you want, hand it back when done.</p></div>
+      <!--
+        The same demonstration the product page shows. Four cards claiming what
+        it does became it doing it, and the deploy steps are already below, so
+        somebody who asks it a real question has somewhere to go.
+      -->
+      <section class="demo" id="demo">
+        <div class="demo-bar">
+          <span class="demo-tag">Demonstration</span>
+          <span class="demo-note">These answers are written, not generated. Your own deployment answers
+            from your own price list.</span>
         </div>
-      </div>
+        <div class="demo-thread" id="thread"></div>
+        <form class="demo-composer" id="demoSay">
+          <input id="demoText" autocomplete="off" aria-label="Ask a question"
+            placeholder="Or ask your own question">
+          <button type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+      </section>
 
       <div class="sec">
         <h2>Deploy it, step by step</h2>
@@ -117,6 +131,7 @@
   </main>
   <div id="shell" hidden></div>
 </div>
+<script src="/demo.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

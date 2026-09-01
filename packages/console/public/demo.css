@@ -1,0 +1,55 @@
+/* ---------------------------------------------------------------------------
+   The demonstration, on whichever intro screen is showing it.
+
+   Two pages have an intro: the product page a stranger lands on, and the
+   console before it knows which deployment it belongs to. They had four claim
+   cards each. One demonstration serves both, so a claim cannot be updated in
+   one place and left stale in the other.
+
+   Written against fallback chains rather than one page's tokens, because the
+   two pages have different names for the same colours and neither should have
+   to learn the other's.
+   --------------------------------------------------------------------------- */
+.demo { background: var(--card, var(--surface, #fff)); border: 1px solid var(--line, #e2e8f0); border-radius: var(--radius, 16px);
+        box-shadow: var(--shadow, 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06)); margin: 44px 0; overflow: hidden; }
+.demo-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+            padding: 14px 22px; border-bottom: 1px solid var(--line, #e2e8f0); background: var(--paper, var(--surface-2, #f8fafc)); }
+.demo-tag { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+            color: var(--orange-ink, var(--brand-ink, #ea580c)); background: #fff4ec; border: 1px solid #fed7aa;
+            border-radius: 999px; padding: 3px 10px; }
+.demo-note { font-size: 13px; color: var(--muted, #64748b); }
+/* A fixed window that scrolls itself. The demonstration keeps going, and a
+   section that grew with it would shove the rest of the page down the screen
+   while somebody was reading it. */
+.demo-thread { padding: 26px 22px 8px; height: 400px; overflow-y: auto; scroll-behavior: smooth; }
+.demo-turn { max-width: 660px; margin: 0 auto 22px; }
+.demo-turn.you { display: flex; justify-content: flex-end; }
+.demo-bub { background: var(--paper, var(--surface-2, #f8fafc)); border: 1px solid var(--line, #e2e8f0); padding: 10px 15px;
+            border-radius: 16px 16px 4px 16px; max-width: 78%; font-size: 15px; }
+.demo-who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.demo-who img { width: 22px; height: 22px; border-radius: 6px; }
+.demo-who b { font-size: 14px; }
+.demo-body { font-size: 15.5px; line-height: 1.75; white-space: pre-wrap; }
+.demo-body b { font-weight: 650; }
+.demo-caret { display: inline-block; width: 2px; height: 1.05em; background: var(--orange, var(--brand, #f97316));
+              vertical-align: -2px; animation: caret 1s steps(2, end) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.demo-composer { display: flex; gap: 10px; align-items: center; padding: 14px 22px 20px;
+                 max-width: 704px; margin: 0 auto; }
+.demo-composer input { flex: 1; padding: 13px 16px; font: inherit; font-size: 15px;
+  border: 1px solid var(--line, #e2e8f0); border-radius: 14px; background: var(--paper, var(--surface-2, #f8fafc)); }
+.demo-composer input:focus { outline: none; border-color: #fed7aa; background: #fff; }
+.demo-composer button { width: 40px; height: 40px; border: 0; border-radius: 50%; flex: none;
+  background: var(--orange, var(--brand, #f97316)); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.demo-composer button:hover { background: var(--orange-ink, var(--brand-ink, #ea580c)); }
+
+.demo-bg { position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 50;
+           display: grid; place-items: center; padding: 20px; }
+.demo-modal { background: #fff; border-radius: var(--radius, 16px); max-width: 480px; width: 100%;
+              padding: 26px; box-shadow: 0 20px 60px rgba(15,23,42,.3); }
+.demo-modal h3 { margin: 0 0 8px; font-size: 20px; letter-spacing: -.02em; }
+.demo-modal p { margin: 0 0 16px; color: var(--muted, #64748b); font-size: 15px; }
+.demo-modal ol { margin: 0 0 20px; padding-left: 20px; color: var(--ink); font-size: 15px; }
+.demo-modal li { margin: 6px 0; }
+.demo-modal .cta { gap: 10px; }
+
