@@ -11,7 +11,7 @@
  * about the owner is stored anywhere outside their own deployment.
  */
 
-import { handleAdminUpdate, hasPending, localeFor, screenFor } from "../telegram/admin.js";
+import { handleAdminUpdate, localeFor, pendingFor, screenFor } from "../telegram/admin.js";
 import { CapturingClient } from "./capture.js";
 import { sha256Hex } from "../crypto.js";
 import { findOperator } from "../db/queries.js";
@@ -156,7 +156,7 @@ export async function handleConsoleRequest(
         origin,
       );
       const captured = client.result();
-      return json({ ...captured, pending: await hasPending(env, userId) });
+      return json({ ...captured, pending: await pendingFor(env, userId) });
     }
 
     const screen = await screenFor(
@@ -166,7 +166,7 @@ export async function handleConsoleRequest(
       String(body.action ?? "home"),
       Array.isArray(body.args) ? body.args.map(String) : [],
     );
-    return json({ text: screen.text, rows: screen.rows, pending: await hasPending(env, userId) });
+    return json({ text: screen.text, rows: screen.rows, pending: await pendingFor(env, userId) });
   }
 
   return null;

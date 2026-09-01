@@ -234,6 +234,23 @@ type PendingKind =
   | "github_token"
   | "human_reply";
 
+/**
+ * The pending inputs that carry a credential.
+ *
+ * Two things need to know this and they had each decided it for themselves. The
+ * bot token branch scrubbed the message from the chat; the GitHub token branch,
+ * written later, did not, so an owner's personal access token sat in their
+ * Telegram history in plain text for as long as the chat existed. And the web
+ * console had no way to know either, so it typed a token into a visible field.
+ *
+ * One list, and both of them read it.
+ */
+const CREDENTIAL_INPUTS = new Set<PendingKind>(["new_business", "console_bot", "github_token"]);
+
+export function isCredentialInput(kind: string): boolean {
+  return CREDENTIAL_INPUTS.has(kind as PendingKind);
+}
+
 interface Pending {
   readonly kind: PendingKind;
   readonly businessId?: string;
@@ -255,8 +272,26 @@ async function setPending(env: Env, userId: number, pending: Pending): Promise<v
  * Telegram needs no such question: the next message is the answer. A browser
  * has to be told to put an input box on the screen, so it asks.
  */
-export async function hasPending(env: Env, userId: number): Promise<boolean> {
-  return (await env.STATE.get(`${PENDING_PREFIX}${userId}`)) !== null;
+/**
+ * What this operator is being asked for, if anything.
+ *
+ * A boolean was enough for a chat, where the next thing typed is the answer
+ * whatever it is. A browser has to decide what kind of field to draw, and
+ * guessing that from the wording of the prompt would be this page reading tea
+ * leaves. The deployment knows; it says.
+ */
+export async function pendingFor(
+  env: Env,
+  userId: number,
+): Promise<{ kind: PendingKind; secret: boolean } | null> {
+  const raw = await env.STATE.get(`${PENDING_PREFIX}${userId}`);
+  if (raw === null) return null;
+  try {
+    const pending = JSON.parse(raw) as Pending;
+    return { kind: pending.kind, secret: isCredentialInput(pending.kind) };
+  } catch {
+    return null;
+  }
 }
 
 async function takePending(env: Env, userId: number): Promise<Pending | null> {
@@ -2184,6 +2219,12 @@ async function handlePendingInput(
   const { pending, userId, chatId, locale } = input;
   const text = (input.message.text ?? "").trim();
 
+  // Taken out of the chat before anything slow happens, for every input that
+  // carries one. Which those are is not decided here; see CREDENTIAL_INPUTS.
+  if (isCredentialInput(pending.kind)) {
+    await client.deleteMessage({ chatId, messageId: input.message.message_id }).catch(() => undefined);
+  }
+
   if (pending.kind === "data_file") {
     const businessId = pending.businessId;
     if (businessId === undefined || input.message.document === undefined) {
@@ -2384,9 +2425,8 @@ async function handlePendingInput(
   }
 
   if (pending.kind === "new_business" || pending.kind === "console_bot") {
-    // Remove the credential from the transcript before doing anything slow.
-    await client.deleteMessage({ chatId, messageId: input.message.message_id });
-
+    // The credential is already out of the transcript: every input that carries
+    // one is scrubbed at the top of this function.
     const incoming = new TelegramClient(text);
     let me: { username?: string; first_name?: string };
     try {

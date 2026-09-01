@@ -237,6 +237,23 @@ tbody tr.click:hover { background: var(--surface-2); }
                   background: var(--surface); }
 .composer input:focus { outline: none; border-color: var(--blue); }
 
+/* ---- the deployment's own screens ---- */
+/* Their text arrives with real newlines and a little HTML, so it keeps its
+   line breaks. Nothing here rewrites it: only the frame around it changes. */
+.screen-body { white-space: pre-wrap; font-size: 14px; line-height: 1.65; color: var(--ink-2); }
+.screen-body b { color: var(--ink); }
+.screen-body a { color: var(--blue); }
+.screen-body code { font-size: 12.5px; }
+.card-head h2 + .screen-body { margin-top: 8px; }
+
+/* The answer a screen is waiting for, above the buttons, because it is the
+   thing being asked. */
+.answer-row { display: flex; gap: 8px; margin-top: 16px; }
+.answer-row input { flex: 1; padding: 10px 13px; border: 1px solid var(--line);
+                    border-radius: 9px; background: var(--surface); color: var(--ink); }
+.answer-row input:focus { outline: none; border-color: var(--blue); }
+.answer-note { margin: 9px 0 0; font-size: 12.5px; color: var(--muted); max-width: 620px; }
+
 /* ---- forms ---- */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field label { font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
