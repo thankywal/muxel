@@ -8,43 +8,82 @@
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/demo.css">
 <style>
-  /* The page a deployment's owner sees before they have one. It shares the
+  /* ---- the page a deployment's owner sees before they have one ----
+     Laid out as cards on a ground rather than one column of prose: a top bar,
+     a hero with the demonstration beside it, and then the two things left to
+     do side by side — read the steps, or paste an address. It shares the
      console's tokens so the two do not look like different products. */
-  #onboardingWrap { padding: 34px 24px 60px; }
-  .ob { max-width: 780px; margin: 0 auto; }
-  .ob .top { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 34px; }
+  #onboardingWrap { padding: 22px 20px 56px; background: var(--surface-2); min-height: 100vh; }
+  .ob { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+  .ob .panel { background: var(--surface); border: 1px solid var(--line);
+               border-radius: 18px; box-shadow: var(--shadow); }
+
+  .ob .top { display: flex; align-items: center; justify-content: space-between;
+             padding: 14px 22px; }
   .ob .mark { display: flex; align-items: center; gap: 11px; font-size: 21px; font-weight: 780; }
-  .ob .mark img { width: 36px; height: 36px; border-radius: 9px; }
-  .ob h1 { font-size: 41px; line-height: 1.13; letter-spacing: -.03em; margin: 0 0 16px; font-weight: 800; }
+  .ob .mark img { width: 34px; height: 34px; }
+  .ob .top-acts { display: flex; align-items: center; gap: 10px; }
+  .ob .top-acts .btn { padding: 8px 15px; font-size: 14px; }
+  .ob .top-acts svg { width: 16px; height: 16px; margin-right: 7px; vertical-align: -3px; }
+
+  /* The hero: the argument on the left, the thing itself on the right. */
+  .ob .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; padding: 34px 32px; align-items: center; }
+  .ob .badge { display: inline-block; font-size: 12.5px; font-weight: 600; color: var(--blue);
+    background: var(--blue-soft); border-radius: 999px; padding: 5px 13px; margin-bottom: 18px; }
+  .ob h1 { font-size: 40px; line-height: 1.14; letter-spacing: -.03em; margin: 0 0 16px; font-weight: 800; }
   .ob h1 span { background: linear-gradient(92deg, var(--brand), var(--blue) 70%);
                 -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .ob .lede { font-size: 18px; color: var(--ink-2); margin: 0 0 28px; }
-  .sec { margin: 36px 0; }
-  .sec h2 { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted);
-            margin: 0 0 15px; font-weight: 700; }
-  .flow { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
-  .flow .card { padding: 17px; }
-  .flow b { display: block; margin-bottom: 5px; font-size: 14.5px; }
-  .flow p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
-  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0 0 22px; }
-  ol.steps li { counter-increment: s; position: relative; padding: 0 0 20px 44px; }
-  ol.steps li::before { content: counter(s); position: absolute; left: 0; top: -1px; width: 28px; height: 28px;
-    border-radius: 50%; background: var(--brand); color: #fff; font-weight: 700; font-size: 13px;
+  .ob .lede { font-size: 16.5px; color: var(--ink-2); margin: 0 0 26px; line-height: 1.6; }
+  .ob .marks { display: flex; flex-wrap: wrap; gap: 22px; }
+  .ob .marks span { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px;
+                    color: var(--ink-2); font-weight: 550; }
+  .ob .marks svg { width: 17px; height: 17px; color: var(--muted); flex: none; }
+  /* The demonstration sits in the hero, so it is the first thing that moves. */
+  .ob .hero .demo { margin: 0; }
+  .ob .hero .demo-thread { height: 300px; }
+
+  /* Below: the steps on the left, why it is shaped this way and the address
+     field on the right. */
+  .ob .below { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  .ob .col { display: grid; gap: 20px; }
+  .ob .pad { padding: 24px 26px; }
+  .ob h2 { font-size: 17px; letter-spacing: -.01em; margin: 0 0 18px; font-weight: 700; }
+  .ob h2 svg { width: 19px; height: 19px; color: var(--brand); vertical-align: -4px; margin-right: 8px; }
+
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0 0 20px; }
+  ol.steps li { counter-increment: s; position: relative; padding: 0 0 18px 40px; }
+  ol.steps li::before { content: counter(s); position: absolute; left: 0; top: -1px; width: 26px; height: 26px;
+    border-radius: 50%; background: var(--brand); color: #fff; font-weight: 700; font-size: 12.5px;
     display: grid; place-items: center; }
-  ol.steps li::after { content: ""; position: absolute; left: 13.5px; top: 30px; bottom: 4px;
+  ol.steps li::after { content: ""; position: absolute; left: 12.5px; top: 28px; bottom: 2px;
     width: 1px; background: var(--line); }
   ol.steps li:last-child::after { display: none; }
-  ol.steps b { display: block; margin-bottom: 3px; }
-  ol.steps p { margin: 0; color: var(--muted); font-size: 13.5px; }
-  .connect { padding: 24px; margin-top: 10px; }
+  ol.steps b { display: block; margin-bottom: 3px; font-size: 14.5px; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+
+  .why .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .why .one { display: flex; gap: 13px; }
+  /* The tile is what makes each of these read as one thing rather than a run
+     of paragraphs. It was white on a white card, so there was no tile. */
+  .why .ic { width: 38px; height: 38px; border-radius: 11px; background: var(--blue-soft);
+             display: grid; place-items: center; flex: none; color: var(--blue); }
+  .why .ic svg { width: 19px; height: 19px; }
+  .why b { display: block; font-size: 14.5px; margin-bottom: 3px; }
+  .why p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
   .connect h3 { margin: 0 0 6px; font-size: 17px; }
   .connect p { margin: 0 0 15px; color: var(--muted); font-size: 14px; }
   .row { display: flex; gap: 9px; flex-wrap: wrap; }
-  .row input { flex: 1 1 320px; padding: 11px 14px; border: 1px solid var(--line);
+  .row input { flex: 1 1 240px; padding: 11px 14px; border: 1px solid var(--line);
                border-radius: 9px; background: var(--surface); }
   .row input:focus { outline: none; border-color: var(--blue); }
   .err { margin-top: 12px; color: var(--red); font-size: 13.5px; display: none; }
   .err.on { display: block; }
+
+  @media (max-width: 980px) {
+    .ob .hero, .ob .below, .why .grid { grid-template-columns: 1fr; }
+    .ob h1 { font-size: 32px; }
+  }
 </style>
 </head>
 <body>
@@ -52,54 +91,67 @@
   <main id="onboardingWrap">
     <!-- ===== onboarding ===== -->
     <section class="ob" id="onboarding">
-      <div class="top">
+
+      <div class="panel top">
         <div class="mark"><img src="/assets/logo.png" alt=""><span>Muxel</span></div>
-        <a class="muted" href="https://github.com/thankywal/muxel">GitHub</a>
+        <div class="top-acts">
+          <a class="btn btn-ghost" href="https://github.com/thankywal/muxel" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.36 1.09 2.94.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>GitHub</a>
+          <a class="btn btn-primary" target="_blank" rel="noopener" href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Get started</a>
+        </div>
       </div>
 
-      <h1>This console does not<br>know who you are.<br><span>That is the product.</span></h1>
-      <p class="lede">
-        In a moment it will ask you for your deployment's address. It has to, because
-        there is no list of deployments anywhere. Muxel answers your customers on
-        Telegram and on your website from your own price list, and it runs inside
-        <b>your</b> Cloudflare account, on the free plan, with no server of ours in
-        the path.
-      </p>
-      <p class="lede" style="font-size:15.5px;color:var(--muted);margin-top:-14px">
-        Your address stays in this browser. It is sent with each request and forgotten.
-        There is no account here, no session, and no database with your customers in it.
-      </p>
-
-      <!--
-        The same demonstration the product page shows. Four cards claiming what
-        it does became it doing it, and the deploy steps are already below, so
-        somebody who asks it a real question has somewhere to go.
-      -->
-      <section class="demo" id="demo">
-        <div class="demo-thread" id="thread"></div>
-        <div class="demo-foot">
-          <!-- The console's own composer, locked. Clicking it explains why. -->
-          <div class="composer" role="button" tabindex="0" aria-label="Ask your own question">
-            <div class="composer-text">Ask about your businesses, or tell it what to change</div>
-            <div class="composer-row">
-              <span class="composer-model">Qwen 3.8 27B</span>
-              <span class="grow"></span>
-              <span class="send" id="demoSend">
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
-                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
-              <span class="send stop" id="demoStop" hidden>
-                <svg viewBox="0 0 24 24" width="15" height="15"><rect x="6" y="6" width="12" height="12"
-                  rx="2" fill="currentColor"/></svg></span>
-            </div>
+      <div class="panel hero">
+        <div>
+          <span class="badge">An AI console for your customers</span>
+          <h1>This console does not<br>know who you are.<br><span>That is the product.</span></h1>
+          <p class="lede">
+            In a moment it will ask you for your deployment's address. It has to, because there is no
+            list of deployments anywhere. Muxel answers your customers on Telegram and on your website
+            from your own price list, and it runs inside <b>your</b> Cloudflare account, on the free
+            plan, with no server of ours in the path.
+          </p>
+          <div class="marks">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Private by design</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8z"/></svg>Runs on Cloudflare</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg>Open source</span>
           </div>
-          <div class="openers" id="demoChips"></div>
         </div>
-      </section>
+        <!--
+          The demonstration, beside the claim rather than under it. It is the
+          only thing on this page that moves, so it is the thing a person tries
+          first, and every answer in it is written down in demo.js.
+        -->
+        <section class="demo" id="demo">
+          <div class="demo-thread" id="thread"></div>
+          <div class="demo-foot">
+            <!-- The console's own composer, locked. Clicking it explains why. -->
+            <div class="composer" role="button" tabindex="0" aria-label="Ask your own question">
+              <div class="composer-text">Ask about your businesses, or tell it what to change</div>
+              <div class="composer-row">
+                <span class="composer-model">Qwen 3.8 27B</span>
+                <span class="grow"></span>
+                <span class="send" id="demoSend">
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+                <span class="send stop" id="demoStop" hidden>
+                  <svg viewBox="0 0 24 24" width="15" height="15"><rect x="6" y="6" width="12" height="12"
+                    rx="2" fill="currentColor"/></svg></span>
+              </div>
+            </div>
+            <div class="openers" id="demoChips"></div>
+          </div>
+        </section>
+      </div>
 
-      <div class="sec">
-        <h2>Deploy it, step by step</h2>
-        <ol class="steps">
+      <div class="below">
+        <div class="panel pad">
+          <h2>Deploy it, step by step</h2>
+          <ol class="steps">
           <li><b>Create a Cloudflare account</b><p>The free plan is enough. Confirm the email it sends you.</p></li>
           <li><b>Create a GitHub account</b><p>You never write code there. It keeps the copy your deployment updates from.</p></li>
           <li><b>Make two bots with @BotFather</b><p>Send <code>/newbot</code> twice. The first is your private console, the second is the one customers write to.</p></li>
@@ -107,28 +159,62 @@
           <li><b>Press deploy</b><p>On the form set <code>ADMIN_BOT_TOKEN</code> to the console bot's token and <code>OWNER_TELEGRAM_ID</code> to your number. Leave the rest alone.</p></li>
           <li><b>Come back here</b><p>Cloudflare gives you a URL for your deployment. Paste it below and the console opens.</p></li>
         </ol>
-        <a class="btn btn-primary" target="_blank" rel="noopener"
-           href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Get started · deploy to Cloudflare</a>
-      </div>
-
-      <div class="card connect">
-        <h3>Already deployed? Connect it.</h3>
-        <p id="step1Hint">Your deployment's address. This console talks to it straight from your browser and stores nothing.</p>
-        <form class="row" id="connectForm">
-          <input id="workerUrl" placeholder="https://muxel.your-name.workers.dev" autocomplete="off" spellcheck="false">
-          <button class="btn btn-primary" type="submit" id="connectBtn">Continue</button>
-        </form>
-
-        <div id="step2" hidden style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
-          <p>Open your console bot in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
-          <form class="row" id="pairForm">
-            <input id="pairCode" placeholder="ABCD2345" autocomplete="off" spellcheck="false"
-                   style="text-transform:uppercase;letter-spacing:.14em;font-weight:700">
-            <button class="btn btn-primary" type="submit" id="pairBtn">Open console</button>
-          </form>
+          <a class="btn btn-primary" target="_blank" rel="noopener" href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Get started · deploy to Cloudflare</a>
         </div>
 
-        <div class="err" id="connectErr"></div>
+        <div class="col">
+          <!--
+            Four properties of the shape, not four features. Each one is a thing
+            that follows from where the deployment lives, which is the only
+            claim this whole page is making.
+          -->
+          <div class="panel pad why">
+            <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M6 2h12v7a6 6 0 0 1-12 0z"/><path d="M12 15v4M8 22h8"/></svg>Why it is shaped this way</h2>
+            <div class="grid">
+              <div class="one">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+                <div><b>Privacy first</b><p>Your customers' messages stay in your Cloudflare account. We have no copy.</p></div>
+              </div>
+              <div class="one">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.1 10.2 3.9 3.9 0 0 0 6.5 19z"/></svg></span>
+                <div><b>Zero infra</b><p>No server of ours to run or scale. The free plan is enough to start.</p></div>
+              </div>
+              <div class="one">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg></span>
+                <div><b>Truly yours</b><p>The code is in your GitHub, on your keys. You own the updates.</p></div>
+              </div>
+              <div class="one">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+                  stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 5.6a5 5 0 0 0-7.1 0L12 7.3l-1.7-1.7a5 5 0 0 0-7.1 7.1l8.8 8.8 8.8-8.8a5 5 0 0 0 0-7.1z"/></svg></span>
+                <div><b>Useful and real</b><p>It answers from your price list, and hands you the ones it cannot.</p></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel pad connect">
+            <h3>Already deployed? Connect it.</h3>
+            <p>Your deployment's address. This console talks to it straight from your browser and stores nothing.</p>
+            <form class="row" id="connectForm">
+              <input id="workerUrl" placeholder="https://muxel.your-name.workers.dev" autocomplete="off" spellcheck="false">
+              <button class="btn btn-primary" type="submit" id="connectBtn">Continue</button>
+            </form>
+
+            <div id="step2" hidden style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
+              <p>Open your console bot in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
+              <form class="row" id="pairForm">
+                <input id="pairCode" placeholder="ABCD2345" autocomplete="off" spellcheck="false"
+                       style="text-transform:uppercase;letter-spacing:.14em;font-weight:700">
+                <button class="btn btn-primary" type="submit" id="pairBtn">Open console</button>
+              </form>
+            </div>
+
+            <div class="err" id="connectErr"></div>
+          </div>
+        </div>
       </div>
     </section>
 
