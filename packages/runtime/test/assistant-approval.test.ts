@@ -103,3 +103,33 @@ describe("what happens on a yes", () => {
     expect(decide).toContain("!tool.writes");
   });
 });
+
+describe("what the assistant is told Muxel is", () => {
+  const loop = src("assistant/loop.ts");
+
+  it("describes the product, so it does not answer from chatbots in general", () => {
+    // Without this it told owners about dashboards that do not exist. Every
+    // claim below is a fact about this codebase; one that stops being true is a
+    // line to change, not a line to soften.
+    for (const fact of [
+      "Telegram",
+      "Cloudflare account",
+      "price list",
+      "10,000 neurons",
+    ]) {
+      expect(loop, fact).toContain(fact);
+    }
+  });
+
+  it("denies only capabilities no tool actually provides", () => {
+    // The prompt says Muxel does not browse the web, send email or take
+    // payments. If a tool for one of those ever arrives, the prompt becomes a
+    // lie the model repeats to the owner, and this is where that is caught.
+    const denied = { browse: /^(browse|fetch_page|web_)/, email: /mail/, payment: /(pay|charge|invoice)/ };
+    expect(loop).toMatch(/does not browse the web/);
+    for (const [what, pattern] of Object.entries(denied)) {
+      const offending = TOOLS.filter((tool) => pattern.test(tool.name)).map((tool) => tool.name);
+      expect(offending, what).toEqual([]);
+    }
+  });
+});

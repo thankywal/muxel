@@ -18,6 +18,7 @@ import {
   askApproval,
   chatTranscript,
   recordSteps,
+  recordUsageFor,
   type Approval,
 } from "./store.js";
 import { findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
@@ -25,9 +26,51 @@ import { findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
 /** How many times the model may call tools before it has to answer. */
 const MAX_STEPS = 6;
 
+/**
+ * What the assistant is allowed to say Muxel is.
+ *
+ * Without this it answered questions about the product from whatever it had
+ * absorbed about chatbots in general, which is how an owner ends up being told
+ * about a dashboard that does not exist or a plan they cannot buy. Every line
+ * here is a fact about this codebase, and a claim that stops being true is a
+ * line to change rather than a line to soften.
+ */
+const ABOUT_MUXEL = [
+  "About the product you are part of, so you can answer questions about it:",
+  "",
+  "Muxel answers an owner's customers on Telegram and through a chat widget on their website. It",
+  "runs entirely inside the owner's own Cloudflare account — Workers, D1, KV and Vectorize — which",
+  "is why there is no Muxel account to sign up for and no server of ours between a customer and",
+  "their data. The console at app.muxel.site is a page of files; it talks to the owner's own",
+  "deployment directly from their browser.",
+  "",
+  "A business is one agent: one set of material, one voice, and the channels it answers on. It",
+  "answers from what the owner gave it and nothing else — a price list, uploaded documents (PDF,",
+  "Word, Excel, text), notes, the business profile, and rules the owner wrote. All of that becomes",
+  "one searchable body of knowledge, and it is rebuilt the moment anything is added or edited.",
+  "",
+  "When an agent meets a question it cannot answer from that material, it does not guess. It hands",
+  "the conversation to a person, and it shows up in the console under Customers, on the Waiting",
+  "tab. The owner can take the conversation over and reply themselves.",
+  "",
+  "The models are Cloudflare Workers AI models, chosen by the owner per business and per",
+  "conversation. Cloudflare's free plan includes 10,000 neurons a day, which is what the cost line",
+  "under each of your answers is counting against.",
+  "",
+  "The console has Overview, Agents, Businesses and Customers, with Settings, Channels, Logs and",
+  "Diagnostics behind the owner's badge at the bottom of the left rail. Updates are a button in",
+  "Settings; the deployment pulls the new version into the owner's own repository itself.",
+  "",
+  "What Muxel does not do: it does not browse the web, it does not send email, it does not take",
+  "payments, and it has no access to anything outside this deployment. If you are asked for",
+  "something in that list, say plainly that it is not something Muxel does.",
+].join("\n");
+
 const SYSTEM = [
   "You are the assistant for the owner of this Muxel deployment. You are talking to the owner,",
   "not to their customers.",
+  "",
+  ABOUT_MUXEL,
   "",
   "You can read anything in this deployment and you can propose changes. You cannot make a change",
   "yourself: when you call a tool that writes, it is shown to the owner as a card and nothing",
@@ -48,6 +91,8 @@ export interface AssistantReply {
   readonly approvals: readonly Approval[];
   /** What it looked at on the way, so the owner can see its working. */
   readonly steps: readonly { tool: string; ok: boolean }[];
+  /** What the whole turn asked the model for, every step of it included. */
+  readonly usage: { model: string; inputTokens: number; outputTokens: number };
 }
 
 /**
@@ -81,6 +126,9 @@ export async function ask(
   const model = input.model.length > 0 ? input.model : (businesses[0]?.model ?? env.DEFAULT_MODEL);
 
   let text = "";
+  // Every step of the loop is a call, and the owner pays for all of them. One
+  // number for the turn, not for the last leg of it.
+  const spent = { model, inputTokens: 0, outputTokens: 0 };
   for (let step = 0; step < MAX_STEPS; step += 1) {
     const turn = await converse(env, {
       model,
@@ -96,6 +144,9 @@ export async function ask(
       steps,
       maxOutputTokens: 900,
     });
+
+    spent.inputTokens += turn.inputTokens ?? 0;
+    spent.outputTokens += turn.outputTokens ?? 0;
 
     text = turn.text.trim();
     if (turn.toolCalls.length === 0) break;
@@ -176,5 +227,6 @@ export async function ask(
   // Kept, so reopening the chat tomorrow still shows what it looked at. Not
   // fatal if it fails: the answer is the thing the owner asked for.
   await recordSteps(env, answerId, took).catch(() => undefined);
-  return { text, approvals, steps: took };
+  await recordUsageFor(env, answerId, spent).catch(() => undefined);
+  return { text, approvals, steps: took, usage: spent };
 }

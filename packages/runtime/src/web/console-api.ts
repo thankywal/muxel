@@ -88,9 +88,12 @@ import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
 import { ask } from "../assistant/loop.js";
 import { decide } from "../assistant/decide.js";
+import { allowanceNow, neuronsFor, type Allowance } from "../cloudflare/allowance.js";
+import { accountName } from "../cloudflare/account.js";
 import {
   chatTranscript,
   stepsFor,
+  usageFor,
   createChat,
   deleteChat,
   getChat,
@@ -164,8 +167,10 @@ async function businessCard(env: Env, businessId: string) {
  *   7  the owner's assistant, and the changes it asks permission for
  *   8  more than one conversation with it, each with its own model
  *   9  the working behind each answer, and the model changed on its own
+ *  10  what each answer cost, where the day's neurons stand, and the name on
+ *      the Cloudflare account this runs in
  */
-export const API_REVISION = 9;
+export const API_REVISION = 10;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -463,6 +468,31 @@ export async function handleConsoleApi(
 
   // The owner's own assistant, and the conversations they keep with it.
   if (segments[0] === "assistant") {
+    /**
+     * Each answer's tokens, plus its share of the day's neurons and the name
+     * of the model that actually produced it.
+     *
+     * The model is read off the answer's own row, not off the chat: an owner
+     * who switches the picker mid conversation would otherwise see yesterday's
+     * replies relabelled with today's model.
+     */
+    const priced = (
+      spent: Record<string, { model: string; inputTokens: number; outputTokens: number }>,
+      allowance: Allowance,
+    ): Record<string, unknown> =>
+      Object.fromEntries(
+        Object.entries(spent).map(([messageId, usage]) => [
+          messageId,
+          {
+            model: usage.model,
+            label: MODEL_PRESETS.find((preset) => preset.id === usage.model)?.label ?? usage.model,
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            neurons: neuronsFor(allowance, usage),
+          },
+        ]),
+      );
+
     /** The model a new chat starts on: the one this owner's customers get. */
     const defaultModel = async (): Promise<string> =>
       (await listBusinesses(env, userId))[0]?.model ?? env.DEFAULT_MODEL;
@@ -473,10 +503,12 @@ export async function handleConsoleApi(
       const wanted = url.searchParams.get("chat");
       const chat =
         wanted === null ? (chats[0] ?? null) : await getChat(env, userId, wanted);
-      const [messages, approvals, steps] = await Promise.all([
+      const [messages, approvals, steps, spent, allowance] = await Promise.all([
         chat === null ? Promise.resolve([]) : chatTranscript(env, chat.id, 60),
         listApprovals(env, userId, 60),
         chat === null ? Promise.resolve({}) : stepsFor(env, chat.id),
+        chat === null ? Promise.resolve({}) : usageFor(env, chat.id),
+        allowanceNow(env),
       ]);
       return json({
         chats,
@@ -485,6 +517,9 @@ export async function handleConsoleApi(
         // What it looked at, against the answer it produced. Read back from the
         // record, so a reopened chat shows the same working the live one did.
         steps,
+        // What each answer cost, and where the day's allowance stands.
+        usage: priced(spent, allowance),
+        allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
         approvals,
         models: MODEL_PRESETS,
         defaultModel: await defaultModel(),
@@ -526,12 +561,15 @@ export async function handleConsoleApi(
         question: text.slice(0, 4000),
         model: chat.model,
       });
+      const allowance = await allowanceNow(env);
       return json({
         ...reply,
         chats: await listChats(env, userId, 40),
         chat,
         messages: await chatTranscript(env, chat.id, 60),
         steps: await stepsFor(env, chat.id),
+        usage: priced(await usageFor(env, chat.id), allowance),
+        allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
         approvals: await listApprovals(env, userId, 60),
       });
     }
@@ -552,12 +590,15 @@ export async function handleConsoleApi(
       await deleteChat(env, userId, segments[2]);
       const chats = await listChats(env, userId, 40);
       const chat = chats[0] ?? null;
+      const allowance = await allowanceNow(env);
       return json({
         ok: true,
         chats,
         chat,
         messages: chat === null ? [] : await chatTranscript(env, chat.id, 60),
         steps: chat === null ? {} : await stepsFor(env, chat.id),
+        usage: chat === null ? {} : priced(await usageFor(env, chat.id), allowance),
+        allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
         approvals: await listApprovals(env, userId, 60),
       });
     }
@@ -678,12 +719,22 @@ export async function handleConsoleApi(
   // internal identifier at a customer facing surface is how they end up in
   // screenshots and support threads.
   if (method === "GET" && segments[0] === "me") {
-    const operator = await findOperator(env, userId);
-    const row = await env.DB.prepare("SELECT label FROM operator WHERE telegram_user_id = ?")
-      .bind(userId)
-      .first<{ label: string | null }>();
+    const [operator, row, account] = await Promise.all([
+      findOperator(env, userId),
+      env.DB.prepare("SELECT label FROM operator WHERE telegram_user_id = ?")
+        .bind(userId)
+        .first<{ label: string | null }>(),
+      accountName(env),
+    ]);
+    // Whoever this deployment belongs to, named by the account it runs in.
+    // "Owner" is a role, and it was the only thing on the badge for anyone who
+    // had not set a label. It stays as the last resort, not the first answer.
     return json({
-      label: row?.label?.trim() || (operator?.role === "owner" ? "Owner" : "Operator"),
+      label:
+        row?.label?.trim() ||
+        account ||
+        (operator?.role === "owner" ? "Owner" : "Operator"),
+      account,
       role: operator?.role ?? "operator",
     });
   }

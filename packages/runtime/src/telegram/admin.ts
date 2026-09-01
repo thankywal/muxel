@@ -139,6 +139,8 @@ function progressBar(fraction: number): string {
 export interface ModelPreset {
   readonly label: string;
   readonly id: string;
+  /** What this one costs, where that has been measured. Absent is not zero. */
+  readonly note?: string;
 }
 
 /**
@@ -162,8 +164,19 @@ export interface ModelPreset {
  */
 export const MODEL_PRESETS: readonly ModelPreset[] = [
   { label: "Qwen 3.8 27B", id: "workers-ai/@cf/qwen/qwen3.8-27b" },
-  { label: "Gemma 4 26B", id: "workers-ai/@cf/google/gemma-4-26b-a4b-it" },
-  { label: "Llama 3.3 70B", id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast" },
+  // The notes are the measurement in ai/gateway.ts, on the same four grounded
+  // questions, three runs each. Qwen has no note because it has no row there,
+  // and a guess beside two measured numbers reads as a third measurement.
+  {
+    label: "Gemma 4 26B",
+    id: "workers-ai/@cf/google/gemma-4-26b-a4b-it",
+    note: "About 11 neurons a reply — roughly 880 a day on the free plan",
+  },
+  {
+    label: "Llama 3.3 70B",
+    id: "workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    note: "About 32 neurons a reply — roughly 315 a day on the free plan",
+  },
 ];
 
 /**

@@ -135,6 +135,9 @@ vi.mock("../src/assistant/store.js", () => ({
     { id: "om1", role: "assistant", content: "Two.", createdAt: "z" },
   ]),
   stepsFor: vi.fn(async () => ({ om1: [{ tool: "list_waiting", ok: true }] })),
+  usageFor: vi.fn(async () => ({
+    om1: { model: "m1", inputTokens: 1200, outputTokens: 180 },
+  })),
   listApprovals: vi.fn(async () => []),
   titleFrom: (text: string) => text.slice(0, 52),
 }));
@@ -143,6 +146,14 @@ vi.mock("../src/assistant/loop.js", () => ({
 }));
 vi.mock("../src/assistant/decide.js", () => ({
   decide: vi.fn(async () => ({ ok: true, message: "done" })),
+}));
+vi.mock("../src/cloudflare/allowance.js", () => ({
+  allowanceNow: vi.fn(async () => ({ neuronsToday: 2400, perDay: 10_000, rate: { m1: 0.5 }, problem: null })),
+  neuronsFor: (a: { rate: Record<string, number> }, u: { model: string; inputTokens: number; outputTokens: number }) =>
+    a.rate[u.model] === undefined ? null : Math.round((u.inputTokens + u.outputTokens) * a.rate[u.model]),
+}));
+vi.mock("../src/cloudflare/account.js", () => ({
+  accountName: vi.fn(async () => "Than Kywal's Account"),
 }));
 
 let operator: string | null = "u1";

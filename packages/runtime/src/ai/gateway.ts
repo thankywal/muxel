@@ -10,6 +10,7 @@
 import { MuxelError, type ChatTurn, type InferenceResult } from "@muxel/core";
 
 import type { Env } from "../env.js";
+import { recordModelUsage } from "../db/queries.js";
 import { fitVector, indexDimensions } from "../rag/dimensions.js";
 
 const GATEWAY_ROOT = "https://gateway.ai.cloudflare.com/v1";
@@ -209,9 +210,19 @@ async function attempt(
   input: GenerateInput,
   maxOutputTokens: number,
 ): Promise<Attempt> {
-  return input.model.startsWith(PLATFORM_PREFIX)
-    ? attemptOnPlatform(env, input, maxOutputTokens)
-    : attemptOnGateway(env, input, maxOutputTokens);
+  const attempted = input.model.startsWith(PLATFORM_PREFIX)
+    ? await attemptOnPlatform(env, input, maxOutputTokens)
+    : await attemptOnGateway(env, input, maxOutputTokens);
+  // Counted here rather than by each caller: this is the one door every chat
+  // call goes through, so a path added later is counted without being asked to
+  // remember. Cloudflare reports neurons per model per day and never per
+  // request, and these are the tokens that go under that number to give a rate.
+  await recordModelUsage(env, {
+    model: attempted.model,
+    inputTokens: attempted.inputTokens ?? 0,
+    outputTokens: attempted.outputTokens ?? 0,
+  }).catch(() => undefined);
+  return attempted;
 }
 
 /**

@@ -100,6 +100,9 @@ export async function deleteChat(env: Env, userId: number, chatId: string): Prom
     env.DB.prepare(
       "DELETE FROM operator_step WHERE message_id IN (SELECT id FROM operator_message WHERE chat_id = ?)",
     ).bind(chatId),
+    env.DB.prepare(
+      "DELETE FROM operator_usage WHERE message_id IN (SELECT id FROM operator_message WHERE chat_id = ?)",
+    ).bind(chatId),
     env.DB.prepare("DELETE FROM operator_message WHERE chat_id = ? AND user_id = ?").bind(
       chatId,
       userId,
@@ -195,6 +198,51 @@ export async function stepsFor(
   const byMessage: Record<string, OperatorStep[]> = {};
   for (const row of result.results) {
     (byMessage[row.message_id] ??= []).push({ tool: row.tool, ok: row.ok === 1 });
+  }
+  return byMessage;
+}
+
+export interface MessageUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** What one answer cost, against the answer itself. */
+export async function recordUsageFor(
+  env: Env,
+  messageId: string,
+  usage: MessageUsage,
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT OR REPLACE INTO operator_usage
+       (message_id, model, input_tokens, output_tokens, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  )
+    .bind(messageId, usage.model, usage.inputTokens, usage.outputTokens, now())
+    .run();
+}
+
+/** Every answer's cost in one chat, keyed by message. */
+export async function usageFor(
+  env: Env,
+  chatId: string,
+): Promise<Record<string, MessageUsage>> {
+  const result = await env.DB.prepare(
+    `SELECT u.message_id, u.model, u.input_tokens, u.output_tokens
+       FROM operator_usage u
+       JOIN operator_message m ON m.id = u.message_id
+      WHERE m.chat_id = ?`,
+  )
+    .bind(chatId)
+    .all<{ message_id: string; model: string; input_tokens: number; output_tokens: number }>();
+  const byMessage: Record<string, MessageUsage> = {};
+  for (const row of result.results) {
+    byMessage[row.message_id] = {
+      model: row.model,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+    };
   }
   return byMessage;
 }

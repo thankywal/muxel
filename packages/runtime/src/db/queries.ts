@@ -1801,6 +1801,46 @@ export async function recordUsage(
 }
 
 /**
+ * Counts one model call, by model rather than by business.
+ *
+ * `usage_daily` answers "what did this business cost"; this answers "what did
+ * this model do today", which is the only column that lines up with what
+ * Cloudflare reports. Written at the one place every chat call passes through,
+ * so a caller cannot forget to count itself.
+ */
+export async function recordModelUsage(
+  env: Env,
+  input: { model: string; inputTokens: number; outputTokens: number },
+): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO model_usage_daily (model, day, calls, input_tokens, output_tokens)
+     VALUES (?, ?, 1, ?, ?)
+     ON CONFLICT (model, day) DO UPDATE SET
+       calls = calls + 1,
+       input_tokens = input_tokens + excluded.input_tokens,
+       output_tokens = output_tokens + excluded.output_tokens`,
+  )
+    .bind(input.model, utcDay(), input.inputTokens, input.outputTokens)
+    .run();
+}
+
+/** Today's tokens per model, which is the denominator of the neuron rate. */
+export async function modelTokensToday(
+  env: Env,
+): Promise<Record<string, { calls: number; tokens: number }>> {
+  const result = await env.DB.prepare(
+    "SELECT model, calls, input_tokens, output_tokens FROM model_usage_daily WHERE day = ?",
+  )
+    .bind(utcDay())
+    .all<{ model: string; calls: number; input_tokens: number; output_tokens: number }>();
+  const byModel: Record<string, { calls: number; tokens: number }> = {};
+  for (const row of result.results) {
+    byModel[row.model] = { calls: row.calls, tokens: row.input_tokens + row.output_tokens };
+  }
+  return byModel;
+}
+
+/**
  * Totals what this deployment has answered today, across every business.
  *
  * Recorded by Muxel itself rather than read from Cloudflare, so it is available

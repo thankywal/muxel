@@ -601,6 +601,34 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS operator_step_idx ON operator_step (message_id, seq)`,
     ],
   },
+  {
+    // What each model was asked for today, and what each answer cost.
+    //
+    // Cloudflare reports neurons per model per day for the whole account, and
+    // never per request. Tokens are the other half: knowing both for the same
+    // model on the same day gives a rate this deployment actually paid, which
+    // is how a single answer's share of the daily allowance is worked out
+    // without hardcoding a published price that goes stale.
+    version: 17,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS model_usage_daily (
+         model         TEXT NOT NULL,
+         day           TEXT NOT NULL,
+         calls         INTEGER NOT NULL DEFAULT 0,
+         input_tokens  INTEGER NOT NULL DEFAULT 0,
+         output_tokens INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (model, day)
+       )`,
+      // One answer's own tokens, against the message it produced.
+      `CREATE TABLE IF NOT EXISTS operator_usage (
+         message_id    TEXT PRIMARY KEY REFERENCES operator_message (id) ON DELETE CASCADE,
+         model         TEXT NOT NULL,
+         input_tokens  INTEGER NOT NULL DEFAULT 0,
+         output_tokens INTEGER NOT NULL DEFAULT 0,
+         created_at    TEXT NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

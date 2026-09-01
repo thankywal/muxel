@@ -50,6 +50,8 @@ const state = {
   /** How many conversations are waiting, for the badge beside Inbox. */
   waiting: 0,
   bizTab: "overview",
+  /** Which question the Customers screen is asking: everyone, or who is waiting. */
+  custTab: "all",
   agentTab: "model",
   agent: null,
   openCustomer: null,
@@ -61,6 +63,8 @@ const state = {
   chatModel: null,
   /** Pressed New chat and not yet said anything. */
   newChat: false,
+  /** The turn in flight, so the stop square has something to stop. */
+  pending: null,
   locale: "en",
 };
 
@@ -91,8 +95,12 @@ async function api(path, options = {}) {
       ...(options.body === undefined
         ? {}
         : { body: options.raw ? options.body : JSON.stringify(options.body) }),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
-  } catch {
+  } catch (error) {
+    // Stopping is the caller's own decision, so it is reported as such rather
+    // than as a deployment that could not be reached.
+    if (error?.name === "AbortError") return { ok: false, status: -1, data: {}, aborted: true };
     // A deployment old enough to predate these paths also predates the cross
     // origin headers they need, so the browser refuses the call before it is
     // made. That is indistinguishable from a deployment being offline, and
@@ -157,6 +165,9 @@ const ICONS = {
   send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
   telegram: '<path d="M22 3L2 10l6 2.5L20 6l-9 9v5l3-4 5 3z"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  exit: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   retry: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
@@ -267,23 +278,35 @@ function donut(parts, total) {
  */
 const NAV = [
   { id: "overview", label: "Overview" },
-  { id: "inbox", label: "Inbox" },
   { id: "agents", label: "Agents" },
   { id: "businesses", label: "Businesses" },
-  { id: "channels", label: "Channels" },
   { id: "customers", label: "Customers" },
-  { id: "messages", label: "Messages" },
 ];
 
 /** Behind the badge: the things an owner sets up once and rarely returns to. */
 const OWNER_MENU = [
   { id: "settings", label: "Settings" },
+  { id: "channels", label: "Channels" },
   { id: "logs", label: "Logs" },
   { id: "diagnostics", label: "Diagnostics" },
   { id: "advanced", label: "The bot's own screens" },
 ];
 
-const ALL_VIEWS = [...NAV, ...OWNER_MENU, { id: "assistant", label: "Assistant" }];
+/**
+ * Every destination, including the ones that are no longer their own rail item.
+ *
+ * Messages is reached by opening a person's chat from Customers, and Inbox is
+ * the Waiting tab on that same screen. Both keep their own view and their own
+ * place in search, because a screen that can be linked to has to be able to
+ * draw itself.
+ */
+const ALL_VIEWS = [
+  ...NAV,
+  ...OWNER_MENU,
+  { id: "assistant", label: "Assistant" },
+  { id: "messages", label: "Messages" },
+  { id: "inbox", label: "Waiting for you" },
+];
 
 /**
  * The API revision each page needs from the deployment.
@@ -300,7 +323,7 @@ const NEEDS = {
   settings: 1,
   advanced: 1,
   inbox: 2,
-  assistant: 9,
+  assistant: 10,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -310,13 +333,13 @@ const NEEDS = {
 
 const TITLES = {
   overview: ["Overview", "Monitor your agents, channels, and conversations."],
-  inbox: ["Inbox", "Conversations a customer is waiting on a person for."],
+  inbox: ["Waiting for you", "Conversations a customer is waiting on a person for."],
   assistant: ["Assistant", "It reads everything, and changes nothing without asking you first."],
   diagnostics: ["Diagnostics", "What this deployment can and cannot do right now."],
   agents: ["Agents", "Create and manage the assistants that answer for you."],
   businesses: ["Businesses", "What each agent answers about, and where it answers."],
   channels: ["Channels", "Every way a customer can reach this deployment."],
-  customers: ["Customers", "Everyone who has written, and what they wrote about."],
+  customers: ["Customers", "Everyone who has written, and the ones still waiting on you."],
   messages: ["Messages", "Read any conversation, and step into it when you want to."],
   settings: ["Settings", "What this deployment is running, and how it updates itself."],
   logs: ["Logs", "What this deployment recorded, newest first."],
@@ -340,7 +363,9 @@ function shell() {
       <nav>${NAV.map(
         (item) => `<div class="nav-item ${item.id === state.view ? "on" : ""}" data-view="${item.id}">
             ${icon(item.id)}${h(item.label)}${
-              item.id === "inbox" && state.waiting > 0 ? `<span class="badge">${state.waiting}</span>` : ""
+              item.id === "customers" && state.waiting > 0
+                ? `<span class="badge">${state.waiting}</span>`
+                : ""
             }</div>`,
       ).join("")}</nav>
 
@@ -463,7 +488,7 @@ function openOwnerMenu() {
     { left: anchor.left, bottom: window.innerHeight - anchor.top + 8 },
     [
       ...OWNER_MENU.map((item) => ({ key: item.id, label: item.label, icon: item.id })),
-      { key: "disconnect", label: "Disconnect", icon: "channels", danger: true },
+      { key: "disconnect", label: "Disconnect", icon: "exit", danger: true },
     ],
     (key) => (key === "disconnect" ? disconnect() : go(key)),
   );
@@ -810,18 +835,29 @@ function wireGoto() {
  * to when it cannot answer from what it has, and which a takeover clears. It is
  * filtered to the businesses this operator can see, on the deployment's side.
  */
+/**
+ * The conversations a person has to answer.
+ *
+ * Its own screen once, and now the Waiting tab on Customers: a queue is a
+ * property of the people who are in it, not a separate place. The rows are the
+ * same rows either way — this is the one function that draws them, so the two
+ * cannot come to disagree about who is waiting.
+ */
 async function viewInbox() {
   const { data } = await api("inbox");
   const waiting = data.waiting ?? [];
   state.waiting = waiting.filter((item) => item.state === "waiting").length;
   drawNavBadge();
+  $("view").innerHTML = waitingTable(waiting);
+  wireWaiting();
+}
 
-  $("view").innerHTML =
-    waiting.length === 0
-      ? `<div class="card empty"><h3>Nothing is waiting</h3>
-           <p>Your agents are answering everything they are asked. A conversation appears here when one
-              of them meets a question it cannot answer from your price list and documents, and when you
-              take a chat over yourself.</p></div>`
+const waitingTable = (waiting) =>
+  waiting.length === 0
+    ? `<div class="card empty"><h3>Nothing is waiting</h3>
+         <p>Your agents are answering everything they are asked. A conversation appears here when one
+            of them meets a question it cannot answer from your price list and documents, and when you
+            take a chat over yourself.</p></div>`
       : `<div class="card"><table>
           <thead><tr><th>Customer</th><th>Business</th><th>State</th><th>Why</th><th>Waiting since</th></tr></thead>
           <tbody>${waiting
@@ -841,6 +877,7 @@ async function viewInbox() {
           <div class="tfoot"><span>${waiting.length} conversation${waiting.length === 1 ? "" : "s"} open</span>
             <span>Taking one over clears it from here.</span></div></div>`;
 
+function wireWaiting() {
   $("view").querySelectorAll("tr[data-customer]").forEach((r) => {
     if (r.dataset.customer === "") return;
     r.onclick = () => go("messages", { customerId: r.dataset.customer });
@@ -849,7 +886,7 @@ async function viewInbox() {
 
 /** Redraws just the count, so a badge cannot cost a whole shell rebuild. */
 function drawNavBadge() {
-  const item = document.querySelector('.nav-item[data-view="inbox"]');
+  const item = document.querySelector('.nav-item[data-view="customers"]');
   if (!item) return;
   item.querySelector(".badge")?.remove();
   if (state.waiting > 0) {
@@ -995,6 +1032,199 @@ async function viewAssistant() {
   drawAssistant();
 }
 
+/* ------------------------------------------------------------------ markdown
+
+   A model writes markdown whether or not anyone renders it, so the choice is
+   between showing a heading and showing a hash. Written here rather than pulled
+   in, because the console is four files a browser fetches directly and a
+   markdown library is larger than all of them.
+
+   Everything is escaped before a single tag is added, and the only tags that
+   come back are the ones this file writes. A link has to be http or https to
+   survive, which is what stops `javascript:` from arriving inside one.
+*/
+
+const SAFE_LINK = /^https?:\/\//i;
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|svg)(\?|#|$)/i;
+const FILE_EXT = /\.(pdf|docx?|xlsx?|csv|txt|zip|pptx?|json|md)(\?|#|$)/i;
+
+/** The last path segment, which is the only part of a URL worth a filename. */
+function fileNameOf(url) {
+  try {
+    const path = new URL(url).pathname;
+    return decodeURIComponent(path.slice(path.lastIndexOf("/") + 1)) || url;
+  } catch {
+    return url;
+  }
+}
+
+const linkHtml = (url, text) => {
+  if (!SAFE_LINK.test(url)) return h(text);
+  if (IMAGE_EXT.test(url)) return imageHtml(url, text);
+  if (FILE_EXT.test(url)) {
+    return `<a class="file-chip" href="${h(url)}" target="_blank" rel="noopener noreferrer">
+      ${icon("doc", 15)}<span>${h(text && text !== url ? text : fileNameOf(url))}</span></a>`;
+  }
+  return `<a href="${h(url)}" target="_blank" rel="noopener noreferrer">${h(text || url)}</a>`;
+};
+
+/**
+ * A picture, or the honest fallback when there is no picture.
+ *
+ * A model can name an image that has moved or never existed. Left alone the
+ * browser draws its own broken glyph inside a frame this file added, which
+ * looks like the console failed rather than like the link did.
+ */
+const imageHtml = (url, alt) =>
+  SAFE_LINK.test(url)
+    ? `<a class="md-shot" href="${h(url)}" target="_blank" rel="noopener noreferrer"
+          data-name="${h(alt || fileNameOf(url))}">
+         <img src="${h(url)}" alt="${h(alt || "")}" loading="lazy" data-shot></a>`
+    : h(alt || url);
+
+/** Inline formatting, applied to text that is already escaped. */
+function inline(escaped) {
+  return (
+    escaped
+      // Code first: nothing inside a span of code is formatting.
+      .replace(/`([^`\n]+)`/g, (_, code) => `<code>${code}</code>`)
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => imageHtml(unescapeAttr(url), alt))
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, text, url) => linkHtml(unescapeAttr(url), text))
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, "$1<em>$2</em>")
+      .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, "$1<em>$2</em>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      // A URL nobody wrote a link for is still a link the reader wants.
+      .replace(
+        /(^|[\s>])(https?:\/\/[^\s<]+[^\s<.,;:!?)"'])/g,
+        (_, before, url) => `${before}${linkHtml(unescapeAttr(url), url)}`,
+      )
+  );
+}
+
+/** `h()` ran first, so a URL captured out of it arrives with its entities. */
+const unescapeAttr = (url) =>
+  url.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+
+const CELLS = (row) =>
+  row
+    .replace(/^\s*\|/, "")
+    .replace(/\|\s*$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+
+/** Renders one message body. Returns HTML built only from this file's tags. */
+function md(text) {
+  const lines = h(text ?? "").split("\n");
+  const out = [];
+  let list = null;
+  const closeList = () => {
+    if (list !== null) out.push(`</${list}>`);
+    list = null;
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    // Fenced code, kept exactly as written and never formatted.
+    const fence = /^\s*```(\w*)\s*$/.exec(line);
+    if (fence) {
+      closeList();
+      const body = [];
+      for (i += 1; i < lines.length && !/^\s*```\s*$/.test(lines[i]); i += 1) body.push(lines[i]);
+      out.push(`<div class="md-code"><div class="md-code-head"><span>${
+        h(fence[1] || "code")
+      }</span><button class="t-act" data-code>${icon("copy", 13)}Copy</button></div><pre>${body.join(
+        "\n",
+      )}</pre></div>`);
+      continue;
+    }
+
+    // A table is a run of rows, so it is taken whole rather than line by line.
+    if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? "")) {
+      closeList();
+      const head = CELLS(line);
+      const rows = [];
+      for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i += 1) rows.push(CELLS(lines[i]));
+      i -= 1;
+      out.push(`<div class="md-table"><table><thead><tr>${head
+        .map((cell) => `<th>${inline(cell)}</th>`)
+        .join("")}</tr></thead><tbody>${rows
+        .map((row) => `<tr>${row.map((cell) => `<td>${inline(cell)}</td>`).join("")}</tr>`)
+        .join("")}</tbody></table></div>`);
+      continue;
+    }
+
+    const heading = /^\s*(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      closeList();
+      const level = Math.min(6, heading[1].length + 2);
+      out.push(`<h${level} class="md-h">${inline(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    if (/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)) {
+      closeList();
+      out.push('<hr class="md-hr">');
+      continue;
+    }
+
+    const quote = /^\s*&gt;\s?(.*)$/.exec(line);
+    if (quote) {
+      closeList();
+      out.push(`<blockquote>${inline(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (bullet || numbered) {
+      const want = bullet ? "ul" : "ol";
+      if (list !== want) {
+        closeList();
+        out.push(`<${want} class="md-list">`);
+        list = want;
+      }
+      out.push(`<li>${inline((bullet ?? numbered)[1])}</li>`);
+      continue;
+    }
+
+    if (line.trim() === "") {
+      closeList();
+      continue;
+    }
+
+    closeList();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  closeList();
+  return out.join("");
+}
+
+/** Turns an image that failed into the link it always was. */
+function wireImages(root) {
+  root.querySelectorAll("[data-shot]").forEach((img) => {
+    img.onerror = () => {
+      const frame = img.closest(".md-shot");
+      if (frame === null || frame.classList.contains("broken")) return;
+      frame.classList.add("broken");
+      frame.insertAdjacentHTML("afterbegin", `${icon("doc", 15)}<span>${h(frame.dataset.name)}</span>`);
+    };
+  });
+}
+
+/** Wires the copy button on every code block currently on screen. */
+function wireCodeBlocks(root) {
+  root.querySelectorAll("[data-code]").forEach((b) => {
+    b.onclick = async () => {
+      const code = b.closest(".md-code").querySelector("pre").textContent;
+      await navigator.clipboard?.writeText(code).catch(() => undefined);
+      b.innerHTML = `${icon("check", 13)}Copied`;
+      setTimeout(() => (b.innerHTML = `${icon("copy", 13)}Copy`), 1600);
+    };
+  });
+}
+
 const GREETINGS = [
   "What can I do for you?",
   "Ask me anything about your businesses.",
@@ -1016,7 +1246,7 @@ const OPENERS = [
  * model answered, with its working above it and its actions below.
  */
 function drawAssistant() {
-  const { messages = [], approvals = [], steps = {} } = state.assistant ?? {};
+  const { messages = [], approvals = [], steps = {}, usage = {} } = state.assistant ?? {};
   const blank = messages.length === 0;
   const cardsFor = (messageId) => approvals.filter((a) => a.messageId === messageId);
 
@@ -1030,7 +1260,7 @@ function drawAssistant() {
                <p>I can read your businesses, your price lists, and everything your agents were asked.
                   I can propose changes too, and every one of those waits for your yes.</p>
              </div>`
-          : messages.map((m) => turnHtml(m, steps[m.id] ?? [], cardsFor(m.id))).join("")
+          : messages.map((m) => turnHtml(m, steps[m.id] ?? [], cardsFor(m.id), usage[m.id])).join("")
       }</div>
 
       <form class="composer-wrap" id="asSay">
@@ -1041,6 +1271,7 @@ function drawAssistant() {
             <span class="composer-model" id="composerModel">${h(modelLabel())}</span>
             <span class="grow"></span>
             <button class="send" type="submit" id="asSend" title="Send">${icon("up", 17)}</button>
+            <button class="send stop" type="button" id="asStop" title="Stop" hidden>${icon("stop", 15)}</button>
           </div>
         </div>
         ${blank ? `<div class="openers">${OPENERS.map((q) => `<button type="button" class="opener" data-ask="${h(q)}">${h(q)}</button>`).join("")}</div>` : ""}
@@ -1054,6 +1285,8 @@ function drawAssistant() {
   $("asText").focus();
   $("composerModel").onclick = () => $("modelPick")?.click();
   bindTurnActions();
+  wireCodeBlocks($("view"));
+  wireImages($("view"));
   $("view").querySelectorAll("[data-ask]").forEach((b) => {
     b.onclick = () => {
       $("asText").value = b.dataset.ask;
@@ -1063,24 +1296,62 @@ function drawAssistant() {
 }
 
 /** One turn: who said it, what they said, and what it led to. */
-function turnHtml(message, steps, cards) {
+function turnHtml(message, steps, cards, usage) {
+  // Both sides are rendered, not just the model's. An owner who pastes a link
+  // or a table has written the same markup, and showing them the asterisks
+  // while formatting the reply would be an odd thing to explain.
   if (message.role === "user") {
-    return `<div class="turn user"><div class="ubub">${h(message.content)}</div></div>`;
+    return `<div class="turn user"><div class="ubub">${md(message.content)}</div></div>`;
   }
   return `<div class="turn ai" data-msg="${h(message.id)}">
       ${steps.length > 0 ? `<div class="steps">${steps.map(stepLine).join("")}</div>` : ""}
       <div class="ai-head">
         <img class="ai-av" src="/assets/logo.jpg" alt="">
-        <b>Muxel</b><span class="mtag">${h(modelLabel())}</span>
+        <b>${h(usage?.label ?? modelLabel())}</b>
         <span class="when">${h(ago(message.createdAt))}</span>
       </div>
-      <div class="ai-body">${h(message.content)}</div>
+      <div class="ai-body">${md(message.content)}</div>
       ${cards.map(approvalCard).join("")}
       <div class="ai-acts">
         <button class="t-act" data-copy="${h(message.id)}" title="Copy">${icon("copy", 14)}Copy</button>
         <button class="t-act" data-retry="1" title="Ask again">${icon("retry", 14)}Retry</button>
+        ${costLine(usage)}
       </div>
     </div>`;
+}
+
+/**
+ * What this answer drew from the day's allowance.
+ *
+ * Three numbers, and every one of them measured: the tokens are the model's own
+ * count, and the neurons are those tokens at the rate this account actually
+ * paid for that model today. When the rate is not known — no API token, or the
+ * first reply of the day, before Cloudflare has reported anything — the tokens
+ * are shown alone rather than a neuron figure nobody can stand behind.
+ */
+function costLine(usage) {
+  if (!usage) return "";
+  const tokens = (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+  const { neuronsToday, perDay, problem } = state.assistant?.allowance ?? {};
+  const parts = [];
+  parts.push(
+    usage.neurons === null || usage.neurons === undefined
+      ? `cost ${num(tokens)} tokens`
+      : `cost ${num(usage.neurons)}`,
+  );
+  if (typeof neuronsToday === "number" && typeof perDay === "number") {
+    parts.push(`remaining ${num(Math.max(0, perDay - neuronsToday))}`);
+    parts.push(`total ${num(perDay)}`);
+  }
+  const why =
+    problem === "not_configured"
+      ? "Neurons need a Cloudflare read token in Settings"
+      : problem === "unreachable"
+        ? "Cloudflare did not answer for the neuron figures"
+        : "";
+  return `<span class="cost" ${why ? `title="${h(why)}"` : ""}>${h(parts.join(" · "))}${
+    why ? " ·<span class=\"cost-why\">?</span>" : ""
+  }</span>`;
 }
 
 /**
@@ -1188,7 +1459,12 @@ async function sendToAssistant(event) {
   input.value = "";
   input.style.height = "auto";
   input.disabled = true;
-  $("asSend").disabled = true;
+  // The arrow becomes a stop square for as long as the turn is running, so the
+  // one control in reach is the one that does something.
+  state.pending = new AbortController();
+  $("asSend").hidden = true;
+  $("asStop").hidden = false;
+  $("asStop").onclick = () => state.pending?.abort();
 
   // The turn appears the moment it is sent, with a line saying it is working,
   // because a tool loop takes several seconds and a still screen reads as a
@@ -1201,21 +1477,32 @@ async function sendToAssistant(event) {
   const thread = $("asThread");
   thread.insertAdjacentHTML(
     "beforeend",
-    `<div class="turn user"><div class="ubub">${h(text)}</div></div>
+    `<div class="turn user"><div class="ubub">${md(text)}</div></div>
      <div class="turn ai" id="asThinking">
        <div class="ai-head"><img class="ai-av" src="/assets/logo.jpg" alt="">
-         <b>Muxel</b><span class="mtag">${h(modelLabel())}</span></div>
+         <b>${h(modelLabel())}</b></div>
        <div class="ai-body thinking"><span></span><span></span><span></span></div>
      </div>`,
   );
   thread.scrollTop = thread.scrollHeight;
 
-  const { ok, data } = await api("assistant", {
+  const { ok, data, aborted } = await api("assistant", {
     method: "POST",
     body: { text, chatId: state.chatId ?? undefined, model: state.chatModel ?? undefined },
+    signal: state.pending.signal,
   });
+  state.pending = null;
   input.disabled = false;
-  $("asSend").disabled = false;
+  if ($("asSend")) {
+    $("asSend").hidden = false;
+    $("asStop").hidden = true;
+  }
+  if (aborted) {
+    // Stopping ends the waiting, not the work: the deployment finishes the turn
+    // and writes the answer down. So the chat is read back rather than left
+    // showing a question with nothing under it.
+    return viewAssistant();
+  }
   if (!ok) {
     $("asThinking")?.remove();
     input.value = text;
@@ -1970,11 +2257,43 @@ async function viewChannels() {
 
 // ----------------------------------------------------------------- customers
 
+/**
+ * Everyone who has written, and the ones still waiting on a person.
+ *
+ * Two tabs over the same people rather than two screens: "who wrote to us" and
+ * "who needs me now" are the same list asked two different questions, and the
+ * queue was its own rail item back when it was the only way to see it.
+ */
 async function viewCustomers() {
-  const { data } = await api(`customers?page=${state.page}&size=20`);
+  const [people, queue] = await Promise.all([
+    api(`customers?page=${state.page}&size=20`),
+    api("inbox", { quiet: true }),
+  ]);
+  const waiting = queue.data.waiting ?? [];
+  state.waiting = waiting.filter((item) => item.state === "waiting").length;
+  drawNavBadge();
+
+  const tabs = `<div class="tabs">
+      <button data-tab="all" class="${state.custTab === "waiting" ? "" : "on"}">Everyone<span class="n">${num(
+        people.data.total ?? 0,
+      )}</span></button>
+      <button data-tab="waiting" class="${state.custTab === "waiting" ? "on" : ""}">Waiting for you${
+        waiting.length > 0 ? `<span class="n">${waiting.length}</span>` : ""
+      }</button>
+    </div>`;
+
+  if (state.custTab === "waiting") {
+    $("view").innerHTML = tabs + waitingTable(waiting);
+    wireWaiting();
+    wireCustTabs();
+    return;
+  }
+
+  const data = people.data;
   const rows = data.customers ?? [];
   $("view").innerHTML =
-    rows.length === 0 && state.page === 1
+    tabs +
+    (rows.length === 0 && state.page === 1
       ? '<div class="card empty"><h3>No customers yet</h3><p>Anyone who writes to one of your agents appears here.</p></div>'
       : `<div class="card"><table>
           <thead><tr><th>Customer</th><th>Channel</th><th>Business</th><th>Messages</th>
@@ -1997,11 +2316,22 @@ async function viewCustomers() {
               (data.page - 1) * data.size + rows.length
             } of ${num(data.total)} customers</span>
             ${pager(data.page, data.pages)}
-          </div></div>`;
+          </div></div>`);
   wirePager();
+  wireCustTabs();
   $("view").querySelectorAll("tr[data-customer]").forEach(
     (r) => (r.onclick = () => customerDrawer(r.dataset.customer)),
   );
+}
+
+function wireCustTabs() {
+  $("view").querySelectorAll("[data-tab]").forEach((b) => {
+    b.onclick = () => {
+      state.custTab = b.dataset.tab;
+      state.page = 1;
+      viewCustomers();
+    };
+  });
 }
 
 function pager(page, pages) {

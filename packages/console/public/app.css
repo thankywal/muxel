@@ -167,14 +167,21 @@ main { min-width: 0; display: flex; flex-direction: column; }
    A conversation is the whole page, not a card on it: the column scrolls, the
    composer stays, and the topbar carries the model instead of a title. */
 main.chatting { height: 100vh; }
-main.chatting .content { padding: 0; flex: 1; min-height: 0; display: flex; }
+main.chatting .content { padding: 0; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Chat mode strips the page padding for the conversation's sake. Anything else
+   drawn in that frame — the "your deployment is behind" card, an error — is not
+   the conversation, and was being stretched into columns by the same rule. */
+main.chatting .content > :not(.chat-page) { margin: 20px 28px; flex: none; }
 .model-pick { display: flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 9px;
               border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
               font-size: 13px; font-weight: 600; cursor: pointer; }
 .model-pick:hover { border-color: var(--brand-line); color: var(--brand-ink); }
 .model-pick svg { color: var(--muted); }
 
-.chat-page { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* min-height:0 is what lets the thread scroll instead of the page. Without it
+   a column flex child refuses to shrink below its content, so a long answer
+   pushed the whole console taller and scrolled the rail away with it. */
+.chat-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .chat-page.blank { justify-content: center; }
 .thread { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 0 8px; }
 .chat-page.blank .thread { flex: none; overflow: visible; padding-bottom: 0; }
@@ -188,15 +195,70 @@ main.chatting .content { padding: 0; flex: 1; min-height: 0; display: flex; }
 /* The owner's own words get an edge; the assistant's answer is the page. */
 .turn.user { display: flex; justify-content: flex-end; margin-bottom: 18px; }
 .ubub { background: var(--surface); border: 1px solid var(--line); border-radius: 16px 16px 4px 16px;
-        padding: 10px 14px; font-size: 14px; max-width: 78%; white-space: pre-wrap; box-shadow: var(--shadow); }
+        padding: 10px 14px; font-size: 14px; max-width: 78%; box-shadow: var(--shadow); }
 .ai-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ai-av { width: 22px; height: 22px; border-radius: 6px; }
 .ai-head b { font-size: 13.5px; font-weight: 650; }
 .ai-head .mtag { font-size: 11px; color: var(--muted); border: 1px solid var(--line);
                  border-radius: 999px; padding: 1px 8px; }
 .ai-head .when { margin-left: auto; font-size: 11.5px; color: var(--muted); }
-.ai-body { font-size: 14.5px; line-height: 1.7; color: var(--ink); white-space: pre-wrap; }
-.ai-acts { display: flex; gap: 6px; margin-top: 10px; }
+.ai-body { font-size: 14.5px; line-height: 1.7; color: var(--ink); }
+
+/* ---- rendered message bodies ----
+   The same rules serve both sides: an owner who pastes a table wrote the same
+   markup the model does, and there is no reason to format only one of them. */
+.ai-body > :first-child, .ubub > :first-child { margin-top: 0; }
+.ai-body > :last-child, .ubub > :last-child { margin-bottom: 0; }
+.ai-body p, .ubub p { margin: 0 0 10px; }
+.md-h { font-weight: 680; letter-spacing: -.01em; margin: 18px 0 8px; line-height: 1.35; }
+h3.md-h { font-size: 17px; }
+h4.md-h { font-size: 15.5px; }
+h5.md-h, h6.md-h { font-size: 14px; color: var(--ink-2); }
+.md-list { margin: 0 0 10px; padding-left: 20px; }
+.md-list li { margin: 3px 0; }
+.md-hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+.ai-body blockquote, .ubub blockquote { margin: 0 0 10px; padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--brand-line); color: var(--ink-2); }
+.ai-body code, .ubub code { background: var(--surface-2); border: 1px solid var(--line-soft);
+  border-radius: 5px; padding: 1px 5px; font-size: .89em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.md-code { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 0 0 12px;
+           background: var(--surface); }
+.md-code-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px;
+  background: var(--surface-2); border-bottom: 1px solid var(--line); font-size: 11px;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.md-code-head .t-act { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.md-code pre { margin: 0; padding: 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+/* Wide content scrolls inside its own box; the page never does. */
+.md-table { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin: 0 0 12px; }
+.md-table table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.md-table th, .md-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap; }
+.md-table th { background: var(--surface-2); font-weight: 620; font-size: 12px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--muted); }
+.md-table tr:last-child td { border-bottom: 0; }
+.md-shot { display: block; margin: 0 0 12px; }
+.md-shot img { max-width: 100%; max-height: 340px; border-radius: 10px; border: 1px solid var(--line);
+  display: block; }
+/* An image that will not load is a link to a file, and is shown as one. */
+.md-shot.broken { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); color: var(--ink-2);
+  font-size: 13px; }
+.md-shot.broken img { display: none; }
+.file-chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; margin: 2px 0;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); color: var(--ink-2);
+  font-size: 13px; max-width: 100%; }
+.file-chip:hover { border-color: var(--brand-line); color: var(--brand-ink); }
+.file-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip svg { flex: none; color: var(--muted); }
+
+/* What this answer drew from the day's allowance. */
+.cost { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap;
+        font-variant-numeric: tabular-nums; }
+.cost-why { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 5px;
+  border: 1px solid var(--line); border-radius: 50%; font-size: 9.5px; cursor: help; }
+.ai-acts { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .t-act { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; cursor: pointer;
          color: var(--muted); font-size: 12px; padding: 4px 7px; border-radius: 7px; }
 .t-act:hover { background: var(--surface-2); color: var(--ink-2); }
@@ -229,6 +291,8 @@ main.chatting .content { padding: 0; flex: 1; min-height: 0; display: flex; }
 .send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--brand); color: #fff;
         display: grid; place-items: center; cursor: pointer; flex: none; }
 .send:disabled { opacity: .45; cursor: default; }
+.send.stop { background: var(--ink); }
+.send.stop:hover { background: var(--ink-2); }
 .openers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
 .opener { border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
           padding: 7px 13px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
