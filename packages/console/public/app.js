@@ -553,7 +553,7 @@ async function viewOverview() {
       </div>
     </div>`;
 
-  $("newBiz").onclick = createBusinessDialog;
+  $("newBiz").onclick = () => createAgentDialog();
   wireGoto();
   $("view").querySelectorAll("tr[data-business]").forEach(
     (r) => (r.onclick = () => go("agents", { businessId: r.dataset.business, customerId: null })),
@@ -761,9 +761,9 @@ async function viewAgents() {
     ${
       all.length === 0
         ? `<div class="card empty"><h3>No agents yet</h3>
-             <p>An agent is a business plus the channels it answers on. Create one, give it your price
-                list, and point a Telegram bot or your website at it.</p>
-             <button class="btn btn-primary" id="newBiz2">Create your first agent</button></div>`
+             <p>An agent is one of your businesses answering somewhere: on Telegram, or in a chat bubble on
+                your own site. Pick a business and choose where, and it starts answering.</p>
+             <button class="btn btn-primary" id="newBiz2">Set up your first agent</button></div>`
         : `<div class="card"><table>
             <thead><tr><th>Agent</th><th>Status</th><th>Channels</th><th>Messages today</th>
               <th>Answered alone</th><th>Last activity</th></tr></thead>
@@ -784,7 +784,7 @@ async function viewAgents() {
               .join("")}</tbody></table>
             <div class="tfoot"><span>Showing ${shown.length} of ${all.length} agents</span></div></div>`
     }`;
-  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = createBusinessDialog;
+  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = () => createAgentDialog();
   $("view").querySelectorAll("[data-filter]").forEach(
     (b) => (b.onclick = () => ((state.filter = b.dataset.filter), render())),
   );
@@ -1089,8 +1089,9 @@ async function viewChannels() {
     ${
       all.length === 0
         ? `<div class="card empty"><h3>No channels yet</h3>
-             <p>A channel is how a customer reaches you: a Telegram bot, or the chat bubble on your website.</p>
-             <button class="btn btn-primary" id="newBiz2">Create a business</button></div>`
+             <p>A channel is how a customer reaches you: a Telegram bot, or the chat bubble on your website.
+                Each one belongs to a business, so this asks which.</p>
+             <button class="btn btn-primary" id="newBiz2">Add a channel</button></div>`
         : `<div class="card"><table>
             <thead><tr><th>Channel</th><th>Type</th><th>Status</th><th>Answers for</th><th>Last activity</th></tr></thead>
             <tbody>${shown
@@ -1108,7 +1109,7 @@ async function viewChannels() {
               <span>Muxel answers on Telegram and on your website. Those are the two.</span>
             </div></div>`
     }`;
-  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = createBusinessDialog;
+  for (const id of ["newBiz", "newBiz2"]) if ($(id)) $(id).onclick = () => createAgentDialog();
   $("view").querySelectorAll("[data-filter]").forEach(
     (b) => (b.onclick = () => ((state.filter = b.dataset.filter), render())),
   );
@@ -2378,23 +2379,22 @@ function ask(title, body, choices) {
   });
 }
 
+/**
+ * A business is the thing that exists. Naming it is all this asks.
+ *
+ * Where it answers is a separate decision with its own dialog, because
+ * attaching a channel is a separate act that can also happen later, to a
+ * business made months ago. Asking both here put that act in two places.
+ */
 function createBusinessDialog() {
   const bg = document.createElement("div");
   bg.className = "modal-bg";
   bg.innerHTML = `<div class="modal">
     <h3>Create a business</h3>
-    <p class="sub">One assistant, one price list, one voice. You choose where it answers next.</p>
-    <div class="field"><label>Business name</label>
-      <input id="bizName" placeholder="Sunrise Bakery" autocomplete="off"></div>
-    <div class="field"><label>Where should it answer?</label>
-      <select id="bizType">
-        <option value="web">My website · nothing else needed</option>
-        <option value="telegram">Telegram · I have a bot token</option>
-      </select>
-      <small>Either way you can add the other channel afterwards.</small></div>
-    <div class="field" id="tokRow" hidden><label>Telegram bot token</label>
-      <input id="bizToken" placeholder="123456:ABC-DEF…" autocomplete="off">
-      <small>From @BotFather. Sealed with your deployment's own key before it is stored.</small></div>
+    <p class="sub">One assistant, one price list, one voice. Where it answers comes next.</p>
+    <div class="field" style="margin-bottom:6px"><label>Business name</label>
+      <input id="bizName" placeholder="Sunrise Bakery" autocomplete="off">
+      <small>What your customers call you. The assistant uses it when it introduces itself.</small></div>
     <div class="actions">
       <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
       <button class="btn btn-primary btn-sm" id="create">Create</button>
@@ -2403,28 +2403,137 @@ function createBusinessDialog() {
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
   bg.onclick = (e) => e.target === bg && close();
-  bg.querySelector("#bizType").onchange = (e) =>
-    (bg.querySelector("#tokRow").hidden = e.target.value !== "telegram");
   bg.querySelector("#bizName").focus();
-  bg.querySelector("#create").onclick = async () => {
+  const submit = async () => {
     const name = bg.querySelector("#bizName").value.trim();
     if (!name) return;
-    const wantsTelegram = bg.querySelector("#bizType").value === "telegram";
-    const botToken = bg.querySelector("#bizToken").value.trim();
-    if (wantsTelegram && !botToken) return toast("Paste the bot token, or choose the website route.");
     bg.querySelector("#create").disabled = true;
     const { ok, data } = await api("businesses", { method: "POST", body: { name } });
     if (!ok) return (bg.querySelector("#create").disabled = false);
-    if (wantsTelegram) {
-      const attached = await api(`businesses/${data.id}/telegram`, { method: "POST", body: { token: botToken } });
-      // The business is already made. Saying so, and saying the bot is not
-      // attached, beats a failure that reads as if nothing happened.
-      if (!attached.ok) toast("Business created, but that bot token was refused.");
+    close();
+    state.overview = null;
+    toast(`${name} created. It already answers on a web page.`);
+    // Straight on to the decision that was deliberately not asked here.
+    createAgentDialog(data.id);
+  };
+  bg.querySelector("#create").onclick = submit;
+  bg.querySelector("#bizName").onkeydown = (e) => e.key === "Enter" && submit();
+}
+
+/**
+ * An agent is a business answering somewhere, so this picks the business and
+ * the somewhere. It never creates a business: a business is a real thing with
+ * a price list and customers, and making one as a side effect of setting up a
+ * channel is how you end up with two of them by accident.
+ *
+ * With none to choose from it says so and hands over to the page that makes
+ * them, rather than growing a second way to make one.
+ */
+async function createAgentDialog(preselect) {
+  const d = await overview(true);
+  const businesses = d.businesses ?? [];
+
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.onclick = (e) => e.target === bg && close();
+
+  if (businesses.length === 0) {
+    bg.innerHTML = `<div class="modal">
+      <h3>You need a business first</h3>
+      <p class="sub">An agent answers <b>for</b> something: a shop, a clinic, a studio. Make that first and
+        this takes about ten seconds afterwards.</p>
+      <div class="actions">
+        <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="toBiz">Create your business</button>
+      </div></div>`;
+    bg.querySelector("#cancel").onclick = close;
+    bg.querySelector("#toBiz").onclick = () => {
+      close();
+      go("businesses");
+      createBusinessDialog();
+    };
+    return;
+  }
+
+  const chosen = () => businesses.find((b) => b.id === bg.querySelector("#agBiz").value);
+  bg.innerHTML = `<div class="modal">
+    <h3>Set up an agent</h3>
+    <p class="sub">An agent is one of your businesses answering somewhere. Pick which, and where.</p>
+    <div class="field"><label>Business</label>
+      <select id="agBiz">${businesses
+        .map(
+          (b) => `<option value="${h(b.id)}" ${b.id === preselect ? "selected" : ""}>${h(b.name)}</option>`,
+        )
+        .join("")}</select>
+      <div id="agHas" style="margin-top:7px"></div></div>
+    <div class="field"><label>Where should it answer?</label>
+      <select id="agWhere"></select></div>
+    <div class="field" id="agTokRow" hidden><label>Telegram bot token</label>
+      <input id="agToken" type="password" placeholder="123456:ABC-DEF…" autocomplete="off">
+      <small>Send <code>/newbot</code> to @BotFather and paste what it gives you. It is sealed with your
+        deployment's own key and stored in your own Cloudflare account.</small></div>
+    <div class="actions">
+      <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="go">Set it up</button>
+    </div></div>`;
+  bg.querySelector("#cancel").onclick = close;
+
+  const refresh = () => {
+    const b = chosen();
+    const has = [];
+    if (b.telegram) has.push(`<span class="tag blue">Telegram · @${h(b.telegram.username)}</span>`);
+    if (b.web?.enabled) has.push('<span class="tag brand">Website widget on</span>');
+    bg.querySelector("#agHas").innerHTML =
+      has.length > 0
+        ? `<span style="font-size:12.5px;color:var(--muted)">Already answering: </span>${has.join(" ")}`
+        : '<span style="font-size:12.5px;color:var(--muted)">Not answering anywhere yet.</span>';
+
+    // Only what this business does not already have. An option that would do
+    // nothing is worse than a shorter list.
+    const options = [];
+    if (!b.telegram) options.push(["telegram", "Telegram · I have a bot token"]);
+    if (!b.web?.enabled) options.push(["web", "My website · nothing else needed"]);
+    const where = bg.querySelector("#agWhere");
+    if (options.length === 0) {
+      where.innerHTML = '<option value="">It already answers everywhere it can</option>';
+      where.disabled = true;
+      bg.querySelector("#go").disabled = true;
+      bg.querySelector("#agTokRow").hidden = true;
+      return;
+    }
+    where.disabled = false;
+    bg.querySelector("#go").disabled = false;
+    where.innerHTML = options.map(([id, label]) => `<option value="${id}">${label}</option>`).join("");
+    bg.querySelector("#agTokRow").hidden = where.value !== "telegram";
+  };
+  refresh();
+  bg.querySelector("#agBiz").onchange = refresh;
+  bg.querySelector("#agWhere").onchange = (e) =>
+    (bg.querySelector("#agTokRow").hidden = e.target.value !== "telegram");
+
+  bg.querySelector("#go").onclick = async () => {
+    const b = chosen();
+    const where = bg.querySelector("#agWhere").value;
+    const button = bg.querySelector("#go");
+    if (where === "telegram") {
+      const token = bg.querySelector("#agToken").value.trim();
+      if (!token) return toast("Paste the bot token, or choose the website instead.");
+      button.disabled = true;
+      const { ok } = await api(`businesses/${b.id}/telegram`, { method: "POST", body: { token } });
+      if (!ok) return (button.disabled = false);
+      toast(`${b.name} is answering on Telegram now.`);
+    } else {
+      button.disabled = true;
+      const { ok } = await api(`businesses/${b.id}`, { method: "PATCH", body: { webEnabled: true } });
+      if (!ok) return (button.disabled = false);
+      toast(`${b.name} is answering on your website now.`);
     }
     close();
     state.overview = null;
-    toast("Business created.");
-    go("businesses", { businessId: data.id });
+    state.bizTab = "overview";
+    go("businesses", { businessId: b.id });
   };
 }
 

@@ -524,8 +524,9 @@ export async function handleConsoleApi(
         locale: env.BUSINESS_LOCALE?.trim() || "en",
         model: env.DEFAULT_MODEL,
       });
-      // Same as the Telegram path: a business always has a web channel, which
-      // is switched off until someone turns it on.
+      // Same as the Telegram path: a business always gets a web channel, and it
+      // is on from the start, so a business that has just been made can already
+      // answer on a page. Telegram is the part that has to be added.
       await createChannel(env, { businessId: business.id, title: name });
       return json(await businessCard(env, business.id), 201);
     }
