@@ -366,6 +366,34 @@ export async function listApprovals(env: Env, userId: number, limit = 40): Promi
   return result.results.map(toApproval).reverse();
 }
 
+/**
+ * Every change a chat proposed, against the turn that proposed it.
+ *
+ * The transcript holds what the assistant said, and the approval rows hold what
+ * became of what it asked for. Handing back only the first left the model
+ * proposing the same change again the moment the owner replied to it, because
+ * as far as it could see it had never asked.
+ */
+export async function approvalsByMessage(
+  env: Env,
+  chatId: string,
+): Promise<Record<string, Approval[]>> {
+  const result = await env.DB.prepare(
+    `SELECT a.* FROM operator_approval a
+       JOIN operator_message m ON m.id = a.message_id
+      WHERE m.chat_id = ?
+      ORDER BY a.created_at`,
+  )
+    .bind(chatId)
+    .all<Parameters<typeof toApproval>[0]>();
+  const byMessage: Record<string, Approval[]> = {};
+  for (const row of result.results) {
+    const approval = toApproval(row);
+    (byMessage[approval.messageId] ??= []).push(approval);
+  }
+  return byMessage;
+}
+
 export async function getApproval(
   env: Env,
   userId: number,

@@ -15,6 +15,7 @@ import type { Env } from "../env.js";
 import { listBusinesses } from "../db/queries.js";
 import {
   addOperatorMessage,
+  approvalsByMessage,
   askApproval,
   chatTranscript,
   recordPrompt,
@@ -74,9 +75,21 @@ const SYSTEM = [
   ABOUT_MUXEL,
   "",
   "You can read anything in this deployment and you can propose changes. You cannot make a change",
-  "yourself: when you call a tool that writes, it is shown to the owner as a card and nothing",
-  "happens until they say yes. Say what you are proposing in the same message, in your own words,",
-  "so the card is not the first they hear of it.",
+  "yourself: when you call a tool that writes, it appears under your message as a card with a Do it",
+  "button, and nothing happens until the owner taps it. Say what you are proposing in the same",
+  "message, in your own words, so the card is not the first they hear of it.",
+  "",
+  "Never ask them to reply \"yes\". Typing yes does nothing — the button on the card is the only",
+  "thing that runs a change. Say \"tap Do it below\" or nothing at all; the card speaks for itself.",
+  "",
+  "Every message you sent before is followed by a note in square brackets saying what became of",
+  "what it proposed. Read it. If something is still waiting, the owner has not tapped the button",
+  "yet: tell them where it is, and do not propose it again. If it says the owner approved it, it is",
+  "done — do not propose it a second time, and do not ask them to confirm it again.",
+  "",
+  "Propose one thing at a time when one depends on another. A price belongs to a business, so the",
+  "business has to exist before you can add prices to it: propose the business, wait until the note",
+  "says it was approved, and only then propose what goes in it.",
   "",
   "Work from what the tools return, never from memory or assumption. If you have not looked, say",
   "you have not looked. If a tool returns nothing, say that rather than filling the gap.",
@@ -127,6 +140,25 @@ export type Prompt =
   | { readonly kind: "question"; readonly question: string; readonly choices: readonly string[] }
   | { readonly kind: "telegram_token"; readonly businessId: string };
 
+/**
+ * What happened to the changes one turn proposed, in a line the model can read.
+ *
+ * Appended to the turn's own words rather than sent as a separate message,
+ * because it is a fact about that turn: the model said this, and this is what
+ * came of it.
+ */
+export function outcomeNote(approvals: readonly Approval[]): string {
+  if (approvals.length === 0) return "";
+  const said = approvals.map((approval) => {
+    const what = approval.summary || approval.tool;
+    if (approval.state === "approved") return `${what} — the owner approved this and it is done`;
+    if (approval.state === "declined") return `${what} — the owner said no`;
+    if (approval.state === "failed") return `${what} — approved but it failed: ${approval.result}`;
+    return `${what} — still waiting for the owner to tap Do it on the card`;
+  });
+  return `\n\n[What you proposed in this message: ${said.join("; ")}]`;
+}
+
 export interface AssistantReply {
   readonly text: string;
   readonly approvals: readonly Approval[];
@@ -164,9 +196,16 @@ export async function ask(
 
   // This chat only. One flat transcript carried yesterday's argument about
   // delivery into today's question about refunds.
+  // What it said, and what became of what it asked for. Without the second half
+  // the model could not tell an approved change from one it had never made, so
+  // an owner who replied "yes" got the same proposal a second time.
+  const decided = await approvalsByMessage(env, chatId);
   const history = (await chatTranscript(env, chatId, 20))
     .filter((message) => message.id !== messageId)
-    .map((message) => ({ role: message.role, content: message.content }));
+    .map((message) => ({
+      role: message.role,
+      content: message.content + outcomeNote(decided[message.id] ?? []),
+    }));
 
   const steps: ChatMessage[] = [];
   const took: { tool: string; ok: boolean }[] = [];

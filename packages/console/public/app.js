@@ -1287,6 +1287,10 @@ const OPENERS = [
 function drawAssistant() {
   const { messages = [], approvals = [], steps = {}, usage = {}, prompts = {} } = state.assistant ?? {};
   const blank = messages.length === 0;
+  // Typing "yes" runs nothing; the button on the card does. So a waiting change
+  // is said once above the box the owner is about to type into, with a way to
+  // get back to it, because the card that raised it may be far up the thread.
+  const waiting = approvals.filter((a) => a.state === "waiting");
   const cardsFor = (messageId) => approvals.filter((a) => a.messageId === messageId);
 
   $("view").innerHTML = `
@@ -1312,6 +1316,13 @@ function drawAssistant() {
       }</div>
 
       <form class="composer-wrap" id="asSay">
+        ${
+          waiting.length === 0
+            ? ""
+            : `<button type="button" class="waiting-bar" id="toWaiting">
+                 ${icon("bell", 14)}${waiting.length} change${waiting.length === 1 ? "" : "s"}
+                 waiting for you — tap Do it on the card</button>`
+        }
         <div class="composer">
           <textarea id="asText" rows="1" placeholder="Ask about your businesses, or tell it what to change"
             autocomplete="off"></textarea>
@@ -1332,6 +1343,10 @@ function drawAssistant() {
   growBox($("asText"));
   $("asText").focus();
   $("composerModel").onclick = () => $("modelPick")?.click();
+  if ($("toWaiting")) {
+    $("toWaiting").onclick = () =>
+      $("view").querySelector(".approval.waiting")?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
   bindTurnActions();
   wireCodeBlocks($("view"));
   wireImages($("view"));

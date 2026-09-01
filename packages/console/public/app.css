@@ -283,6 +283,11 @@ h5.md-h, h6.md-h { font-size: 14px; color: var(--ink-2); }
 @keyframes blip { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
 
 .composer-wrap { max-width: 720px; width: 100%; margin: 0 auto; padding: 8px 28px 22px; }
+.waiting-bar { display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px;
+  padding: 9px 14px; border: 1px solid var(--brand-line); border-radius: 12px;
+  background: var(--brand-soft); color: var(--brand-ink); font-size: 12.5px; font-weight: 600;
+  cursor: pointer; text-align: left; }
+.waiting-bar svg { flex: none; }
 .composer { border: 1px solid var(--line); background: var(--surface); border-radius: 18px;
             padding: 12px 14px 10px; box-shadow: var(--shadow); }
 .composer:focus-within { border-color: var(--brand-line); }
