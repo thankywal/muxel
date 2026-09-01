@@ -15,7 +15,7 @@
 import type { Business, ChatTurn, CustomerFact } from "@muxel/core";
 
 import { generate } from "./ai/gateway.js";
-import { recentTurns, recordUsage } from "./db/queries.js";
+import { getProfile, recentTurns, recordUsage, type BusinessProfile } from "./db/queries.js";
 import type { Env } from "./env.js";
 import { HANDOVER_SENTINEL, stripSentinel, wantsHandover } from "./escalation.js";
 import { formatFacts, recall } from "./memory.js";
@@ -44,11 +44,52 @@ export function handoverReply(locale: string): string {
   return HANDOVER_REPLY[locale] ?? HANDOVER_REPLY.en ?? "";
 }
 
+/**
+ * The profile, as lines the assistant can answer from.
+ *
+ * "Where are you?" and "what is your number?" are the two commonest questions a
+ * shop gets, and neither is in a price list or a policy document. They are
+ * fields the owner filled in, so they are stated plainly rather than left to
+ * retrieval, which would have to find them in a paragraph first.
+ *
+ * Empty fields are omitted rather than printed blank: a line reading
+ * "Phone:" with nothing after it invites the assistant to make one up.
+ */
+export function renderProfile(name: string, profile: BusinessProfile | null): string {
+  if (profile === null) return "";
+  const lines = (
+    [
+      ["What this business is", profile.kind],
+      ["About it", profile.about],
+      ["Address", profile.address],
+      ["Map link", profile.mapUrl],
+      ["Opening hours", profile.hours],
+      ["Phone", profile.phone],
+      ["Email", profile.email],
+      ["Website", profile.website],
+      ["Facebook", profile.facebook],
+    ] as const
+  )
+    .filter(([, value]) => value.trim().length > 0)
+    .map(([label, value]) => `${label}: ${value.trim()}`);
+  if (lines.length === 0) return "";
+  return [
+    "",
+    `Facts about ${name}, given by the owner. Quote these when asked and do not`,
+    "add to them. Anything not listed here is something you do not know.",
+    "",
+    "<<<BUSINESS",
+    ...lines,
+    "BUSINESS>>>",
+  ].join("\n");
+}
+
 export function buildSystemPrompt(
   business: Business,
   context: string,
   facts: readonly CustomerFact[],
   productIndex: readonly string[] = [],
+  profile: BusinessProfile | null = null,
 ): string {
   // The operator's own instructions are trusted and sit in the base prompt. The
   // guardrail follows them, so an instruction document cannot license the
@@ -68,6 +109,11 @@ export function buildSystemPrompt(
       .filter((line) => line.length > 0)
       .join("\n"),
   ];
+
+  const profileBlock = renderProfile(business.name, profile);
+  if (profileBlock.length > 0) {
+    sections.push(profileBlock);
+  }
 
   if (facts.length > 0) {
     sections.push(
@@ -138,9 +184,10 @@ export async function answerQuestion(
     question: string;
   },
 ): Promise<Answer> {
-  const [history, facts] = await Promise.all([
+  const [history, facts, profile] = await Promise.all([
     recentTurns(env, input.conversationId),
     input.customerId === null ? Promise.resolve([]) : recall(env, input.customerId),
+    getProfile(env, input.business.id),
   ]);
 
   const chunks = await retrieve(env, input.business.id, input.question);
@@ -151,7 +198,7 @@ export async function answerQuestion(
 
   const result = await generate(env, {
     model: input.business.model,
-    system: buildSystemPrompt(input.business, formatContext(chunks), facts, index),
+    system: buildSystemPrompt(input.business, formatContext(chunks), facts, index, profile),
     history,
     userMessage: input.question,
     businessId: input.business.id,

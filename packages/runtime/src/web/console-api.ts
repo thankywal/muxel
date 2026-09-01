@@ -35,9 +35,12 @@ import {
   forgetCustomer,
   forgetFacts,
   getOperatorLocale,
+  getProfile,
   listFacts,
   listHandovers,
   previousPrompt,
+  renameBusiness,
+  saveProfile,
   setBusinessPrompt,
   setCustomerNote,
   setCustomerStage,
@@ -151,7 +154,7 @@ function kindForType(mime: string): MediaKind {
 async function attachTelegramBot(
   env: Env,
   input: { businessId: string; token: string },
-): Promise<{ ok: true; username: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; username: string; displayName: string } | { ok: false; reason: string }> {
   const incoming = new TelegramClient(input.token);
   let me: { username?: string; first_name?: string };
   try {
@@ -179,7 +182,7 @@ async function attachTelegramBot(
   const origin = (await env.STATE.get(ORIGIN_KEY)) ?? "";
   if (origin.length === 0) return { ok: false, reason: "no_origin" };
   await incoming.setWebhook({ url: `${origin}/tg/${webhookPath}`, secretToken: webhookSecret });
-  return { ok: true, username };
+  return { ok: true, username, displayName: (me.first_name ?? username).trim() };
 }
 
 /**
@@ -226,6 +229,25 @@ async function moveConsoleBot(
   });
   await incoming.setWebhook({ url: `${origin}/tg/${webhookPath}`, secretToken: webhookSecret });
   return { ok: true, username: me.username ?? "unknown" };
+}
+
+/** Only the fields a profile has, whatever else the body carried. */
+function profilePatch(body: Record<string, unknown>): Record<string, string> {
+  const patch: Record<string, string> = {};
+  for (const field of [
+    "kind",
+    "about",
+    "address",
+    "mapUrl",
+    "phone",
+    "email",
+    "website",
+    "facebook",
+    "hours",
+  ]) {
+    if (typeof body[field] === "string") patch[field] = body[field] as string;
+  }
+  return patch;
 }
 
 function notFound(): Response {
@@ -514,7 +536,10 @@ export async function handleConsoleApi(
       return json({ businesses: await Promise.all(businesses.map((b) => businessCard(env, b.id))) });
     }
     if (method === "POST" && segments.length === 1) {
-      const body = (await request.json().catch(() => ({}))) as { name?: string };
+      const body = (await request.json().catch(() => ({}))) as {
+        name?: string;
+        profile?: Record<string, string>;
+      };
       const name = String(body.name ?? "").trim();
       if (name.length === 0 || name.length > 80) {
         return json({ error: "bad_name", message: "Give the business a name of 1 to 80 characters." }, 400);
@@ -524,6 +549,12 @@ export async function handleConsoleApi(
         locale: env.BUSINESS_LOCALE?.trim() || "en",
         model: env.DEFAULT_MODEL,
       });
+      // The address and the phone number arrive with the name, because that is
+      // when the owner has them in mind. Saved through the same door that edits
+      // them later, so there is one place that validates and trims them.
+      if (body.profile !== undefined) {
+        await saveProfile(env, business.id, profilePatch(body.profile));
+      }
       // Same as the Telegram path: a business always gets a web channel, and it
       // is on from the start, so a business that has just been made can already
       // answer on a page. Telegram is the part that has to be added.
@@ -536,16 +567,17 @@ export async function handleConsoleApi(
     if (!(await canAccessBusiness(env, userId, businessId))) return json({ error: "no_access" }, 403);
 
     if (method === "GET" && segments.length === 2) {
-      const [card, products, documents, recentCustomers] = await Promise.all([
+      const [card, products, documents, recentCustomers, profile] = await Promise.all([
         businessCard(env, businessId),
         productsView(env, businessId),
         listDocuments(env, businessId),
         listCustomers(env, businessId, 50),
+        getProfile(env, businessId),
       ]);
       // Deliberately not `customers`. The card already carries that name for
       // the count, and spreading a list over it left the console drawing
       // "[object Object]" where a number belonged. One name, one meaning.
-      return json({ ...card, products, documents, recentCustomers });
+      return json({ ...card, products, documents, recentCustomers, profile });
     }
     if (method === "DELETE" && segments.length === 2) {
       await deleteBusiness(env, businessId);
@@ -662,6 +694,15 @@ export async function handleConsoleApi(
       return json({ ok: true, queued, products: await productsView(env, businessId) });
     }
 
+    // What the business is and where to find it.
+    if (segments[2] === "profile" && segments.length === 3) {
+      if (method === "GET") return json({ profile: await getProfile(env, businessId) });
+      if (method === "PUT") {
+        const body = (await request.json().catch(() => ({}))) as Record<string, string>;
+        return json({ profile: await saveProfile(env, businessId, profilePatch(body)) });
+      }
+    }
+
     // The instructions the assistant answers by.
     if (segments[2] === "prompt") {
       if (method === "GET" && segments.length === 3) {
@@ -776,11 +817,20 @@ export async function handleConsoleApi(
     // Attaching a Telegram bot to a business that already exists, which is how
     // a business created as a website later gains a second channel.
     if (method === "POST" && segments[2] === "telegram" && segments.length === 3) {
-      const body = (await request.json().catch(() => ({}))) as { token?: string };
+      const body = (await request.json().catch(() => ({}))) as {
+        token?: string;
+        useBotName?: boolean;
+      };
       const token = String(body.token ?? "").trim();
       if (token.length === 0) return json({ error: "bad_token" }, 400);
       const attached = await attachTelegramBot(env, { businessId, token });
       if (!attached.ok) return json({ error: attached.reason }, 400);
+      // Most owners give the bot the shop's name, and then type the shop's name
+      // again here. Asking once is cheaper than two names for one thing, and
+      // the answer is the owner's, so it is a flag rather than a guess.
+      if (body.useBotName === true && attached.displayName.length > 0) {
+        await renameBusiness(env, businessId, attached.displayName);
+      }
       return json(await businessCard(env, businessId));
     }
   }

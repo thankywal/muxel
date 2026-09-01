@@ -413,6 +413,31 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    version: 11,
+    statements: [
+      // What the business is and where to find it.
+      //
+      // These were going into the instructions as prose, which works once and
+      // then cannot be edited: an address buried in a paragraph is not a field.
+      // They are columns so the console can show them as the form they are, and
+      // the assistant reads a rendering of them, the same way it reads the
+      // owner's price corrections. One record, and the prompt is a view of it.
+      `CREATE TABLE IF NOT EXISTS business_profile (
+         business_id TEXT PRIMARY KEY REFERENCES business (id) ON DELETE CASCADE,
+         kind        TEXT NOT NULL DEFAULT '',
+         about       TEXT NOT NULL DEFAULT '',
+         address     TEXT NOT NULL DEFAULT '',
+         map_url     TEXT NOT NULL DEFAULT '',
+         phone       TEXT NOT NULL DEFAULT '',
+         email       TEXT NOT NULL DEFAULT '',
+         website     TEXT NOT NULL DEFAULT '',
+         facebook    TEXT NOT NULL DEFAULT '',
+         hours       TEXT NOT NULL DEFAULT '',
+         updated_at  TEXT NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

@@ -194,6 +194,112 @@ export async function getBusiness(env: Env, businessId: string): Promise<Busines
   return toBusiness(row);
 }
 
+export interface BusinessProfile {
+  kind: string;
+  about: string;
+  address: string;
+  mapUrl: string;
+  phone: string;
+  email: string;
+  website: string;
+  facebook: string;
+  hours: string;
+}
+
+const EMPTY_PROFILE: BusinessProfile = {
+  kind: "",
+  about: "",
+  address: "",
+  mapUrl: "",
+  phone: "",
+  email: "",
+  website: "",
+  facebook: "",
+  hours: "",
+};
+
+/**
+ * What the business is and where to find it.
+ *
+ * A business with no row here has an empty profile rather than none, so every
+ * caller reads the same nine fields and none of them has to decide what a
+ * missing profile looks like.
+ */
+export async function getProfile(env: Env, businessId: string): Promise<BusinessProfile> {
+  assertValidId(businessId, "businessId");
+  const row = await env.DB.prepare("SELECT * FROM business_profile WHERE business_id = ?")
+    .bind(businessId)
+    .first<{
+      kind: string;
+      about: string;
+      address: string;
+      map_url: string;
+      phone: string;
+      email: string;
+      website: string;
+      facebook: string;
+      hours: string;
+    }>();
+  return row === null
+    ? { ...EMPTY_PROFILE }
+    : {
+        kind: row.kind,
+        about: row.about,
+        address: row.address,
+        mapUrl: row.map_url,
+        phone: row.phone,
+        email: row.email,
+        website: row.website,
+        facebook: row.facebook,
+        hours: row.hours,
+      };
+}
+
+/** Writes the whole profile. Fields left out keep whatever they had. */
+export async function saveProfile(
+  env: Env,
+  businessId: string,
+  patch: Partial<BusinessProfile>,
+): Promise<BusinessProfile> {
+  assertValidId(businessId, "businessId");
+  const current = await getProfile(env, businessId);
+  const next = { ...current, ...patch };
+  const cap = (value: string, limit: number): string => value.trim().slice(0, limit);
+  await env.DB.prepare(
+    `INSERT INTO business_profile
+       (business_id, kind, about, address, map_url, phone, email, website, facebook, hours, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (business_id) DO UPDATE SET
+       kind = excluded.kind, about = excluded.about, address = excluded.address,
+       map_url = excluded.map_url, phone = excluded.phone, email = excluded.email,
+       website = excluded.website, facebook = excluded.facebook, hours = excluded.hours,
+       updated_at = excluded.updated_at`,
+  )
+    .bind(
+      businessId,
+      cap(next.kind, 60),
+      cap(next.about, 1000),
+      cap(next.address, 300),
+      cap(next.mapUrl, 500),
+      cap(next.phone, 80),
+      cap(next.email, 120),
+      cap(next.website, 200),
+      cap(next.facebook, 200),
+      cap(next.hours, 200),
+      now(),
+    )
+    .run();
+  return getProfile(env, businessId);
+}
+
+/** The name customers see. Changed when a bot's own name should be it. */
+export async function renameBusiness(env: Env, businessId: string, name: string): Promise<void> {
+  assertValidId(businessId, "businessId");
+  await env.DB.prepare("UPDATE business SET name = ?, updated_at = ? WHERE id = ?")
+    .bind(name.trim().slice(0, 80), now(), businessId)
+    .run();
+}
+
 export async function updateBusinessModel(
   env: Env,
   businessId: string,

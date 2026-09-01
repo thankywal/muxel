@@ -1346,6 +1346,7 @@ async function businessDetail(businessId) {
 
   const TABS = [
     ["overview", "Overview"],
+    ["profile", "Profile"],
     ["instructions", "Instructions"],
     ["prices", "Price list"],
     ["documents", "Documents"],
@@ -1381,6 +1382,7 @@ async function businessDetail(businessId) {
 
   ({
     overview: bizOverview,
+    profile: bizProfile,
     instructions: bizInstructions,
     prices: bizPrices,
     documents: bizDocuments,
@@ -1461,6 +1463,40 @@ async function bizOverview(businessId, b) {
     state.overview = null;
     state.businessId = null;
     go("businesses");
+  };
+}
+
+/**
+ * The facts about the business, as the fields they are.
+ *
+ * These go to the assistant as plain lines it can quote, and only the ones with
+ * something in them. An empty field is not a blank the assistant fills in: it
+ * is something it is not told, and it says it does not know instead.
+ */
+async function bizProfile(businessId, b) {
+  const profile = b.profile ?? {};
+  $("bizTab").innerHTML = `
+    <div class="card" style="max-width:760px">
+      <div class="card-head"><h2>About this business</h2>
+        <span id="profSaved" style="font-size:12.5px;color:var(--green)"></span></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13px;margin:0 0 14px">Where you are and how to reach you are
+          the two things customers ask most, and neither is in a price list. Anything you fill in here the
+          assistant can quote. Anything you leave blank it will say it does not know.</p>
+        <div class="two">${profileInputs(profile)}</div>
+        <button class="btn btn-primary btn-sm" id="saveProfile" style="margin-top:4px">Save</button>
+      </div>
+    </div>`;
+  $("saveProfile").onclick = async () => {
+    $("saveProfile").disabled = true;
+    const { ok } = await api(`businesses/${businessId}/profile`, {
+      method: "PUT",
+      body: readProfileInputs($("bizTab")),
+    });
+    $("saveProfile").disabled = false;
+    if (!ok) return;
+    $("profSaved").textContent = "Saved";
+    setTimeout(() => ($("profSaved").textContent = ""), 2500);
   };
 }
 
@@ -2379,48 +2415,185 @@ function ask(title, body, choices) {
   });
 }
 
+/** The profile fields, in the order they are asked for and shown. */
+const PROFILE_FIELDS = [
+  ["kind", "What kind of business", "Bakery · Clinic · Moving company", false],
+  ["about", "In a sentence or two", "Family bakery in Thonglor since 2014. Everything baked the same morning.", true],
+  ["address", "Address", "12 Sukhumvit Road, Watthana, Bangkok 10110", false],
+  ["mapUrl", "Google Maps link", "https://maps.app.goo.gl/…", false],
+  ["hours", "Opening hours", "Mon to Sat, 7am to 7pm. Closed Sunday.", false],
+  ["phone", "Phone", "02 123 4567", false],
+  ["email", "Email", "hello@sunrisebakery.co.th", false],
+  ["facebook", "Facebook page", "https://facebook.com/sunrisebakery", false],
+  ["website", "Website", "https://sunrisebakery.co.th", false],
+];
+
+const profileInputs = (values = {}) =>
+  PROFILE_FIELDS.map(([id, label, placeholder, wide]) =>
+    wide
+      ? `<div class="field" style="grid-column:1/-1"><label>${label}</label>
+           <textarea id="pf_${id}" rows="2" placeholder="${h(placeholder)}">${h(values[id] ?? "")}</textarea></div>`
+      : `<div class="field"><label>${label}</label>
+           <input id="pf_${id}" placeholder="${h(placeholder)}" value="${h(values[id] ?? "")}"></div>`,
+  ).join("");
+
+const readProfileInputs = (root) =>
+  Object.fromEntries(PROFILE_FIELDS.map(([id]) => [id, root.querySelector(`#pf_${id}`).value]));
+
 /**
- * A business is the thing that exists. Naming it is all this asks.
+ * Making a business: what it is, how to reach it, and where it answers.
  *
- * Where it answers is a separate decision with its own dialog, because
- * attaching a channel is a separate act that can also happen later, to a
- * business made months ago. Asking both here put that act in two places.
+ * Three boxes, because they are three different kinds of answer. The first two
+ * are facts about the shop, which the assistant is told plainly and which stay
+ * editable as fields afterwards. The third is a decision about this deployment,
+ * and it is separate and required, because a business that answers nowhere is
+ * the one thing this is not for.
+ *
+ * Everything but the name can be left blank and filled in later. Nothing here
+ * is invented on the owner's behalf: a field left empty is a field the
+ * assistant is not told about, and it says it does not know rather than
+ * guessing.
  */
 function createBusinessDialog() {
   const bg = document.createElement("div");
   bg.className = "modal-bg";
-  bg.innerHTML = `<div class="modal">
+  bg.innerHTML = `<div class="modal wide">
     <h3>Create a business</h3>
-    <p class="sub">One assistant, one price list, one voice. Where it answers comes next.</p>
-    <div class="field" style="margin-bottom:6px"><label>Business name</label>
-      <input id="bizName" placeholder="Sunrise Bakery" autocomplete="off">
-      <small>What your customers call you. The assistant uses it when it introduces itself.</small></div>
+    <p class="sub">Only the name is needed. Everything else can wait, and the more you give it the fewer
+      questions it has to hand to you.</p>
+
+    <div class="box">
+      <b class="box-title">The business</b>
+      <div class="field"><label>Name <span class="req">required</span></label>
+        <input id="bizName" placeholder="Sunrise Bakery" autocomplete="off"></div>
+      <div class="two">${profileInputs()}</div>
+    </div>
+
+    <div class="box">
+      <b class="box-title">Where it answers <span class="req">choose one</span></b>
+      <p class="box-note">A business answers customers somewhere. Pick one now; the other can be added
+        later from its page.</p>
+      <div class="picks">
+        <label class="pick"><input type="radio" name="chan" value="web" checked>
+          <div><b>My website</b><small>A chat bubble on your own pages. Nothing else needed, and you get
+            the one line to paste as soon as this is made.</small></div></label>
+        <label class="pick"><input type="radio" name="chan" value="telegram">
+          <div><b>Telegram</b><small>Customers message a bot you own. Send <code>/newbot</code> to
+            @BotFather and paste the token it gives you.</small></div></label>
+      </div>
+      <div id="tokBox" hidden style="margin-top:12px">
+        <div class="field" style="margin-bottom:8px"><label>Telegram bot token</label>
+          <input id="bizToken" type="password" placeholder="123456:ABC-DEF…" autocomplete="off">
+          <small>Sealed with your deployment's own key and stored in your own Cloudflare account.</small></div>
+        <label class="check"><input type="checkbox" id="useBotName">
+          <span>The bot and the business have the same name. Use the bot's name and ignore what I typed
+            above.</span></label>
+      </div>
+    </div>
+
+    <div class="box">
+      <b class="box-title">Your price list and documents <span class="opt">optional</span></b>
+      <p class="box-note">A price list, a menu, a policy. PDF, Word, Excel, CSV, text. The assistant answers
+        from these and says it does not know when they do not cover the question. They upload once the
+        business exists, and you can add more any time.</p>
+      <input type="file" id="bizDocs" multiple accept=".pdf,.txt,.md,.csv,.json,.docx,.xlsx,.xls">
+      <div id="docNames" class="box-note"></div>
+    </div>
+
     <div class="actions">
       <button class="btn btn-ghost btn-sm" id="cancel">Cancel</button>
       <button class="btn btn-primary btn-sm" id="create">Create</button>
-    </div></div>`;
+    </div>
+    <div id="bizProgress" class="box-note" style="text-align:right"></div>
+  </div>`;
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
   bg.onclick = (e) => e.target === bg && close();
   bg.querySelector("#bizName").focus();
+
+  bg.querySelectorAll('input[name="chan"]').forEach((radio) => {
+    radio.onchange = () => {
+      bg.querySelector("#tokBox").hidden = bg.querySelector('input[name="chan"]:checked').value !== "telegram";
+    };
+  });
+  bg.querySelector("#bizDocs").onchange = (e) => {
+    const names = [...e.target.files].map((f) => f.name);
+    bg.querySelector("#docNames").textContent =
+      names.length === 0 ? "" : `Will upload: ${names.join(", ")}`;
+  };
+
+  const say = (text) => (bg.querySelector("#bizProgress").textContent = text);
+
   const submit = async () => {
     const name = bg.querySelector("#bizName").value.trim();
-    if (!name) return;
+    if (!name) {
+      say("Give it a name first.");
+      bg.querySelector("#bizName").focus();
+      return;
+    }
+    const channel = bg.querySelector('input[name="chan"]:checked').value;
+    const botToken = bg.querySelector("#bizToken").value.trim();
+    if (channel === "telegram" && !botToken) {
+      say("Paste the bot token, or choose your website instead.");
+      return;
+    }
     bg.querySelector("#create").disabled = true;
-    const { ok, data } = await api("businesses", { method: "POST", body: { name } });
-    if (!ok) return (bg.querySelector("#create").disabled = false);
+
+    say("Creating…");
+    const { ok, data } = await api("businesses", {
+      method: "POST",
+      body: { name, profile: readProfileInputs(bg) },
+    });
+    if (!ok) {
+      bg.querySelector("#create").disabled = false;
+      return say("");
+    }
+
+    // The business exists from here on. Every step after this reports its own
+    // outcome, because a bot that was refused or a file that would not parse
+    // must not read as the whole thing having failed.
+    let note = `${name} created.`;
+    if (channel === "telegram") {
+      say("Attaching the bot…");
+      const attached = await api(`businesses/${data.id}/telegram`, {
+        method: "POST",
+        body: { token: botToken, useBotName: bg.querySelector("#useBotName").checked },
+      });
+      note += attached.ok ? " It is answering on Telegram." : " The bot token was refused, so it is not on Telegram yet.";
+    } else {
+      note += " It is answering on your website.";
+    }
+
+    const files = [...bg.querySelector("#bizDocs").files];
+    let failed = 0;
+    for (const [index, file] of files.entries()) {
+      say(`Reading ${file.name} (${index + 1} of ${files.length})…`);
+      const uploaded = await api(`businesses/${data.id}/documents`, {
+        method: "POST",
+        raw: true,
+        body: file,
+        headers: {
+          "content-type": file.type || "application/octet-stream",
+          "x-filename": file.name.replace(/[^\x20-\x7e]/g, "_"),
+        },
+      });
+      if (!uploaded.ok) failed += 1;
+    }
+    if (files.length > 0) {
+      note +=
+        failed === 0
+          ? ` ${files.length} document${files.length === 1 ? "" : "s"} read.`
+          : ` ${files.length - failed} of ${files.length} documents read; the rest could not be.`;
+    }
+
     close();
     state.overview = null;
-    toast(`${name} created. It already answers on a web page.`);
-    // Straight on to the decision that was deliberately not asked here.
-    createAgentDialog(data.id);
+    state.bizTab = "overview";
+    toast(note);
+    go("businesses", { businessId: data.id });
   };
   bg.querySelector("#create").onclick = submit;
-  // A block body on purpose. `(e) => e.key === "Enter" && submit()` returns
-  // false for every other key, and an on* handler returning false is the old
-  // spelling of preventDefault, so it swallowed the character. Nobody could
-  // type a business name.
   bg.querySelector("#bizName").onkeydown = (e) => {
     if (e.key === "Enter") submit();
   };

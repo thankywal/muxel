@@ -303,6 +303,30 @@ input[type="color"] { border: 1px solid var(--line); border-radius: 9px; backgro
 .modal h3 { margin: 0 0 5px; font-size: 17px; }
 .modal p.sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
 .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.modal.wide { max-width: 660px; max-height: 86vh; overflow-y: auto; }
+.box { border: 1px solid var(--line); border-radius: 11px; padding: 15px 16px 4px; margin-bottom: 14px;
+       background: var(--surface-2); }
+.box-title { display: block; font-size: 13.5px; font-weight: 680; margin-bottom: 4px; }
+.box-note { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; line-height: 1.5; }
+.box .field input, .box .field select, .box .field textarea { background: var(--surface); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.req { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--brand-ink);
+       text-transform: uppercase; margin-left: 6px; }
+.opt { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--muted);
+       text-transform: uppercase; margin-left: 6px; }
+.picks { display: grid; gap: 9px; margin-bottom: 12px; }
+.pick { display: flex; gap: 10px; align-items: flex-start; padding: 11px 13px; cursor: pointer;
+        border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.pick:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); }
+.pick input { margin-top: 3px; }
+.pick b { display: block; font-size: 13.5px; }
+.pick small { color: var(--muted); font-size: 12.5px; line-height: 1.5; display: block; margin-top: 2px; }
+.check { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px; color: var(--ink-2);
+         line-height: 1.5; margin-bottom: 12px; cursor: pointer; }
+.check input { margin-top: 2px; flex: none; }
+input[type="file"] { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+@media (max-width: 640px) { .two { grid-template-columns: 1fr; } }
+
 .palette-bg { position: fixed; inset: 0; background: rgba(15,23,42,.4); z-index: 70; padding: 12vh 20px 20px;
               display: flex; justify-content: center; backdrop-filter: blur(2px); }
 .palette { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; width: 100%;
