@@ -122,6 +122,28 @@ vi.mock("../src/rag/ingest.js", () => ({
   NOTES_FILENAME: "Notes (console)",
 }));
 vi.mock("../src/updates.js", () => ({ versionStatus: vi.fn(async () => ({ running: "1", latest: "1", behind: false })) }));
+const chat = { id: "k1", title: "What is waiting?", model: "m1", updatedAt: "2026-09-01T00:00:00.000Z" };
+vi.mock("../src/assistant/store.js", () => ({
+  listChats: vi.fn(async () => [{ id: "k1", title: "What is waiting?", model: "m1", updatedAt: "z" }]),
+  getChat: vi.fn(async (_env: unknown, _user: unknown, id: string) =>
+    id === "k1" ? { id: "k1", title: "What is waiting?", model: "m1", updatedAt: "z" } : null,
+  ),
+  createChat: vi.fn(async () => ({ id: "k2", title: "New", model: "m1", updatedAt: "z" })),
+  setChatModel: vi.fn(async () => undefined),
+  deleteChat: vi.fn(async () => undefined),
+  chatTranscript: vi.fn(async () => [
+    { id: "om1", role: "assistant", content: "Two.", createdAt: "z" },
+  ]),
+  stepsFor: vi.fn(async () => ({ om1: [{ tool: "list_waiting", ok: true }] })),
+  listApprovals: vi.fn(async () => []),
+  titleFrom: (text: string) => text.slice(0, 52),
+}));
+vi.mock("../src/assistant/loop.js", () => ({
+  ask: vi.fn(async () => ({ text: "Two are waiting.", approvals: [], steps: [] })),
+}));
+vi.mock("../src/assistant/decide.js", () => ({
+  decide: vi.fn(async () => ({ ok: true, message: "done" })),
+}));
 
 let operator: string | null = "u1";
 vi.mock("../src/web/console.js", async (importOriginal) => ({
@@ -213,6 +235,12 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["DELETE", "/secrets/github_token"],
   ["POST", "/update"],
   ["PUT", "/source-repo", { repo: "a/b" }],
+  ["GET", "/assistant"],
+  ["GET", "/assistant?chat=k1"],
+  ["POST", "/assistant", { text: "what is waiting?" }],
+  ["PATCH", "/assistant/chats/k1", { model: "m1" }],
+  ["DELETE", "/assistant/chats/k1"],
+  ["POST", "/assistant/approvals/a1", { yes: true }],
 ];
 
 describe("the console data API", () => {

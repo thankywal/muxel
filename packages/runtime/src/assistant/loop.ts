@@ -13,7 +13,13 @@
 import { converse, type ChatMessage } from "../ai/gateway.js";
 import type { Env } from "../env.js";
 import { listBusinesses } from "../db/queries.js";
-import { addOperatorMessage, askApproval, operatorTranscript, type Approval } from "./store.js";
+import {
+  addOperatorMessage,
+  askApproval,
+  chatTranscript,
+  recordSteps,
+  type Approval,
+} from "./store.js";
 import { findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
 
 /** How many times the model may call tools before it has to answer. */
@@ -53,24 +59,26 @@ export interface AssistantReply {
  */
 export async function ask(
   env: Env,
-  userId: number,
-  question: string,
+  input: { userId: number; chatId: string; question: string; model: string },
 ): Promise<AssistantReply> {
+  const { userId, chatId, question } = input;
   const businesses = await listBusinesses(env, userId);
   const ctx: ToolContext = { env, userId };
-  const messageId = await addOperatorMessage(env, userId, "user", question);
+  const messageId = await addOperatorMessage(env, { chatId, userId, role: "user", content: question });
 
-  const history = (await operatorTranscript(env, userId, 20))
+  // This chat only. One flat transcript carried yesterday's argument about
+  // delivery into today's question about refunds.
+  const history = (await chatTranscript(env, chatId, 20))
     .filter((message) => message.id !== messageId)
     .map((message) => ({ role: message.role, content: message.content }));
 
   const steps: ChatMessage[] = [];
   const took: { tool: string; ok: boolean }[] = [];
   const approvals: Approval[] = [];
-  // Anything at all needs a model to run it, and a deployment with no business
-  // has no model chosen. The first one's model is used, which is also the one
-  // its customers get, so an owner is never surprised by a different bill.
-  const model = businesses[0]?.model ?? env.DEFAULT_MODEL;
+  // The model is the chat's own, chosen by the owner in the picker. A chat that
+  // predates the picker falls back to what its customers already get, so nobody
+  // is surprised by a different bill.
+  const model = input.model.length > 0 ? input.model : (businesses[0]?.model ?? env.DEFAULT_MODEL);
 
   let text = "";
   for (let step = 0; step < MAX_STEPS; step += 1) {
@@ -159,6 +167,14 @@ export async function ask(
         : "I could not finish that. Ask me again, more narrowly.";
   }
 
-  await addOperatorMessage(env, userId, "assistant", text);
+  const answerId = await addOperatorMessage(env, {
+    chatId,
+    userId,
+    role: "assistant",
+    content: text,
+  });
+  // Kept, so reopening the chat tomorrow still shows what it looked at. Not
+  // fatal if it fails: the answer is the thing the owner asked for.
+  await recordSteps(env, answerId, took).catch(() => undefined);
   return { text, approvals, steps: took };
 }

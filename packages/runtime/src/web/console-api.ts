@@ -88,7 +88,17 @@ import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
 import { ask } from "../assistant/loop.js";
 import { decide } from "../assistant/decide.js";
-import { clearOperatorTranscript, listApprovals, operatorTranscript } from "../assistant/store.js";
+import {
+  chatTranscript,
+  stepsFor,
+  createChat,
+  deleteChat,
+  getChat,
+  listApprovals,
+  listChats,
+  setChatModel,
+  titleFrom,
+} from "../assistant/store.js";
 import {
   addDocument,
   GENERATED_DOCUMENTS,
@@ -152,8 +162,10 @@ async function businessCard(env: Env, businessId: string) {
  *   5  telling the deployment its own source repository
  *   6  notes, and the knowledge view over every source
  *   7  the owner's assistant, and the changes it asks permission for
+ *   8  more than one conversation with it, each with its own model
+ *   9  the working behind each answer, and the model changed on its own
  */
-export const API_REVISION = 7;
+export const API_REVISION = 9;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -449,38 +461,112 @@ export async function handleConsoleApi(
     return moved.ok ? json(moved) : json({ error: moved.reason }, 400);
   }
 
-  // The owner's own assistant.
+  // The owner's own assistant, and the conversations they keep with it.
   if (segments[0] === "assistant") {
+    /** The model a new chat starts on: the one this owner's customers get. */
+    const defaultModel = async (): Promise<string> =>
+      (await listBusinesses(env, userId))[0]?.model ?? env.DEFAULT_MODEL;
+
     if (method === "GET" && segments.length === 1) {
-      const [messages, approvals] = await Promise.all([
-        operatorTranscript(env, userId, 60),
-        listApprovals(env, userId, 40),
+      const url = new URL(request.url);
+      const chats = await listChats(env, userId, 40);
+      const wanted = url.searchParams.get("chat");
+      const chat =
+        wanted === null ? (chats[0] ?? null) : await getChat(env, userId, wanted);
+      const [messages, approvals, steps] = await Promise.all([
+        chat === null ? Promise.resolve([]) : chatTranscript(env, chat.id, 60),
+        listApprovals(env, userId, 60),
+        chat === null ? Promise.resolve({}) : stepsFor(env, chat.id),
       ]);
-      return json({ messages, approvals });
-    }
-    if (method === "POST" && segments.length === 1) {
-      const body = (await request.json().catch(() => ({}))) as { text?: string };
-      const text = String(body.text ?? "").trim();
-      if (text.length === 0) return json({ error: "empty" }, 400);
-      const reply = await ask(env, userId, text.slice(0, 4000));
       return json({
-        ...reply,
-        messages: await operatorTranscript(env, userId, 60),
-        approvals: await listApprovals(env, userId, 40),
+        chats,
+        chat,
+        messages,
+        // What it looked at, against the answer it produced. Read back from the
+        // record, so a reopened chat shows the same working the live one did.
+        steps,
+        approvals,
+        models: MODEL_PRESETS,
+        defaultModel: await defaultModel(),
       });
     }
-    if (method === "DELETE" && segments.length === 1) {
-      await clearOperatorTranscript(env, userId);
-      return json({ ok: true, messages: [], approvals: [] });
+
+    if (method === "POST" && segments.length === 1) {
+      const body = (await request.json().catch(() => ({}))) as {
+        text?: string;
+        chatId?: string;
+        model?: string;
+      };
+      const text = String(body.text ?? "").trim();
+      if (text.length === 0) return json({ error: "empty" }, 400);
+
+      // A message with no chat starts one, titled with what was just typed.
+      // Asking for a title first would be a question nobody wants to answer.
+      let chat =
+        typeof body.chatId === "string" && body.chatId.length > 0
+          ? await getChat(env, userId, body.chatId)
+          : null;
+      if (chat === null) {
+        chat = await createChat(
+          env,
+          userId,
+          titleFrom(text),
+          typeof body.model === "string" && MODEL_PRESETS.some((p) => p.id === body.model)
+            ? body.model
+            : await defaultModel(),
+        );
+      } else if (typeof body.model === "string" && MODEL_PRESETS.some((p) => p.id === body.model)) {
+        await setChatModel(env, userId, chat.id, body.model);
+        chat = { ...chat, model: body.model };
+      }
+
+      const reply = await ask(env, {
+        userId,
+        chatId: chat.id,
+        question: text.slice(0, 4000),
+        model: chat.model,
+      });
+      return json({
+        ...reply,
+        chats: await listChats(env, userId, 40),
+        chat,
+        messages: await chatTranscript(env, chat.id, 60),
+        steps: await stepsFor(env, chat.id),
+        approvals: await listApprovals(env, userId, 60),
+      });
     }
+
+    // PATCH /assistant/chats/:id  { model }
+    if (method === "PATCH" && segments[1] === "chats" && segments[2] !== undefined) {
+      const body = (await request.json().catch(() => ({}))) as { model?: string };
+      if (typeof body.model !== "string" || !MODEL_PRESETS.some((p) => p.id === body.model)) {
+        return json({ error: "unknown_model" }, 400);
+      }
+      const chat = await getChat(env, userId, segments[2]);
+      if (chat === null) return json({ error: "not_found" }, 404);
+      await setChatModel(env, userId, chat.id, body.model);
+      return json({ ok: true, chat: { ...chat, model: body.model } });
+    }
+
+    if (method === "DELETE" && segments[1] === "chats" && segments[2] !== undefined) {
+      await deleteChat(env, userId, segments[2]);
+      const chats = await listChats(env, userId, 40);
+      const chat = chats[0] ?? null;
+      return json({
+        ok: true,
+        chats,
+        chat,
+        messages: chat === null ? [] : await chatTranscript(env, chat.id, 60),
+        steps: chat === null ? {} : await stepsFor(env, chat.id),
+        approvals: await listApprovals(env, userId, 60),
+      });
+    }
+
     // POST /assistant/approvals/:id  { yes: boolean }
     if (method === "POST" && segments[1] === "approvals" && segments[2] !== undefined) {
       const body = (await request.json().catch(() => ({}))) as { yes?: boolean };
       const outcome = await decide(env, userId, segments[2], body.yes === true);
-      return json({
-        ...outcome,
-        approvals: await listApprovals(env, userId, 40),
-      });
+      return json({ ...outcome, approvals: await listApprovals(env, userId, 60) });
     }
   }
 

@@ -30,7 +30,9 @@ const state = {
   api: null,
   /** What the deployment's data API can do. See NEEDS. */
   apiRevision: 1,
-  view: "overview",
+  // The assistant is the front door: entering the console puts you in a
+  // conversation with your own agent, the way entering a chat app does.
+  view: "assistant",
   businessId: null,
   customerId: null,
   overview: null,
@@ -53,6 +55,12 @@ const state = {
   openCustomer: null,
   skills: null,
   assistant: null,
+  /** Conversations with the assistant, for the rail. Asked for once. */
+  chats: null,
+  chatId: null,
+  chatModel: null,
+  /** Pressed New chat and not yet said anything. */
+  newChat: false,
   locale: "en",
 };
 
@@ -149,6 +157,15 @@ const ICONS = {
   send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
   telegram: '<path d="M22 3L2 10l6 2.5L20 6l-9 9v5l3-4 5 3z"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  retry: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  attach: '<path d="M21.4 11.05 12.2 20.2a5 5 0 0 1-7.1-7.1l9.2-9.1a3.3 3.3 0 1 1 4.7 4.7l-9.2 9.2a1.7 1.7 0 0 1-2.4-2.4l8.5-8.4"/>',
+  up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  chat: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-4-.8L3 21l1.9-4.6A8.3 8.3 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V7a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
 };
 const icon = (name, size = 16) =>
@@ -171,6 +188,12 @@ function sparkline(values, colour, w = 74, hgt = 26) {
 }
 
 function lineChart(series, w = 560, hgt = 170) {
+  // A day that has not happened has no point on it. Drawing the frame anyway
+  // produced a path that began at the closing corner, which is not a shape a
+  // browser will accept, and a chart of nothing is not worth the pixels.
+  if (series.length === 0) {
+    return `<div class="no-chart" style="height:${hgt}px">No days recorded yet.</div>`;
+  }
   const values = series.map((p) => p.messages);
   const max = Math.max(...values, 1);
   const padL = 44;
@@ -233,27 +256,34 @@ function donut(parts, total) {
 
 // --------------------------------------------------------------------- shell
 
+/**
+ * The rail, which is the work.
+ *
+ * The assistant is not in it, because the assistant is the page you land on and
+ * the chat list below is how you move between conversations. Settings,
+ * Diagnostics and the logs are not in it either: they are things you do a few
+ * times ever, and they live behind the owner's own badge at the bottom, where
+ * a person already looks for their account.
+ */
 const NAV = [
-  { group: "MAIN", items: [
-    { id: "overview", label: "Overview" },
-    { id: "assistant", label: "Assistant" },
-    { id: "inbox", label: "Inbox" },
-    { id: "agents", label: "Agents" },
-    { id: "businesses", label: "Businesses" },
-    { id: "channels", label: "Channels" },
-    { id: "customers", label: "Customers" },
-    { id: "messages", label: "Messages" },
-  ] },
-  { group: "SETUP", items: [{ id: "settings", label: "Settings" }] },
-  // Advanced is deliberately not here. Nearly everything it reached has a page
-  // of its own now, and leaving it beside them made an unfinished looking
-  // surface a first class destination. It is one click from Diagnostics, which
-  // is where someone goes when a page has not done what they needed.
-  { group: "ADVANCED", items: [
-    { id: "logs", label: "Logs" },
-    { id: "diagnostics", label: "Diagnostics" },
-  ] },
+  { id: "overview", label: "Overview" },
+  { id: "inbox", label: "Inbox" },
+  { id: "agents", label: "Agents" },
+  { id: "businesses", label: "Businesses" },
+  { id: "channels", label: "Channels" },
+  { id: "customers", label: "Customers" },
+  { id: "messages", label: "Messages" },
 ];
+
+/** Behind the badge: the things an owner sets up once and rarely returns to. */
+const OWNER_MENU = [
+  { id: "settings", label: "Settings" },
+  { id: "logs", label: "Logs" },
+  { id: "diagnostics", label: "Diagnostics" },
+  { id: "advanced", label: "The bot's own screens" },
+];
+
+const ALL_VIEWS = [...NAV, ...OWNER_MENU, { id: "assistant", label: "Assistant" }];
 
 /**
  * The API revision each page needs from the deployment.
@@ -270,7 +300,7 @@ const NEEDS = {
   settings: 1,
   advanced: 1,
   inbox: 2,
-  assistant: 7,
+  assistant: 9,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -298,36 +328,39 @@ const TITLES = {
 
 function shell() {
   const [title, sub] = TITLES[state.view] ?? TITLES.overview;
+  const chatting = state.view === "assistant";
   $("shell").innerHTML = `
    <div class="shell">
     <aside>
       <div class="brand"><img src="/assets/logo.jpg" alt="">
         <div><b>Muxel</b><small>CONSOLE</small></div></div>
-      <div class="deployment"><span class="d"></span>
-        <span id="depName">${h(shortWorker())}</span></div>
+
+      <button class="new-chat" id="newChat">${icon("plus", 15)}New chat</button>
+
       <nav>${NAV.map(
-        (section) => `<div class="nav-sec">${section.group}</div>` +
-          section.items
-            .map(
-              (item) => `<div class="nav-item ${item.id === state.view ? "on" : ""}" data-view="${item.id}">
-                ${icon(item.id)}${h(item.label)}${
-                  item.id === "inbox" && state.waiting > 0
-                    ? `<span class="badge">${state.waiting}</span>`
-                    : ""
-                }</div>`,
-            )
-            .join(""),
+        (item) => `<div class="nav-item ${item.id === state.view ? "on" : ""}" data-view="${item.id}">
+            ${icon(item.id)}${h(item.label)}${
+              item.id === "inbox" && state.waiting > 0 ? `<span class="badge">${state.waiting}</span>` : ""
+            }</div>`,
       ).join("")}</nav>
-      <div class="who-card">
-        <div class="av" id="avatar">·</div>
-        <div class="grow"><b id="whoName">Operator</b><small id="whoRole">signed in</small></div>
-      </div>
-      <div class="conn">Connected to<b>${h(shortWorker())}</b><a href="#" id="disconnect">Disconnect</a></div>
+
+      <div class="chats" id="chatList">${chatRail()}</div>
+
+      <button class="who-card" id="ownerBadge" aria-haspopup="menu">
+        <span class="av" id="avatar">·</span>
+        <span class="grow"><b id="whoName">Operator</b><small id="whoRole">signed in</small></span>
+        ${icon("chevron", 15)}
+      </button>
     </aside>
 
-    <main>
+    <main class="${chatting ? "chatting" : ""}">
       <div class="topbar">
-        <div><h1>${h(title)}</h1><p>${h(sub)}</p></div>
+        ${
+          chatting
+            ? `<button class="model-pick" id="modelPick">
+                 <span id="modelName">${h(modelLabel())}</span>${icon("chevron", 14)}</button>`
+            : `<div><h1>${h(title)}</h1><p>${h(sub)}</p></div>`
+        }
         <div class="grow"></div>
         <div class="top-tools">
           <div class="searchbox" id="openPalette">${icon("search", 15)}<span>Search…</span><kbd>⌘K</kbd></div>
@@ -337,22 +370,155 @@ function shell() {
         </div>
       </div>
       <div class="content" id="view"><p class="loading">Loading…</p></div>
-      <footer>
+      ${
+        chatting
+          ? ""
+          : `<footer>
         <span>Muxel runs in your own Cloudflare account.</span>
         <span class="grow"></span>
         <a href="https://github.com/thankywal/muxel" target="_blank" rel="noopener">GitHub</a>
         <a href="https://muxel.site" target="_blank" rel="noopener">Docs</a>
-      </footer>
+      </footer>`
+      }
     </main>
    </div>`;
 
   $("shell").querySelectorAll(".nav-item").forEach((n) => (n.onclick = () => go(n.dataset.view)));
-  $("disconnect").onclick = disconnect;
+  $("newChat").onclick = () => openChat(null);
+  $("ownerBadge").onclick = openOwnerMenu;
   $("openPalette").onclick = openPalette;
   $("themeBtn").onclick = toggleTheme;
   $("bell").onclick = () => go("logs");
+  if ($("modelPick")) $("modelPick").onclick = openModelMenu;
+  bindChatRail();
   checkHealth();
   whoAmI();
+}
+
+/** The conversations with the assistant, newest first, under the rail. */
+function chatRail() {
+  const chats = state.chats ?? [];
+  if (chats.length === 0) return '<div class="chats-empty">No conversations yet</div>';
+  return (
+    '<div class="nav-sec">CHATS</div>' +
+    chats
+      .map(
+        (c) => `<div class="chat-row ${
+          c.id === state.chatId && state.view === "assistant" ? "on" : ""
+        }" data-chat="${h(c.id)}">
+            <span class="t">${h(c.title || "Untitled")}</span>
+            <button class="x" data-drop="${h(c.id)}" title="Delete">${icon("trash", 13)}</button>
+          </div>`,
+      )
+      .join("")
+  );
+}
+
+function bindChatRail() {
+  const list = $("chatList");
+  if (!list) return;
+  list.querySelectorAll("[data-chat]").forEach((row) => {
+    row.onclick = (event) => {
+      if (event.target.closest("[data-drop]")) return;
+      openChat(row.dataset.chat);
+    };
+  });
+  list.querySelectorAll("[data-drop]").forEach((b) => {
+    b.onclick = async (event) => {
+      event.stopPropagation();
+      const choice = await ask("Delete this conversation", "It is removed for good. Nothing you approved is undone.", [
+        { key: "yes", label: "Delete", primary: true },
+      ]);
+      if (!choice) return;
+      await api(`assistant/chats/${encodeURIComponent(b.dataset.drop)}`, { method: "DELETE" });
+      if (state.chatId === b.dataset.drop) state.chatId = null;
+      state.assistant = null;
+      go("assistant");
+    };
+  });
+}
+
+/** Open a conversation, or a blank one when given null. */
+function openChat(chatId) {
+  state.chatId = chatId;
+  state.newChat = chatId === null;
+  state.assistant = null;
+  go("assistant");
+}
+
+const modelLabel = () => {
+  const chosen = state.chatModel ?? state.assistant?.chat?.model ?? state.assistant?.defaultModel;
+  const found = (state.assistant?.models ?? []).find((m) => m.id === chosen);
+  return found?.label ?? "Model";
+};
+
+/**
+ * The owner's own menu. Everything a person sets up once lives here, behind the
+ * badge that already says who they are, instead of sitting in the rail beside
+ * the work.
+ */
+function openOwnerMenu() {
+  const anchor = $("ownerBadge").getBoundingClientRect();
+  popMenu(
+    { left: anchor.left, bottom: window.innerHeight - anchor.top + 8 },
+    [
+      ...OWNER_MENU.map((item) => ({ key: item.id, label: item.label, icon: item.id })),
+      { key: "disconnect", label: "Disconnect", icon: "channels", danger: true },
+    ],
+    (key) => (key === "disconnect" ? disconnect() : go(key)),
+  );
+}
+
+/** Which model answers in this conversation. */
+function openModelMenu() {
+  const anchor = $("modelPick").getBoundingClientRect();
+  const models = state.assistant?.models ?? [];
+  const chosen = state.chatModel ?? state.assistant?.chat?.model ?? state.assistant?.defaultModel;
+  popMenu(
+    { left: anchor.left, top: anchor.bottom + 8 },
+    models.map((m) => ({ key: m.id, label: m.label, note: m.note, icon: m.id === chosen ? "check" : null })),
+    async (id) => {
+      state.chatModel = id;
+      if ($("modelName")) $("modelName").textContent = modelLabel();
+      if ($("composerModel")) $("composerModel").textContent = modelLabel();
+      if (state.chatId) {
+        await api(`assistant/chats/${encodeURIComponent(state.chatId)}`, {
+          method: "PATCH",
+          body: { model: id },
+        });
+      }
+    },
+  );
+}
+
+/** One popup, wherever a small list of choices has to appear beside a button. */
+function popMenu(at, items, chose) {
+  document.querySelector(".pop-bg")?.remove();
+  const bg = document.createElement("div");
+  bg.className = "pop-bg";
+  const box = document.createElement("div");
+  box.className = "pop";
+  // Kept off the window's own edges: the badge sits flush against the left of
+  // the rail, so a menu anchored to it would otherwise touch the frame.
+  for (const [side, value] of Object.entries(at)) box.style[side] = `${Math.max(8, value)}px`;
+  box.innerHTML = items
+    .map(
+      (item, index) => `<button class="pop-item ${item.danger ? "danger" : ""}" data-i="${index}">
+        <span class="pi">${item.icon ? icon(item.icon, 15) : ""}</span>
+        <span class="grow"><b>${h(item.label)}</b>${item.note ? `<small>${h(item.note)}</small>` : ""}</span>
+      </button>`,
+    )
+    .join("");
+  bg.appendChild(box);
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.onclick = (event) => event.target === bg && close();
+  box.querySelectorAll("[data-i]").forEach((b) => {
+    b.onclick = () => {
+      close();
+      chose(items[Number(b.dataset.i)].key);
+    };
+  });
 }
 
 const shortWorker = () => worker.replace(/^https:\/\//, "").replace(/\.workers\.dev$/, "");
@@ -413,6 +579,7 @@ async function render() {
   // browser's preflight with an error, so nothing on it can be reached from a
   // page at all. Every view reads the one fact.
   if (!(await apiReady())) return viewOutdated();
+  if (state.chats === null && state.apiRevision >= NEEDS.assistant) loadChats();
   const needs = NEEDS[state.view] ?? 1;
   if (state.apiRevision < needs) return viewNeedsUpdate(state.view, needs);
   const draw = {
@@ -430,6 +597,18 @@ async function render() {
     advanced: viewAdvanced,
   }[state.view];
   (draw ?? viewOverview)();
+}
+
+/** Fill the rail once, from whichever view the console opened on. */
+async function loadChats() {
+  state.chats = [];
+  const { ok, data } = await api("assistant", { quiet: true });
+  if (!ok) return;
+  state.chats = data.chats ?? [];
+  if ($("chatList")) {
+    $("chatList").innerHTML = chatRail();
+    bindChatRail();
+  }
 }
 
 async function apiReady() {
@@ -796,80 +975,180 @@ const APPROVAL_TAG = {
  * it is told and cannot approve anything by accident.
  */
 async function viewAssistant() {
-  const { ok, data } = await api("assistant");
+  const path = state.chatId === null ? "assistant" : `assistant?chat=${encodeURIComponent(state.chatId)}`;
+  const { ok, data } = await api(path);
   if (!ok) return;
-  state.assistant = data;
+  // A blank chat is a real state: the owner pressed New chat and has not said
+  // anything yet. Their latest conversation's messages are not this one's, so
+  // the transcript is emptied rather than borrowed.
+  state.assistant = state.newChat ? { ...data, chat: null, messages: [], steps: {} } : data;
+  state.chats = data.chats ?? [];
+  if (!state.newChat) state.chatId = data.chat?.id ?? null;
+  state.chatModel = state.newChat
+    ? (data.defaultModel ?? null)
+    : (data.chat?.model ?? data.defaultModel ?? null);
+  if ($("chatList")) {
+    $("chatList").innerHTML = chatRail();
+    bindChatRail();
+  }
+  if ($("modelName")) $("modelName").textContent = modelLabel();
   drawAssistant();
 }
 
+const GREETINGS = [
+  "What can I do for you?",
+  "Ask me anything about your businesses.",
+];
+
+const OPENERS = [
+  "What is waiting for me?",
+  "Which agent answered the most today?",
+  "What did customers ask that we could not answer?",
+  "Add a rule: no deliveries on Sunday",
+];
+
+/**
+ * The conversation.
+ *
+ * The owner's turn is a bubble, because it is a thing they said and it wants an
+ * edge. The assistant's turn is not: it is the page's own content, so it sits
+ * on the page in full width, under a line saying who is speaking and which
+ * model answered, with its working above it and its actions below.
+ */
 function drawAssistant() {
-  const { messages = [], approvals = [] } = state.assistant ?? {};
-  const waiting = approvals.filter((a) => a.state === "waiting");
+  const { messages = [], approvals = [], steps = {} } = state.assistant ?? {};
+  const blank = messages.length === 0;
   const cardsFor = (messageId) => approvals.filter((a) => a.messageId === messageId);
 
   $("view").innerHTML = `
-    <div class="card chat" style="max-width:900px;height:76vh">
-      <div class="chat-head">
-        <div><b style="font-size:14.5px">Your assistant</b>
-          <div style="font-size:12px;color:var(--muted)">${
-            waiting.length > 0
-              ? `${waiting.length} change${waiting.length === 1 ? "" : "s"} waiting for you`
-              : "Reads everything, changes nothing without asking"
-          }</div></div>
-        <button class="btn btn-ghost btn-sm" id="clearChat">Start again</button>
-      </div>
-      <div class="msgs" id="asMsgs">${
-        messages.length === 0
-          ? `<div class="empty" style="margin:auto;max-width:520px">
-               <h3>Ask it anything</h3>
-               <p>It can read your businesses, your price lists, what the agents were asked and what they
-                  answered. It can propose changes too, and every one of those waits for you.</p>
-               <div class="suggests">${[
-                 "What is waiting for me?",
-                 "Why did Sunrise Bakery say it did not know about delivery?",
-                 "Add a rule: no deliveries on Sunday",
-                 "Which agent answered the most today?",
-               ]
-                 .map((q) => `<button class="btn btn-ghost btn-sm" data-ask="${h(q)}">${h(q)}</button>`)
-                 .join("")}</div>
+    <div class="chat-page ${blank ? "blank" : ""}">
+      <div class="thread" id="asThread">${
+        blank
+          ? `<div class="greet">
+               <img src="/assets/logo.jpg" alt="">
+               <h2>${h(GREETINGS[0])}</h2>
+               <p>I can read your businesses, your price lists, and everything your agents were asked.
+                  I can propose changes too, and every one of those waits for your yes.</p>
              </div>`
-          : messages
-              .map((m) => {
-                const cards = m.role === "assistant" ? cardsFor(m.id) : [];
-                return `<div class="msg ${m.role === "user" ? "human" : "bot"}" style="max-width:76%">
-                    <span class="who">${m.role === "user" ? "You" : "Assistant"} · ${h(ago(m.createdAt))}</span>
-                    <span class="body">${h(m.content)}</span>
-                  </div>
-                  ${cards.map(approvalCard).join("")}`;
-              })
-              .join("")
+          : messages.map((m) => turnHtml(m, steps[m.id] ?? [], cardsFor(m.id))).join("")
       }</div>
-      <form class="composer" id="asSay">
-        <input id="asText" placeholder="Ask about your businesses, or tell it what to change" autocomplete="off">
-        <button class="btn btn-primary btn-sm" type="submit" id="asSend">Send</button>
+
+      <form class="composer-wrap" id="asSay">
+        <div class="composer">
+          <textarea id="asText" rows="1" placeholder="Ask about your businesses, or tell it what to change"
+            autocomplete="off"></textarea>
+          <div class="composer-row">
+            <span class="composer-model" id="composerModel">${h(modelLabel())}</span>
+            <span class="grow"></span>
+            <button class="send" type="submit" id="asSend" title="Send">${icon("up", 17)}</button>
+          </div>
+        </div>
+        ${blank ? `<div class="openers">${OPENERS.map((q) => `<button type="button" class="opener" data-ask="${h(q)}">${h(q)}</button>`).join("")}</div>` : ""}
       </form>
     </div>`;
 
-  const box = $("asMsgs");
-  box.scrollTop = box.scrollHeight;
+  const thread = $("asThread");
+  thread.scrollTop = thread.scrollHeight;
   $("asSay").onsubmit = sendToAssistant;
-  $("clearChat").onclick = async () => {
-    const choice = await ask("Start again", "This clears the conversation. Nothing you already approved is undone.", [
-      { key: "yes", label: "Clear it", primary: true },
-    ]);
-    if (!choice) return;
-    const { ok } = await api("assistant", { method: "DELETE" });
-    if (ok) viewAssistant();
-  };
+  growBox($("asText"));
+  $("asText").focus();
+  $("composerModel").onclick = () => $("modelPick")?.click();
+  bindTurnActions();
   $("view").querySelectorAll("[data-ask]").forEach((b) => {
     b.onclick = () => {
       $("asText").value = b.dataset.ask;
       sendToAssistant(new Event("submit"));
     };
   });
+}
+
+/** One turn: who said it, what they said, and what it led to. */
+function turnHtml(message, steps, cards) {
+  if (message.role === "user") {
+    return `<div class="turn user"><div class="ubub">${h(message.content)}</div></div>`;
+  }
+  return `<div class="turn ai" data-msg="${h(message.id)}">
+      ${steps.length > 0 ? `<div class="steps">${steps.map(stepLine).join("")}</div>` : ""}
+      <div class="ai-head">
+        <img class="ai-av" src="/assets/logo.jpg" alt="">
+        <b>Muxel</b><span class="mtag">${h(modelLabel())}</span>
+        <span class="when">${h(ago(message.createdAt))}</span>
+      </div>
+      <div class="ai-body">${h(message.content)}</div>
+      ${cards.map(approvalCard).join("")}
+      <div class="ai-acts">
+        <button class="t-act" data-copy="${h(message.id)}" title="Copy">${icon("copy", 14)}Copy</button>
+        <button class="t-act" data-retry="1" title="Ask again">${icon("retry", 14)}Retry</button>
+      </div>
+    </div>`;
+}
+
+/**
+ * A tool it ran, in words.
+ *
+ * Read off the record of what actually ran; a tool with no line here did not
+ * run, and there is no line for a tool that did not.
+ */
+const STEP_WORDS = {
+  list_businesses: "Looked at your businesses",
+  get_business: "Read a business",
+  search_knowledge: "Searched what the agent knows",
+  list_waiting: "Checked what is waiting",
+  list_customers: "Looked at your customers",
+  read_conversation: "Read a conversation",
+  set_model: "Proposed a model change",
+  set_persona: "Proposed a persona change",
+  save_rule: "Proposed a rule",
+  delete_rule: "Proposed removing a rule",
+  save_note: "Proposed a note",
+  delete_note: "Proposed removing a note",
+  save_profile: "Proposed a profile change",
+  save_price: "Proposed a price",
+  remove_price: "Proposed removing a price",
+  set_features: "Proposed a feature change",
+};
+
+const stepLine = (step) =>
+  `<div class="step ${step.ok ? "" : "bad"}">${icon(step.ok ? "check" : "retry", 13)}
+     ${h(STEP_WORDS[step.tool] ?? step.tool)}</div>`;
+
+function bindTurnActions() {
+  $("view").querySelectorAll("[data-copy]").forEach((b) => {
+    b.onclick = async () => {
+      const body = b.closest(".turn").querySelector(".ai-body").textContent;
+      await navigator.clipboard?.writeText(body).catch(() => undefined);
+      b.innerHTML = `${icon("check", 14)}Copied`;
+      setTimeout(() => (b.innerHTML = `${icon("copy", 14)}Copy`), 1600);
+    };
+  });
+  $("view").querySelectorAll("[data-retry]").forEach((b) => {
+    b.onclick = () => {
+      const asked = b.closest(".turn").previousElementSibling?.querySelector(".ubub")?.textContent;
+      if (!asked) return;
+      $("asText").value = asked;
+      growBox($("asText"));
+      $("asText").focus();
+    };
+  });
   $("view").querySelectorAll("[data-approve]").forEach((b) => {
     b.onclick = () => answerApproval(b.dataset.approve, b.dataset.yes === "1");
   });
+}
+
+/** The box grows with what is typed, and Enter sends unless Shift is held. */
+function growBox(box) {
+  const fit = () => {
+    box.style.height = "auto";
+    box.style.height = `${Math.min(box.scrollHeight, 220)}px`;
+  };
+  box.oninput = fit;
+  box.onkeydown = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendToAssistant(new Event("submit"));
+    }
+  };
+  fit();
 }
 
 /** One proposed change, and the two buttons that decide it. */
@@ -907,31 +1186,51 @@ async function sendToAssistant(event) {
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
+  input.style.height = "auto";
   input.disabled = true;
   $("asSend").disabled = true;
 
-  // Its own turn is shown at once, and a line saying it is working, because a
-  // tool loop can take several seconds and a still screen reads as a failure.
-  const box = $("asMsgs");
-  box.insertAdjacentHTML(
+  // The turn appears the moment it is sent, with a line saying it is working,
+  // because a tool loop takes several seconds and a still screen reads as a
+  // failure. Neither is a claim about what it found; both are replaced by the
+  // record when the answer comes back.
+  const page = $("view").querySelector(".chat-page");
+  page?.classList.remove("blank");
+  $("view").querySelector(".greet")?.remove();
+  $("view").querySelector(".openers")?.remove();
+  const thread = $("asThread");
+  thread.insertAdjacentHTML(
     "beforeend",
-    `<div class="msg human" style="max-width:76%"><span class="who">You · just now</span>
-       <span class="body">${h(text)}</span></div>
-     <div class="msg bot" id="asThinking" style="max-width:76%"><span class="body">Looking…</span></div>`,
+    `<div class="turn user"><div class="ubub">${h(text)}</div></div>
+     <div class="turn ai" id="asThinking">
+       <div class="ai-head"><img class="ai-av" src="/assets/logo.jpg" alt="">
+         <b>Muxel</b><span class="mtag">${h(modelLabel())}</span></div>
+       <div class="ai-body thinking"><span></span><span></span><span></span></div>
+     </div>`,
   );
-  box.scrollTop = box.scrollHeight;
+  thread.scrollTop = thread.scrollHeight;
 
-  const { ok, data } = await api("assistant", { method: "POST", body: { text } });
+  const { ok, data } = await api("assistant", {
+    method: "POST",
+    body: { text, chatId: state.chatId ?? undefined, model: state.chatModel ?? undefined },
+  });
   input.disabled = false;
   $("asSend").disabled = false;
   if (!ok) {
     $("asThinking")?.remove();
     input.value = text;
+    growBox(input);
     return;
   }
   state.assistant = data;
+  state.chats = data.chats ?? [];
+  state.chatId = data.chat?.id ?? state.chatId;
+  state.newChat = false;
+  if ($("chatList")) {
+    $("chatList").innerHTML = chatRail();
+    bindChatRail();
+  }
   drawAssistant();
-  $("asText").focus();
 }
 
 async function answerApproval(approvalId, yes) {
@@ -1494,7 +1793,7 @@ function drawConversation() {
               </div></div>`;
         })
         .join("")}</div>
-      <form class="composer" id="say">
+      <form class="reply-bar" id="say">
         <input id="sayText" placeholder="${
           mine ? "Type your reply and press enter" : "Take over first, then you can reply here"
         }" ${mine ? "" : "disabled"} autocomplete="off">
@@ -2980,7 +3279,7 @@ function openPalette() {
   const input = bg.querySelector("#pq");
   input.focus();
 
-  const pages = NAV.flatMap((s) => s.items);
+  const pages = ALL_VIEWS;
   const draw = (results) => {
     const out = bg.querySelector("#pout");
     const term = input.value.trim().toLowerCase();
@@ -3464,7 +3763,10 @@ function disconnect(event) {
   worker = "";
   token = "";
   clearInterval(state.poll);
-  Object.assign(state, { api: null, overview: null, health: null, businessId: null, customerId: null });
+  Object.assign(state, {
+    api: null, overview: null, health: null, businessId: null, customerId: null,
+    chats: null, chatId: null, chatModel: null, assistant: null,
+  });
   showConsole(false);
 }
 

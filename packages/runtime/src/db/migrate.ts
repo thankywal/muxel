@@ -545,6 +545,62 @@ const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX IF NOT EXISTS operator_approval_idx ON operator_approval (user_id, state, created_at)`,
     ],
   },
+  {
+    version: 15,
+    statements: [
+      // The owner keeps more than one conversation with their assistant.
+      //
+      // One flat transcript meant every question shared a thread with every
+      // other, so asking about a refund policy carried yesterday's argument
+      // about delivery into it. A chat is a subject, and its title is the first
+      // thing the owner said in it.
+      `CREATE TABLE IF NOT EXISTS operator_chat (
+         id         TEXT PRIMARY KEY,
+         user_id    INTEGER NOT NULL,
+         title      TEXT NOT NULL DEFAULT '',
+         model      TEXT NOT NULL DEFAULT '',
+         created_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS operator_chat_idx ON operator_chat (user_id, updated_at DESC)`,
+
+      // Messages belong to a chat now. The old table is dropped rather than
+      // left beside the new one: it is a day old, it holds nothing but the
+      // owner's own first few questions, and a second table nobody reads is a
+      // place for the two to disagree later. DROP IF EXISTS is safe to run
+      // twice, which is the rule this file keeps.
+      `DROP TABLE IF EXISTS operator_message`,
+      `CREATE TABLE IF NOT EXISTS operator_message (
+         id         TEXT PRIMARY KEY,
+         chat_id    TEXT NOT NULL REFERENCES operator_chat (id) ON DELETE CASCADE,
+         user_id    INTEGER NOT NULL,
+         role       TEXT NOT NULL,
+         content    TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS operator_message_idx ON operator_message (chat_id, created_at)`,
+    ],
+  },
+  {
+    // What the assistant looked at on the way to an answer.
+    //
+    // The loop already knew this and threw it away when the request ended, so
+    // reloading a conversation lost the working and left only the conclusion.
+    // Its own table rather than a column, because the rule this file keeps is
+    // that a migration stays a CREATE.
+    version: 16,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS operator_step (
+         id         TEXT PRIMARY KEY,
+         message_id TEXT NOT NULL REFERENCES operator_message (id) ON DELETE CASCADE,
+         seq        INTEGER NOT NULL,
+         tool       TEXT NOT NULL,
+         ok         INTEGER NOT NULL,
+         created_at TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS operator_step_idx ON operator_step (message_id, seq)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */
