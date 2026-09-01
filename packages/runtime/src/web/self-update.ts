@@ -22,8 +22,8 @@
  */
 
 import type { Env } from "../env.js";
-import { SOURCE_REPO } from "../repo.js";
-import { UPSTREAM_REPO } from "../version.js";
+import { isRepoSlug, SOURCE_REPO } from "../repo.js";
+import { UPSTREAM_SLUG } from "../version.js";
 import { getSecret } from "./secrets-vault.js";
 import { belongsToDeployment, configDrift } from "./deployment-files.js";
 
@@ -56,7 +56,10 @@ async function gh<T>(token: string, path: string, init?: RequestInit): Promise<T
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`GitHub said ${response.status}: ${body.slice(0, 200)}`);
+    // The path is in the message on purpose. A bare "GitHub said 404" is true
+    // and useless: the update touches two repositories and eight endpoints, and
+    // which one was not found is the whole diagnosis.
+    throw new Error(`GitHub said ${response.status} for ${path}: ${body.slice(0, 160)}`);
   }
   return (await response.json()) as T;
 }
@@ -83,7 +86,7 @@ async function configNotes(token: string, target: string, upstreamSha: string): 
       return atob(file.content.replace(/\n/g, ""));
     };
     const [upstream, own] = await Promise.all([
-      read(UPSTREAM_REPO, upstreamSha),
+      read(UPSTREAM_SLUG, upstreamSha),
       read(target, "main"),
     ]);
     return configDrift(upstream, own)
@@ -98,25 +101,49 @@ async function configNotes(token: string, target: string, upstreamSha: string): 
   }
 }
 
+/** Where an operator's answer is kept when the build could not tell. */
+export const SOURCE_REPO_KEY = "system:source_repo";
+
+/**
+ * Which repository this deployment pushes to.
+ *
+ * The build stamps it, and a build with no git origin cannot. Rather than leave
+ * the update permanently broken in that case, an operator can say, and what
+ * they said wins: they can see the address bar and the build cannot.
+ */
+export async function sourceRepoFor(env: Env): Promise<string> {
+  const told = (await env.STATE.get(SOURCE_REPO_KEY))?.trim();
+  if (told !== undefined && isRepoSlug(told)) return told;
+  return SOURCE_REPO;
+}
+
 export async function runSelfUpdate(env: Env): Promise<UpdateOutcome> {
   const token = await getSecret(env, "github_token");
   if (token === null) {
     return { ok: false, message: "No GitHub token is set for this deployment yet." };
   }
 
-  const target = SOURCE_REPO;
-  if (target === null) {
-    return { ok: false, message: "This deployment does not know which repository it came from." };
+  // SOURCE_REPO is the empty string when the build could not tell, never null,
+  // so the old `=== null` check passed and the update asked GitHub for
+  // `/repos//branches/main`. Checked for the shape it has to have instead.
+  const target = await sourceRepoFor(env);
+  if (!isRepoSlug(target)) {
+    return {
+      ok: false,
+      message:
+        "This deployment does not know which repository it was built from, so it has nowhere to push. "
+        + "Set it under Settings, Deployment.",
+    };
   }
 
   try {
     const upstreamHead = await gh<{ commit: { sha: string } }>(
       token,
-      `/repos/${UPSTREAM_REPO}/branches/main`,
+      `/repos/${UPSTREAM_SLUG}/branches/main`,
     );
     const upstreamTree = await gh<{ tree: TreeEntry[] }>(
       token,
-      `/repos/${UPSTREAM_REPO}/git/trees/${upstreamHead.commit.sha}?recursive=1`,
+      `/repos/${UPSTREAM_SLUG}/git/trees/${upstreamHead.commit.sha}?recursive=1`,
     );
 
     // Everything except what belongs to this deployment rather than to
@@ -165,7 +192,7 @@ export async function runSelfUpdate(env: Env): Promise<UpdateOutcome> {
     const commit = await gh<{ sha: string }>(token, `/repos/${target}/git/commits`, {
       method: "POST",
       body: JSON.stringify({
-        message: `Update from ${UPSTREAM_REPO}\n\nApplied from the console. Workflow files were left untouched.`,
+        message: `Update from ${UPSTREAM_SLUG}\n\nApplied from the console. Workflow files were left untouched.`,
         tree: created.sha,
         parents: [mine.commit.sha],
       }),

@@ -14,5 +14,16 @@ export const MUXEL_VERSION = "0.20.1";
 export const UPSTREAM_VERSION_URL =
   "https://raw.githubusercontent.com/thankywal/muxel/main/VERSION";
 
-/** Instructions shown with an update notice. */
-export const UPSTREAM_REPO = "https://github.com/thankywal/muxel";
+/**
+ * Where updates come from, as the two shapes that are needed.
+ *
+ * One constant used to hold the URL and was also interpolated into GitHub API
+ * paths, which produced `/repos/https://github.com/.../branches/main` and a 404
+ * on the first call the self update makes. So it never worked, for anyone, and
+ * the error said only that GitHub had said 404.
+ *
+ * The slug is the record and the URL is derived from it, so the two cannot
+ * drift, and the names say which is which at the call site.
+ */
+export const UPSTREAM_SLUG = "thankywal/muxel";
+export const UPSTREAM_REPO_URL = `https://github.com/${UPSTREAM_SLUG}`;

@@ -24,7 +24,7 @@ import { isRepoSlug, SOURCE_REPO, updateWorkflowUrl } from "./repo.js";
 import { peekMasterKey } from "./secrets.js";
 import { ORIGIN_KEY } from "./setup.js";
 import { TelegramClient, type InlineKeyboardMarkup } from "./telegram/api.js";
-import { MUXEL_VERSION, UPSTREAM_REPO, UPSTREAM_VERSION_URL } from "./version.js";
+import { MUXEL_VERSION, UPSTREAM_REPO_URL, UPSTREAM_VERSION_URL } from "./version.js";
 
 /** Remembers which version the owner has already been told about. */
 const NOTIFIED_KEY = "system:update_notified";
@@ -150,7 +150,7 @@ export async function checkForUpdate(env: Env): Promise<UpdateCheck> {
   const buttons = updateButtons(origin);
   const fallback =
     buttons === null
-      ? `\nOpen ${UPSTREAM_REPO} and follow "Staying up to date" in the README.`
+      ? `\nOpen ${UPSTREAM_REPO_URL} and follow "Staying up to date" in the README.`
       : "";
   // A private chat with a bot uses the person's own account id as the chat id.
   await client.sendMessage({

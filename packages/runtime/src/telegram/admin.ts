@@ -97,7 +97,7 @@ import { resolveMasterKey } from "../secrets.js";
 import { ORIGIN_KEY } from "../setup.js";
 import { findSkill, matchSkill, SKILLS } from "./skills.js";
 import { versionStatus } from "../updates.js";
-import { UPSTREAM_REPO } from "../version.js";
+import { UPSTREAM_REPO_URL } from "../version.js";
 import { isLocale, LOCALE_NAMES, LOCALES, t, type Locale, type MessageKey } from "./i18n.js";
 import {
   TelegramClient,
@@ -1238,7 +1238,7 @@ export async function screenFor(
           `<b>${t(locale, "updTitle")}</b>`,
           "",
           headline,
-          ...(status.behind ? ["", t(locale, "updHow", { repo: UPSTREAM_REPO })] : []),
+          ...(status.behind ? ["", t(locale, "updHow", { repo: UPSTREAM_REPO_URL })] : []),
         ].join("\n"),
         rows: [
           // Offered only when there is something to apply and a token to apply

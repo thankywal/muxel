@@ -80,14 +80,15 @@ import { ORIGIN_KEY } from "../setup.js";
 import { TelegramClient, type MediaKind } from "../telegram/api.js";
 import { escapeHtml } from "../telegram/format.js";
 import { clearSecret, hasSecret, putSecret } from "./secrets-vault.js";
-import { runSelfUpdate } from "./self-update.js";
+import { runSelfUpdate, sourceRepoFor, SOURCE_REPO_KEY } from "./self-update.js";
+import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
 import { ingestDocument, removeDocument } from "../rag/ingest.js";
 import { SKILLS } from "../telegram/skills.js";
 import { LOCALE_NAMES, LOCALES, isLocale } from "../telegram/i18n.js";
 import { missingConfiguration } from "../env.js";
 import { TARGET_VERSION, currentVersion } from "../db/migrate.js";
-import { UPSTREAM_REPO } from "../version.js";
+import { UPSTREAM_REPO_URL } from "../version.js";
 import type { Env } from "../env.js";
 import { MAX_PROMPT_CHARS, MODEL_PRESETS } from "../telegram/admin.js";
 import { productsView, saveProductEntry } from "../products.js";
@@ -136,8 +137,9 @@ async function businessCard(env: Env, businessId: string) {
  *      the web channel, one customer, rescan
  *   3  the business profile
  *   4  agent configuration: rules and features
+ *   5  telling the deployment its own source repository
  */
-export const API_REVISION = 4;
+export const API_REVISION = 5;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -1087,7 +1089,10 @@ export async function handleConsoleApi(
     return json({
       apiRevision: API_REVISION,
       version,
-      repo: UPSTREAM_REPO,
+      repo: UPSTREAM_REPO_URL,
+      // Where an update would push. Shown because when it is unknown the
+      // update cannot work, and that is worth saying before it is pressed.
+      sourceRepo: await sourceRepoFor(env),
       githubToken: hasToken,
       origin: (await env.STATE.get(ORIGIN_KEY)) ?? "",
       usage,
@@ -1121,6 +1126,17 @@ export async function handleConsoleApi(
 
   if (method === "POST" && segments[0] === "update") {
     return json(await runSelfUpdate(env));
+  }
+
+  // Telling the deployment where its own source lives, for a build that could
+  // not work it out. Validated as a slug before it is stored, because it ends
+  // up inside a URL that is then written to.
+  if (method === "PUT" && segments[0] === "source-repo") {
+    const body = (await request.json().catch(() => ({}))) as { repo?: string };
+    const slug = String(body.repo ?? "").trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "");
+    if (!isRepoSlug(slug)) return json({ error: "bad_repo" }, 400);
+    await env.STATE.put(SOURCE_REPO_KEY, slug);
+    return json({ ok: true, sourceRepo: slug });
   }
 
   // /messages/:messageId — one turn, on one side or both.

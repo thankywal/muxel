@@ -93,7 +93,11 @@ vi.mock("../src/db/insights.js", () => ({
     { day: "2026-09-01", messages: 4, inputTokens: 20, outputTokens: 9 },
   ]),
 }));
-vi.mock("../src/web/self-update.js", () => ({ runSelfUpdate: vi.fn(async () => ({ ok: true, message: "done" })) }));
+vi.mock("../src/web/self-update.js", () => ({
+  runSelfUpdate: vi.fn(async () => ({ ok: true, message: "done" })),
+  sourceRepoFor: vi.fn(async () => "thankywal/muxel-demo"),
+  SOURCE_REPO_KEY: "system:source_repo",
+}));
 vi.mock("../src/db/migrate.js", () => ({ currentVersion: vi.fn(async () => 10), TARGET_VERSION: 10 }));
 vi.mock("../src/products.js", () => ({
   productsView: vi.fn(async () => [
@@ -122,7 +126,7 @@ vi.mock("../src/web/console.js", async (importOriginal) => ({
 const { handleConsoleApi } = await import("../src/web/console-api.js");
 
 const env = {
-  STATE: { get: async () => "https://x.workers.dev" },
+  STATE: { get: async () => "https://x.workers.dev", put: async () => undefined },
   // Only /me reads the database directly; everything else goes through a query.
   DB: { prepare: () => ({ bind: () => ({ first: async () => ({ label: "Than" }) }) }) },
 } as never;
@@ -198,6 +202,7 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["DELETE", "/messages/m1"],
   ["DELETE", "/secrets/github_token"],
   ["POST", "/update"],
+  ["PUT", "/source-repo", { repo: "a/b" }],
 ];
 
 describe("the console data API", () => {

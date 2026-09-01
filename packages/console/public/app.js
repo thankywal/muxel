@@ -2329,16 +2329,44 @@ async function viewSettings() {
                    nothing of ours ever touches your account.</p>`
               : '<p style="margin:0 0 14px;color:var(--muted)">This deployment is up to date.</p>'
           }
+          <div class="field" style="max-width:420px;margin:0 0 14px">
+            <label>Where it pushes the new code</label>
+            <div style="display:flex;gap:8px">
+              <input id="srcRepo" placeholder="your-name/muxel" value="${h(data.sourceRepo ?? "")}" style="flex:1">
+              <button class="btn btn-ghost btn-sm" id="saveRepo">Save</button>
+            </div>
+            <small>${
+              data.sourceRepo
+                ? "Your own copy on GitHub, the one Cloudflare builds from. The build worked this out on its own; change it only if it is wrong."
+                : "The build could not work this out, so the update has nowhere to push. It is the repository Cloudflare builds this deployment from, as owner/name."
+            }</small>
+          </div>
           <button class="btn ${v.behind ? "btn-primary" : "btn-ghost"} btn-sm" id="doUpdate"
-            ${data.githubToken ? "" : "disabled"}>Update now</button>
+            ${data.githubToken && data.sourceRepo ? "" : "disabled"}>Update now</button>
           ${
             data.githubToken
               ? ""
               : '<p style="color:var(--muted);font-size:13px;margin:12px 0 0">Add a GitHub token under Security first.</p>'
           }
+          ${
+            data.sourceRepo
+              ? ""
+              : '<p style="color:var(--muted);font-size:13px;margin:12px 0 0">And say which repository it pushes to.</p>'
+          }
           <div id="updateOut" style="margin-top:14px"></div>
         </div>
       </div>`;
+    $("saveRepo").onclick = async () => {
+      const value = $("srcRepo").value.trim();
+      if (!value) return;
+      $("saveRepo").disabled = true;
+      const { ok: saved } = await api("source-repo", { method: "PUT", body: { repo: value } });
+      $("saveRepo").disabled = false;
+      if (saved) {
+        toast("Saved.");
+        viewSettings();
+      }
+    };
     $("doUpdate").onclick = async () => {
       $("doUpdate").disabled = true;
       $("updateOut").innerHTML = '<p class="loading" style="padding:0">Reading the new code and pushing it…</p>';
