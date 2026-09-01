@@ -1,14 +1,14 @@
 /**
- * The front page's demonstration says it is one.
+ * The demonstration cannot be asked a question it has no answer for.
  *
- * The whole argument of that page is that nothing about this product is hidden
- * from the person deploying it. A scripted conversation passed off as a live
- * model would be the single dishonest thing on it, so the label is not
- * decoration — it is the thing that makes the demo allowed to exist.
+ * The whole argument of these pages is that nothing about this product is
+ * hidden from the person deploying it, and every answer in the demonstration is
+ * written down rather than generated. What keeps that honest is not a label: it
+ * is that the box does not take typing. A visitor picks from the questions
+ * there are answers for, so nothing here can appear to answer a real one.
  *
- * These also hold that the demo cannot quietly become a page of claims the
- * product does not make: every answer is written in the page's own source, and
- * a visitor who asks something real is told so.
+ * These hold that lock, and that the demo cannot quietly become a page of
+ * claims the product does not make.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -18,46 +18,35 @@ const read = (name: string): string =>
 
 /** The demonstration is one file; the intro screens only mount it. */
 const page = read("demo.js");
-const markup = `${read("index.html")}\n${read("console.html")}`;
+const screens = [
+  ["index.html", read("index.html")],
+  ["console.html", read("console.html")],
+] as const;
+const markup = screens.map(([, html]) => html).join("\n");
 
 describe("the demonstration", () => {
-  it("says on its face that the answers are written, not generated", () => {
-    // On both intro screens. A label on one of them is a label on neither.
-    for (const [name, html] of [["index.html", read("index.html")], ["console.html", read("console.html")]] as const) {
-      expect(html, name).toContain(">Demonstration<");
-      expect(html, name).toMatch(/These answers are written, not generated/);
+  it("cannot be asked a question nobody wrote an answer for", () => {
+    // This is what keeps it honest now that it is not labelled. A visitor picks
+    // from the questions there are answers for. There is no field to type a
+    // real one into, so nothing here can appear to answer one.
+    for (const [name, html] of screens) {
+      expect(html, name).not.toMatch(/<(input|textarea)[^>]*id="demo/);
+      expect(html, name).toContain('class="composer-text"');
     }
+    expect(page).not.toMatch(/\.value/);
   });
 
-  it("is one file, so the two screens cannot drift apart", () => {
-    for (const [name, html] of [["index.html", read("index.html")], ["console.html", read("console.html")]] as const) {
-      expect(html, name).toContain('src="/demo.js"');
-      expect(html, name).toContain('href="/demo.css"');
-      expect(html, name).toContain('id="demo"');
-    }
-    // And no page carries its own copy of the answers.
-    expect(markup).not.toContain("const SCRIPT");
-  });
-
-  it("tells a visitor who asks something real that it cannot answer", () => {
-    // Rather than reaching for the nearest written answer, which is how a demo
-    // starts making claims nobody wrote down.
-    expect(page).toMatch(/That one I cannot answer here/);
-    expect(page).toMatch(/no model behind it/);
-  });
-
-  it("only replays an answer for the exact question it was written for", () => {
-    expect(page).toMatch(/SCRIPT\.find\(\(turn\) => turn\.q\.toLowerCase\(\) === asked\.toLowerCase\(\)\)/);
-  });
-
-  it("offers the deploy steps when it cannot answer", () => {
-    expect(page).toMatch(/function offerDeploy/);
+  it("says why, when someone clicks the box anyway", () => {
+    expect(page).toMatch(/composer"\)\.addEventListener\("click", offerDeploy\)/);
+    expect(page).toMatch(/only knows the answers on this page/);
     expect(page).toContain("deploy.workers.cloudflare.com");
   });
 
-  it("does nothing on a page that did not ask for it", () => {
-    // app.js loads it too, and the console after pairing has no such section.
-    expect(page).toMatch(/if \(document\.getElementById\("demo"\) !== null\)/);
+  it("answers only the question that was picked", () => {
+    // By index into the same list the buttons were built from, so a button and
+    // its answer cannot come apart.
+    expect(page).toMatch(/const turn = SCRIPT\[index\];/);
+    expect(page).toMatch(/data-ask="\$\{index\}"/);
   });
 
   it("gives every written question a written answer", () => {
@@ -73,5 +62,32 @@ describe("the demonstration", () => {
     // one the runtime bills against.
     expect(page).toContain("10,000 neurons a day");
     expect(page).not.toMatch(/\$\d/);
+  });
+
+  it("is one file, so the two screens cannot drift apart", () => {
+    for (const [name, html] of screens) {
+      expect(html, name).toContain('src="/demo.js"');
+      expect(html, name).toContain('href="/demo.css"');
+      expect(html, name).toContain('id="demo"');
+    }
+    // And no page carries its own copy of the answers.
+    expect(markup).not.toContain("const SCRIPT");
+  });
+
+  it("does nothing on a page that did not ask for it", () => {
+    // app.js loads it too, and the console after pairing has no such section.
+    expect(page).toMatch(/if \(document\.getElementById\("demo"\) !== null\)/);
+  });
+
+  it("shows the stop square while it is writing, like the console does", () => {
+    for (const [name, html] of screens) {
+      expect(html, name).toContain('id="demoStop"');
+    }
+    expect(page).toMatch(/sendBtn\.hidden = on;/);
+    expect(page).toMatch(/stopBtn\.hidden = !on;/);
+  });
+
+  it("will not start a second answer over the top of one being written", () => {
+    expect(page).toMatch(/if \(answering\) return;/);
   });
 });

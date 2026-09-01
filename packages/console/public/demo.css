@@ -6,50 +6,100 @@
    cards each. One demonstration serves both, so a claim cannot be updated in
    one place and left stale in the other.
 
-   Written against fallback chains rather than one page's tokens, because the
-   two pages have different names for the same colours and neither should have
-   to learn the other's.
+   It is the console's own chat, drawn the console's own way — the same turn,
+   the same bubble, the same composer — because the point of a demonstration is
+   that this is what the thing looks like. The rules are repeated here rather
+   than pulled from app.css, since the product page does not load that, and they
+   are all scoped under .demo so neither page's own styles are touched.
+
+   Written against fallback chains rather than either page's token names: the
+   two have different names for the same colours and neither should have to
+   learn the other's.
    --------------------------------------------------------------------------- */
-.demo { background: var(--card, var(--surface, #fff)); border: 1px solid var(--line, #e2e8f0); border-radius: var(--radius, 16px);
-        box-shadow: var(--shadow, 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06)); margin: 44px 0; overflow: hidden; }
-.demo-bar { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-            padding: 14px 22px; border-bottom: 1px solid var(--line, #e2e8f0); background: var(--paper, var(--surface-2, #f8fafc)); }
-.demo-tag { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-            color: var(--orange-ink, var(--brand-ink, #ea580c)); background: #fff4ec; border: 1px solid #fed7aa;
-            border-radius: 999px; padding: 3px 10px; }
-.demo-note { font-size: 13px; color: var(--muted, #64748b); }
-/* A fixed window that scrolls itself. The demonstration keeps going, and a
-   section that grew with it would shove the rest of the page down the screen
-   while somebody was reading it. */
-.demo-thread { padding: 26px 22px 8px; height: 400px; overflow-y: auto; scroll-behavior: smooth; }
-.demo-turn { max-width: 660px; margin: 0 auto 22px; }
-.demo-turn.you { display: flex; justify-content: flex-end; }
-.demo-bub { background: var(--paper, var(--surface-2, #f8fafc)); border: 1px solid var(--line, #e2e8f0); padding: 10px 15px;
-            border-radius: 16px 16px 4px 16px; max-width: 78%; font-size: 15px; }
-.demo-who { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.demo-who img { width: 22px; height: 22px; border-radius: 6px; }
-.demo-who b { font-size: 14px; }
-.demo-body { font-size: 15.5px; line-height: 1.75; white-space: pre-wrap; }
-.demo-body b { font-weight: 650; }
-.demo-caret { display: inline-block; width: 2px; height: 1.05em; background: var(--orange, var(--brand, #f97316));
-              vertical-align: -2px; animation: caret 1s steps(2, end) infinite; }
-@keyframes caret { 50% { opacity: 0; } }
-.demo-composer { display: flex; gap: 10px; align-items: center; padding: 14px 22px 20px;
-                 max-width: 704px; margin: 0 auto; }
-.demo-composer input { flex: 1; padding: 13px 16px; font: inherit; font-size: 15px;
-  border: 1px solid var(--line, #e2e8f0); border-radius: 14px; background: var(--paper, var(--surface-2, #f8fafc)); }
-.demo-composer input:focus { outline: none; border-color: #fed7aa; background: #fff; }
-.demo-composer button { width: 40px; height: 40px; border: 0; border-radius: 50%; flex: none;
-  background: var(--orange, var(--brand, #f97316)); color: #fff; display: grid; place-items: center; cursor: pointer; }
-.demo-composer button:hover { background: var(--orange-ink, var(--brand-ink, #ea580c)); }
+
+.demo {
+  --d-surface: var(--card, var(--surface, #fff));
+  --d-surface-2: var(--paper, var(--surface-2, #f8fafc));
+  --d-line: var(--line, #e2e8f0);
+  --d-ink: var(--ink, #0f172a);
+  --d-muted: var(--muted, #64748b);
+  --d-brand: var(--orange, var(--brand, #f97316));
+  --d-brand-ink: var(--orange-ink, var(--brand-ink, #ea580c));
+  --d-brand-soft: #fff4ec;
+  --d-brand-line: #fed7aa;
+  background: var(--d-surface);
+  border: 1px solid var(--d-line);
+  border-radius: var(--radius, 16px);
+  box-shadow: var(--shadow, 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06));
+  margin: 44px 0;
+  overflow: hidden;
+}
+
+/* A fixed window that scrolls itself. A section that grew with the
+   conversation would shove the rest of the page down while somebody read it. */
+.demo-thread { height: 400px; overflow-y: auto; padding: 26px 0 8px; scroll-behavior: smooth; }
+
+.demo .turn { max-width: 660px; margin: 0 auto 22px; padding: 0 24px; }
+.demo .turn.user { display: flex; justify-content: flex-end; margin-bottom: 18px; }
+.demo .ubub { background: var(--d-surface); border: 1px solid var(--d-line);
+  border-radius: 16px 16px 4px 16px; padding: 10px 14px; font-size: 14px; max-width: 78%;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+.demo .ai-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.demo .ai-av { width: 22px; height: 22px; border-radius: 6px; }
+.demo .ai-head b { font-size: 13.5px; font-weight: 650; }
+.demo .ai-head .when { margin-left: auto; font-size: 11.5px; color: var(--d-muted); }
+.demo .work-label { font-size: 12px; color: var(--d-muted); }
+.demo .work-label::after { content: "…"; animation: d-ellipsis 1.4s steps(4, end) infinite; }
+@keyframes d-ellipsis { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; }
+                        75%, 100% { content: "…"; } }
+.demo .ai-body { font-size: 14.5px; line-height: 1.7; color: var(--d-ink); white-space: pre-wrap; }
+.demo .ai-body b { font-weight: 650; }
+.demo .caret { display: inline-block; width: 2px; height: 1.05em; background: var(--d-brand);
+  vertical-align: -2px; animation: d-caret 1s steps(2, end) infinite; }
+@keyframes d-caret { 50% { opacity: 0; } }
+.demo .steps { margin-bottom: 10px; }
+.demo .step { display: flex; align-items: center; gap: 7px; font-size: 12.5px;
+  color: var(--d-muted); padding: 2px 0; }
+.demo .step svg { color: #10b981; flex: none; }
+
+.demo .greet { max-width: 620px; margin: 26px auto 0; padding: 0 24px; text-align: center; }
+.demo .greet img { width: 42px; height: 42px; border-radius: 11px; }
+.demo .greet h3 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 12px 0 6px; }
+.demo .greet p { margin: 0 auto; max-width: 460px; color: var(--d-muted); font-size: 13.5px; }
+
+.demo-foot { max-width: 708px; margin: 0 auto; padding: 8px 24px 22px; }
+/* The box is the console's, and it is locked: nothing here answers a question
+   nobody wrote an answer for, so there is nothing to type into it. */
+.demo .composer { border: 1px solid var(--d-line); background: var(--d-surface);
+  border-radius: 18px; padding: 12px 14px 10px; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  cursor: pointer; }
+.demo .composer-text { color: var(--d-muted); font-size: 14.5px; line-height: 1.6;
+  min-height: 23px; user-select: none; }
+.demo .composer-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.demo .composer-row .grow { flex: 1; }
+.demo .composer-model { font-size: 12px; color: var(--d-muted); border: 1px solid var(--d-line);
+  border-radius: 999px; padding: 3px 10px; }
+.demo .send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--d-brand);
+  color: #fff; display: grid; place-items: center; flex: none; }
+.demo .send.stop { background: var(--d-ink); }
+/* `display: grid` above beats the browser's own [hidden] rule, so both buttons
+   showed at once. Said here, where the display was set. */
+.demo .send[hidden] { display: none; }
+.demo .openers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+.demo .opener { border: 1px solid var(--d-line); background: var(--d-surface); border-radius: 999px;
+  padding: 7px 13px; font: inherit; font-size: 12.5px; color: var(--d-ink); cursor: pointer; }
+.demo .opener:hover { border-color: var(--d-brand-line); color: var(--d-brand-ink);
+  background: var(--d-brand-soft); }
+.demo .opener:disabled { opacity: .45; cursor: default; }
 
 .demo-bg { position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 50;
-           display: grid; place-items: center; padding: 20px; }
+  display: grid; place-items: center; padding: 20px; }
 .demo-modal { background: #fff; border-radius: var(--radius, 16px); max-width: 480px; width: 100%;
-              padding: 26px; box-shadow: 0 20px 60px rgba(15,23,42,.3); }
+  padding: 26px; box-shadow: 0 20px 60px rgba(15,23,42,.3); }
 .demo-modal h3 { margin: 0 0 8px; font-size: 20px; letter-spacing: -.02em; }
-.demo-modal p { margin: 0 0 16px; color: var(--muted, #64748b); font-size: 15px; }
-.demo-modal ol { margin: 0 0 20px; padding-left: 20px; color: var(--ink); font-size: 15px; }
+.demo-modal p { margin: 0 0 16px; color: var(--d-muted); font-size: 15px; }
+.demo-modal ol { margin: 0 0 20px; padding-left: 20px; font-size: 15px; }
 .demo-modal li { margin: 6px 0; }
-.demo-modal .cta { gap: 10px; }
+.demo-modal .cta { display: flex; gap: 10px; flex-wrap: wrap; }
 
+@media (max-width: 640px) { .demo-thread { height: 340px; } }

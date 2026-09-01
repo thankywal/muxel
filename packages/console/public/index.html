@@ -75,21 +75,25 @@
     that would let them ask it for real.
   -->
   <section class="demo" id="demo">
-    <div class="demo-bar">
-      <span class="demo-tag">Demonstration</span>
-      <span class="demo-note">These answers are written, not generated. Your own deployment answers
-        from your own price list.</span>
-    </div>
     <div class="demo-thread" id="thread"></div>
-    <form class="demo-composer" id="demoSay">
-      <input id="demoText" autocomplete="off" aria-label="Ask a question"
-        placeholder="Or ask your own question">
-      <button type="submit" aria-label="Send">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 19V5M5 12l7-7 7 7"/></svg>
-      </button>
-    </form>
+    <div class="demo-foot">
+      <!-- The console's own composer, locked. Clicking it explains why. -->
+      <div class="composer" role="button" tabindex="0" aria-label="Ask your own question">
+        <div class="composer-text">Ask about your businesses, or tell it what to change</div>
+        <div class="composer-row">
+          <span class="composer-model">Qwen 3.8 27B</span>
+          <span class="grow"></span>
+          <span class="send" id="demoSend">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19V5M5 12l7-7 7 7"/></svg></span>
+          <span class="send stop" id="demoStop" hidden>
+            <svg viewBox="0 0 24 24" width="15" height="15"><rect x="6" y="6" width="12" height="12"
+              rx="2" fill="currentColor"/></svg></span>
+        </div>
+      </div>
+      <div class="openers" id="demoChips"></div>
+    </div>
   </section>
 
   <section class="card own">
