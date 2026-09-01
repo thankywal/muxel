@@ -2462,11 +2462,15 @@ async function createAgentDialog(preselect) {
     <h3>Set up an agent</h3>
     <p class="sub">An agent is one of your businesses answering somewhere. Pick which, and where.</p>
     <div class="field"><label>Business</label>
-      <select id="agBiz">${businesses
-        .map(
-          (b) => `<option value="${h(b.id)}" ${b.id === preselect ? "selected" : ""}>${h(b.name)}</option>`,
-        )
-        .join("")}</select>
+      <div style="display:flex;gap:8px">
+        <select id="agBiz" style="flex:1">${businesses
+          .map(
+            (b) => `<option value="${h(b.id)}" ${b.id === preselect ? "selected" : ""}>${h(b.name)}</option>`,
+          )
+          .join("")}</select>
+        <button type="button" class="icon-btn" id="agNewBiz" title="Add a new business"
+          style="width:40px;height:40px;flex:none">${icon("plus", 17)}</button>
+      </div>
       <div id="agHas" style="margin-top:7px"></div></div>
     <div class="field"><label>Where should it answer?</label>
       <select id="agWhere"></select></div>
@@ -2479,6 +2483,14 @@ async function createAgentDialog(preselect) {
       <button class="btn btn-primary btn-sm" id="go">Set it up</button>
     </div></div>`;
   bg.querySelector("#cancel").onclick = close;
+  // The picker lists what exists; this is how a new one comes to exist, and it
+  // leads to the page that makes them rather than making one here. Setting up a
+  // channel and creating a shop stay two different acts however you arrive.
+  bg.querySelector("#agNewBiz").onclick = () => {
+    close();
+    go("businesses");
+    createBusinessDialog();
+  };
 
   const refresh = () => {
     const b = chosen();
