@@ -2417,7 +2417,13 @@ function createBusinessDialog() {
     createAgentDialog(data.id);
   };
   bg.querySelector("#create").onclick = submit;
-  bg.querySelector("#bizName").onkeydown = (e) => e.key === "Enter" && submit();
+  // A block body on purpose. `(e) => e.key === "Enter" && submit()` returns
+  // false for every other key, and an on* handler returning false is the old
+  // spelling of preventDefault, so it swallowed the character. Nobody could
+  // type a business name.
+  bg.querySelector("#bizName").onkeydown = (e) => {
+    if (e.key === "Enter") submit();
+  };
 }
 
 /**
