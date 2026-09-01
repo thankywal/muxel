@@ -629,6 +629,23 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    // What a turn is waiting on the owner for.
+    //
+    // A question the model asked, or a field only they may type into. It is
+    // kept rather than held in the reply, so reopening the conversation
+    // tomorrow still offers the choices instead of a question with no way to
+    // answer it but by typing the answer out again.
+    version: 18,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS operator_prompt (
+         message_id TEXT PRIMARY KEY REFERENCES operator_message (id) ON DELETE CASCADE,
+         kind       TEXT NOT NULL,
+         payload    TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

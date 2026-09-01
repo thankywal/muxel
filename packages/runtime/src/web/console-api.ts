@@ -93,6 +93,7 @@ import { accountName } from "../cloudflare/account.js";
 import { cloudflareAccess, forgetAccess } from "../cloudflare/access.js";
 import {
   chatTranscript,
+  promptsFor,
   stepsFor,
   usageFor,
   createChat,
@@ -172,8 +173,9 @@ async function businessCard(env: Env, businessId: string) {
  *      the Cloudflare account this runs in
  *  11  the answer streamed as it is worked out, and the Cloudflare token
  *      collected in the console instead of at deploy time
+ *  12  the assistant asks the owner questions and creates a business itself
  */
-export const API_REVISION = 11;
+export const API_REVISION = 12;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -520,6 +522,7 @@ export async function handleConsoleApi(
             chat,
             messages: await chatTranscript(env, chat.id, 60),
             steps: await stepsFor(env, chat.id),
+            prompts: await promptsFor(env, chat.id),
             usage: priced(await usageFor(env, chat.id), allowance),
             allowance: {
               neuronsToday: allowance.neuronsToday,
@@ -583,6 +586,7 @@ export async function handleConsoleApi(
         chat === null ? Promise.resolve({}) : usageFor(env, chat.id),
         allowanceNow(env),
       ]);
+      const prompts = chat === null ? {} : await promptsFor(env, chat.id);
       return json({
         chats,
         chat,
@@ -590,6 +594,8 @@ export async function handleConsoleApi(
         // What it looked at, against the answer it produced. Read back from the
         // record, so a reopened chat shows the same working the live one did.
         steps,
+        // What any turn is still waiting on the owner for.
+        prompts,
         // What each answer cost, and where the day's allowance stands.
         usage: priced(spent, allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
@@ -648,6 +654,7 @@ export async function handleConsoleApi(
         chat,
         messages: await chatTranscript(env, chat.id, 60),
         steps: await stepsFor(env, chat.id),
+        prompts: await promptsFor(env, chat.id),
         usage: priced(await usageFor(env, chat.id), allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
         approvals: await listApprovals(env, userId, 60),
@@ -677,6 +684,7 @@ export async function handleConsoleApi(
         chat,
         messages: chat === null ? [] : await chatTranscript(env, chat.id, 60),
         steps: chat === null ? {} : await stepsFor(env, chat.id),
+        prompts: chat === null ? {} : await promptsFor(env, chat.id),
         usage: chat === null ? {} : priced(await usageFor(env, chat.id), allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
         approvals: await listApprovals(env, userId, 60),

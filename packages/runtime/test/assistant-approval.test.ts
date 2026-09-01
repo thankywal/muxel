@@ -36,6 +36,8 @@ describe("every tool says whether it changes anything", () => {
   it("marks as writes exactly the things that change something", () => {
     const writes = TOOLS.filter((t) => t.writes).map((t) => t.name).sort();
     expect(writes).toEqual([
+      "create_business",
+      "delete_business",
       "delete_note",
       "delete_rule",
       "remove_price",
@@ -49,6 +51,12 @@ describe("every tool says whether it changes anything", () => {
     ]);
     // And nothing that only looks is marked as one.
     for (const name of ["list_businesses", "get_business", "search_knowledge", "read_conversation"]) {
+      expect(findTool(name)?.writes, name).toBe(false);
+    }
+    // Nor the two that change nothing by themselves. Asking a question is not
+    // work, and connect_telegram only opens a field in the owner's browser:
+    // the token goes from them to their deployment and never through here.
+    for (const name of ["ask_owner", "connect_telegram"]) {
       expect(findTool(name)?.writes, name).toBe(false);
     }
   });

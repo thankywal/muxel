@@ -103,6 +103,9 @@ export async function deleteChat(env: Env, userId: number, chatId: string): Prom
     env.DB.prepare(
       "DELETE FROM operator_usage WHERE message_id IN (SELECT id FROM operator_message WHERE chat_id = ?)",
     ).bind(chatId),
+    env.DB.prepare(
+      "DELETE FROM operator_prompt WHERE message_id IN (SELECT id FROM operator_message WHERE chat_id = ?)",
+    ).bind(chatId),
     env.DB.prepare("DELETE FROM operator_message WHERE chat_id = ? AND user_id = ?").bind(
       chatId,
       userId,
@@ -243,6 +246,44 @@ export async function usageFor(
       inputTokens: row.input_tokens,
       outputTokens: row.output_tokens,
     };
+  }
+  return byMessage;
+}
+
+/** What a turn is waiting on the owner for, kept against the turn. */
+export async function recordPrompt(
+  env: Env,
+  messageId: string,
+  prompt: { kind: string } & Record<string, unknown>,
+): Promise<void> {
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO operator_prompt (message_id, kind, payload, created_at) VALUES (?, ?, ?, ?)",
+  )
+    .bind(messageId, prompt.kind, JSON.stringify(prompt), now())
+    .run();
+}
+
+/** Every open question in one chat, keyed by the message that asked it. */
+export async function promptsFor(
+  env: Env,
+  chatId: string,
+): Promise<Record<string, Record<string, unknown>>> {
+  const result = await env.DB.prepare(
+    `SELECT p.message_id, p.payload
+       FROM operator_prompt p
+       JOIN operator_message m ON m.id = p.message_id
+      WHERE m.chat_id = ?`,
+  )
+    .bind(chatId)
+    .all<{ message_id: string; payload: string }>();
+  const byMessage: Record<string, Record<string, unknown>> = {};
+  for (const row of result.results) {
+    try {
+      byMessage[row.message_id] = JSON.parse(row.payload) as Record<string, unknown>;
+    } catch {
+      // A damaged row is a question that cannot be offered. The text of the
+      // answer still carries it, so the owner can still reply by typing.
+    }
   }
   return byMessage;
 }

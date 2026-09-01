@@ -33,6 +33,7 @@ vi.mock("../src/assistant/store.js", () => ({
   deleteChat: vi.fn(async () => undefined),
   chatTranscript: vi.fn(async () => [{ id: "om1", role: "assistant", content: "Two are waiting.", createdAt: "z" }]),
   stepsFor: vi.fn(async () => ({})),
+  promptsFor: vi.fn(async () => ({})),
   usageFor: vi.fn(async () => ({})),
   listApprovals: vi.fn(async () => []),
   titleFrom: (t: string) => t,

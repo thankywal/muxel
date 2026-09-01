@@ -28,6 +28,8 @@ import {
   listRules,
   saveAgentSetting,
   saveNote,
+  createBusiness,
+  deleteBusiness,
   saveProfile,
   saveRule,
   setBotEnabled,
@@ -42,6 +44,7 @@ import { listHandovers } from "../db/queries.js";
 import { productsView, saveProductEntry } from "../products.js";
 import { syncNotes } from "../rag/ingest.js";
 import { retrieve } from "../rag/retrieve.js";
+import { createChannel } from "../web/channel.js";
 import { conversationForCustomer, getCustomer } from "../db/queries.js";
 import { MODEL_PRESETS } from "../telegram/admin.js";
 import type { ToolSpec } from "../ai/gateway.js";
@@ -87,7 +90,44 @@ const BUSINESS_ARG = {
   business_id: { type: "string", description: "From list_businesses." },
 } as const;
 
+/**
+ * The one tool that neither reads nor writes.
+ *
+ * A question is not work. The model calls this when it does not have enough to
+ * go on, the loop stops there, and the owner's answer is what starts the next
+ * turn. Without it the model either guessed the missing half or wrote a
+ * question into an answer that the loop then treated as finished, and an owner
+ * who replied to that question was starting a new subject as far as it knew.
+ *
+ * Deliberately not a write. Nothing changes, so nothing waits for approval —
+ * the question itself is the approval.
+ */
+export const ASK_OWNER = "ask_owner";
+
 export const TOOLS: readonly AssistantTool[] = [
+  {
+    name: ASK_OWNER,
+    description:
+      "Ask the owner one question and stop, when you need something only they can tell you. "
+      + "Give choices when the answer is one of a few things, so they can tap instead of type. "
+      + "Ask one thing at a time. Do not use this to confirm a change: a change already asks.",
+    writes: false,
+    parameters: {
+      type: "object",
+      properties: {
+        question: { type: "string", description: "One question, in their language." },
+        choices: {
+          type: "array",
+          items: { type: "string" },
+          description: "Up to five short answers they can tap. Omit for an open question.",
+        },
+      },
+      required: ["question"],
+    },
+    // Never reached: the loop stops at this tool rather than running it. It is
+    // here so the tool table stays the one list of what the model may call.
+    run: async () => ({ asked: true }),
+  },
   {
     name: "list_businesses",
     description: "Every business this owner has, with its name, model and channels.",
@@ -485,6 +525,89 @@ export const TOOLS: readonly AssistantTool[] = [
         await saveAgentSetting(ctx.env, id, { rememberCustomers: remember });
       }
       return { ok: true, note: bool(args, "web") === undefined ? undefined : "web handled by the caller" };
+    },
+  },
+  {
+    name: "create_business",
+    description:
+      "Create a business. A business is one agent: one set of material, one voice, and the channels "
+      + "it answers on. Ask the owner for the name first, and for anything else you put here — never "
+      + "invent an address, a phone number or a description. Everything except the name is optional "
+      + "and can be added later.",
+    writes: true,
+    summarise: (args) =>
+      `Create the business "${str(args, "name")}"${
+        str(args, "about").length > 0 ? `, described as: ${str(args, "about").slice(0, 90)}` : ""
+      }`,
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "What the owner calls it. 1 to 80 characters." },
+        about: { type: "string", description: "What it sells or does, in the owner's own words." },
+        address: { type: "string" },
+        phone: { type: "string" },
+        email: { type: "string" },
+        website: { type: "string" },
+        facebook: { type: "string" },
+        hours: { type: "string", description: "When it is open, as the owner said it." },
+      },
+      required: ["name"],
+    },
+    run: async (ctx, args) => {
+      const name = str(args, "name").trim();
+      if (name.length === 0 || name.length > 80) {
+        throw new Error("A business needs a name of 1 to 80 characters.");
+      }
+      const business = await createBusiness(ctx.env, {
+        name,
+        locale: ctx.env.BUSINESS_LOCALE?.trim() || "en",
+        model: ctx.env.DEFAULT_MODEL,
+      });
+      // The same two steps the console's own create does, in the same order.
+      // A second way to make a business is a second set of defaults to keep in
+      // step, so this calls what that calls.
+      const profile: Record<string, string> = {};
+      for (const key of ["about", "address", "phone", "email", "website", "facebook", "hours"]) {
+        const value = str(args, key).trim();
+        if (value.length > 0) profile[key] = value;
+      }
+      if (Object.keys(profile).length > 0) await saveProfile(ctx.env, business.id, profile);
+      await createChannel(ctx.env, { businessId: business.id, title: name });
+      return {
+        created: business.id,
+        name,
+        answers_on: "the website widget, from now. Telegram is the part that has to be added.",
+      };
+    },
+  },
+  {
+    name: "delete_business",
+    description:
+      "Delete a business and everything in it: its material, its conversations and its channels. "
+      + "Only when the owner has asked for exactly this.",
+    writes: true,
+    summarise: (args) => `Delete the business ${str(args, "business_id")} and everything in it`,
+    parameters: { type: "object", properties: BUSINESS_ARG, required: ["business_id"] },
+    run: async (ctx, args) => {
+      const businessId = await reachable(ctx, str(args, "business_id"));
+      await deleteBusiness(ctx.env, businessId);
+      return { deleted: businessId };
+    },
+  },
+  {
+    name: "connect_telegram",
+    description:
+      "Start connecting a Telegram bot to a business. The owner types the bot token into the console "
+      + "themselves — you never see it and must never ask them to type it to you. Use this when they "
+      + "want their agent to answer on Telegram.",
+    writes: false,
+    parameters: { type: "object", properties: BUSINESS_ARG, required: ["business_id"] },
+    // Handled by the loop, which turns it into a token field in the console.
+    // Running it here would mean this tool had the token, and the whole point
+    // is that nothing on the model's side ever does.
+    run: async (ctx, args) => {
+      await reachable(ctx, str(args, "business_id"));
+      return { asked: true };
     },
   },
 ];

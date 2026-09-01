@@ -17,11 +17,12 @@ import {
   addOperatorMessage,
   askApproval,
   chatTranscript,
+  recordPrompt,
   recordSteps,
   recordUsageFor,
   type Approval,
 } from "./store.js";
-import { findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
+import { ASK_OWNER, findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
 
 /** How many times the model may call tools before it has to answer. */
 const MAX_STEPS = 6;
@@ -82,6 +83,21 @@ const SYSTEM = [
   "",
   "Business ids are for the tools, not for the owner. Use names when you talk to them.",
   "",
+  "When the owner asks for something that takes several pieces — making an agent, setting one up,",
+  "connecting it to Telegram — do it with them rather than asking for everything at once. Call",
+  "ask_owner for the one thing you need next, with choices when the answer is one of a few, and",
+  "wait. Then the next thing. Do not ask for something you can look up, do not ask twice for the",
+  "same thing, and do not ask for anything that is optional unless they want to give it.",
+  "",
+  "Making an agent is: its name, then anything they want it to know about itself, then where it",
+  "answers. It answers on their website from the moment it exists; Telegram is the part that has",
+  "to be added, and connect_telegram opens a field for the token in their console — you never see",
+  "a token and must never ask them to type one to you.",
+  "",
+  "Once it exists, the same rules apply as to anything else you change: a price, a rule, a note or",
+  "a setting is a card they say yes to, and you say what you are proposing in your own words in",
+  "the same message.",
+  "",
   "Answer in the language the owner writes in. Keep it short: they are reading it on a screen",
   "beside their work, not in a report.",
 ].join("\n");
@@ -99,6 +115,18 @@ export type LoopEvent =
   | { readonly type: "step"; readonly tool: string; readonly ok: boolean }
   | { readonly type: "text"; readonly text: string };
 
+/**
+ * Something the turn ends on that is not an answer.
+ *
+ * A question, or a field only the owner may type into. Both stop the loop: the
+ * model has said what it needs, and nothing more can happen until a person
+ * supplies it. Carried out separately from the text so the console can draw it
+ * as the thing to do next rather than as another paragraph.
+ */
+export type Prompt =
+  | { readonly kind: "question"; readonly question: string; readonly choices: readonly string[] }
+  | { readonly kind: "telegram_token"; readonly businessId: string };
+
 export interface AssistantReply {
   readonly text: string;
   readonly approvals: readonly Approval[];
@@ -106,6 +134,8 @@ export interface AssistantReply {
   readonly steps: readonly { tool: string; ok: boolean }[];
   /** What the whole turn asked the model for, every step of it included. */
   readonly usage: { model: string; inputTokens: number; outputTokens: number };
+  /** What the turn is waiting on the owner for, when it is waiting on anything. */
+  readonly prompt: Prompt | null;
 }
 
 /**
@@ -147,6 +177,7 @@ export async function ask(
   const model = input.model.length > 0 ? input.model : (businesses[0]?.model ?? env.DEFAULT_MODEL);
 
   let text = "";
+  let prompt: Prompt | null = null;
   // Every step of the loop is a call, and the owner pays for all of them. One
   // number for the turn, not for the last leg of it.
   const spent = { model, inputTokens: 0, outputTokens: 0 };
@@ -214,6 +245,45 @@ export async function ask(
         continue;
       }
 
+      // A question ends the turn. There is nothing to run and nothing to
+      // approve: the model has said what it needs, and the owner's reply is the
+      // next turn's question.
+      if (tool.name === ASK_OWNER) {
+        prompt = {
+          kind: "question",
+          question: String(call.args.question ?? "").slice(0, 400),
+          choices: (Array.isArray(call.args.choices) ? call.args.choices : [])
+            .filter((choice): choice is string => typeof choice === "string")
+            .slice(0, 5)
+            .map((choice) => choice.slice(0, 60)),
+        };
+        took.push({ tool: tool.name, ok: true });
+        say({ type: "step", tool: tool.name, ok: true });
+        break;
+      }
+
+      // A bot token is the owner's to type, into a field, in their own browser.
+      // Routing it through the model would put a credential in a transcript
+      // that this deployment reads back to itself on every later turn.
+      if (tool.name === "connect_telegram") {
+        try {
+          await tool.run(ctx, call.args);
+          prompt = { kind: "telegram_token", businessId: String(call.args.business_id ?? "") };
+          took.push({ tool: tool.name, ok: true });
+          say({ type: "step", tool: tool.name, ok: true });
+          break;
+        } catch (error) {
+          steps.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: `Failed: ${error instanceof Error ? error.message : "unknown error"}`,
+          });
+          took.push({ tool: tool.name, ok: false });
+          say({ type: "step", tool: tool.name, ok: false });
+          continue;
+        }
+      }
+
       try {
         const result = await tool.run(ctx, call.args);
         steps.push({
@@ -233,15 +303,20 @@ export async function ask(
         say({ type: "step", tool: tool.name, ok: false });
       }
     }
+    if (prompt !== null) break;
   }
 
   if (text.length === 0) {
     // It ran out of steps without answering. Saying so is better than an empty
     // bubble, and better than inventing a summary of work it did not finish.
     text =
-      approvals.length > 0
-        ? "I have put the change below for you to look at."
-        : "I could not finish that. Ask me again, more narrowly.";
+      prompt?.kind === "question"
+        ? prompt.question
+        : approvals.length > 0
+          ? "I have put the change below for you to look at."
+          : prompt !== null
+            ? "I need one thing from you below."
+            : "I could not finish that. Ask me again, more narrowly.";
   }
 
   say({ type: "text", text });
@@ -255,5 +330,6 @@ export async function ask(
   // fatal if it fails: the answer is the thing the owner asked for.
   await recordSteps(env, answerId, took).catch(() => undefined);
   await recordUsageFor(env, answerId, spent).catch(() => undefined);
-  return { text, approvals, steps: took, usage: spent };
+  if (prompt !== null) await recordPrompt(env, answerId, { ...prompt }).catch(() => undefined);
+  return { text, approvals, steps: took, usage: spent, prompt };
 }

@@ -61,6 +61,8 @@ const state = {
   chats: null,
   chatId: null,
   chatModel: null,
+  /** The last model this browser saw chosen, so the name is right on first paint. */
+  lastModel: localStorage.getItem("muxel.model") ?? null,
   /** Pressed New chat and not yet said anything. */
   newChat: false,
   /** The turn in flight, so the stop square has something to stop. */
@@ -324,7 +326,7 @@ const NEEDS = {
   settings: 1,
   advanced: 1,
   inbox: 2,
-  assistant: 11,
+  assistant: 12,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -472,10 +474,20 @@ function openChat(chatId) {
   go("assistant");
 }
 
+/**
+ * The model this conversation is on, by the name a person would use.
+ *
+ * The list is remembered across views, so the picker and the head of a reply
+ * both have a real name before the assistant's own payload has arrived. When
+ * even the list is missing it falls back to the last part of the model's id,
+ * which is still the model — "Model" was a label for nothing.
+ */
 const modelLabel = () => {
-  const chosen = state.chatModel ?? state.assistant?.chat?.model ?? state.assistant?.defaultModel;
-  const found = (state.assistant?.models ?? []).find((m) => m.id === chosen);
-  return found?.label ?? "Model";
+  const chosen =
+    state.chatModel ?? state.assistant?.chat?.model ?? state.assistant?.defaultModel ?? state.lastModel;
+  if (!chosen) return "Model";
+  const known = state.assistant?.models ?? state.models ?? [];
+  return known.find((m) => m.id === chosen)?.label ?? chosen.split("/").pop();
 };
 
 /**
@@ -505,6 +517,7 @@ function openModelMenu() {
     models.map((m) => ({ key: m.id, label: m.label, note: m.note, icon: m.id === chosen ? "check" : null })),
     async (id) => {
       state.chatModel = id;
+      rememberModel(id);
       if ($("modelName")) $("modelName").textContent = modelLabel();
       if ($("composerModel")) $("composerModel").textContent = modelLabel();
       if (state.chatId) {
@@ -1025,6 +1038,8 @@ async function viewAssistant() {
   state.chatModel = state.newChat
     ? (data.defaultModel ?? null)
     : (data.chat?.model ?? data.defaultModel ?? null);
+  if (data.models?.length) state.models = data.models;
+  rememberModel(state.chatModel);
   if ($("chatList")) {
     $("chatList").innerHTML = chatRail();
     bindChatRail();
@@ -1247,7 +1262,7 @@ const OPENERS = [
  * model answered, with its working above it and its actions below.
  */
 function drawAssistant() {
-  const { messages = [], approvals = [], steps = {}, usage = {} } = state.assistant ?? {};
+  const { messages = [], approvals = [], steps = {}, usage = {}, prompts = {} } = state.assistant ?? {};
   const blank = messages.length === 0;
   const cardsFor = (messageId) => approvals.filter((a) => a.messageId === messageId);
 
@@ -1261,7 +1276,16 @@ function drawAssistant() {
                <p>I can read your businesses, your price lists, and everything your agents were asked.
                   I can propose changes too, and every one of those waits for your yes.</p>
              </div>`
-          : messages.map((m) => turnHtml(m, steps[m.id] ?? [], cardsFor(m.id), usage[m.id])).join("")
+          : messages
+              .map((m, i) =>
+                turnHtml(m, steps[m.id] ?? [], cardsFor(m.id), usage[m.id], {
+                  prompt: prompts[m.id],
+                  // Only the last turn is still waiting on anything. An older
+                  // question was answered by whatever was said after it.
+                  open: i === messages.length - 1,
+                }),
+              )
+              .join("")
       }</div>
 
       <form class="composer-wrap" id="asSay">
@@ -1297,7 +1321,7 @@ function drawAssistant() {
 }
 
 /** One turn: who said it, what they said, and what it led to. */
-function turnHtml(message, steps, cards, usage) {
+function turnHtml(message, steps, cards, usage, waiting = {}) {
   // Both sides are rendered, not just the model's. An owner who pastes a link
   // or a table has written the same markup, and showing them the asterisks
   // while formatting the reply would be an odd thing to explain.
@@ -1313,6 +1337,7 @@ function turnHtml(message, steps, cards, usage) {
       </div>
       <div class="ai-body">${md(message.content)}</div>
       ${cards.map(approvalCard).join("")}
+      ${waiting.open && waiting.prompt ? promptCard(waiting.prompt) : ""}
       <div class="ai-acts">
         <button class="t-act" data-copy="${h(message.id)}" title="Copy">${icon("copy", 14)}Copy</button>
         <button class="t-act" data-retry="1" title="Ask again">${icon("retry", 14)}Retry</button>
@@ -1378,6 +1403,10 @@ const STEP_WORDS = {
   save_price: "Proposed a price",
   remove_price: "Proposed removing a price",
   set_features: "Proposed a feature change",
+  ask_owner: "Asked you a question",
+  connect_telegram: "Opened the Telegram field",
+  create_business: "Proposed a new business",
+  delete_business: "Proposed deleting a business",
 };
 
 const stepLine = (step) =>
@@ -1405,6 +1434,38 @@ function bindTurnActions() {
   $("view").querySelectorAll("[data-approve]").forEach((b) => {
     b.onclick = () => answerApproval(b.dataset.approve, b.dataset.yes === "1");
   });
+  // Tapping an offered answer says it, which is what typing it would have done.
+  $("view").querySelectorAll("[data-answer]").forEach((b) => {
+    b.onclick = () => {
+      $("asText").value = b.dataset.answer;
+      sendToAssistant(new Event("submit"));
+    };
+  });
+  if ($("botTokSave")) $("botTokSave").onclick = connectTelegramFromChat;
+}
+
+/**
+ * The token goes from this page to the owner's own deployment.
+ *
+ * Not through the conversation, and so not into the transcript the deployment
+ * reads back to itself on every later turn. The assistant is told it worked or
+ * did not, and never what the token was.
+ */
+async function connectTelegramFromChat() {
+  const field = $("botTok");
+  const businessId = field.closest("[data-token]").dataset.token;
+  const value = field.value.trim();
+  if (!value) return;
+  $("botTokSave").disabled = true;
+  const { ok, data } = await api(`businesses/${encodeURIComponent(businessId)}/telegram`, {
+    method: "POST",
+    body: { token: value },
+  });
+  $("botTokSave").disabled = false;
+  field.value = "";
+  if (!ok) return toast("Telegram would not accept that token.");
+  $("asText").value = `Connected. The bot is @${data.telegram?.username ?? ""}.`;
+  sendToAssistant(new Event("submit"));
 }
 
 /** The box grows with what is typed, and Enter sends unless Shift is held. */
@@ -1421,6 +1482,32 @@ function growBox(box) {
     }
   };
   fit();
+}
+
+/**
+ * What the turn is waiting on the owner for.
+ *
+ * A question with the answers it offered, or the one field a token may be
+ * typed into. Drawn only under the last turn: an older question was answered
+ * by whatever came after it, and offering its buttons again would restart a
+ * conversation the owner has already moved past.
+ */
+function promptCard(prompt) {
+  if (prompt.kind === "telegram_token") {
+    return `<div class="prompt" data-token="${h(prompt.businessId)}">
+        <b>Your Telegram bot's token</b>
+        <p>From @BotFather. It goes from this page straight to your own deployment — it is not part of
+           the conversation and the model never sees it.</p>
+        <div class="prompt-row">
+          <input type="password" id="botTok" placeholder="123456:ABC-DEF…" autocomplete="off">
+          <button class="btn btn-primary btn-sm" id="botTokSave">Connect</button>
+        </div>
+      </div>`;
+  }
+  if (prompt.kind !== "question" || !prompt.choices?.length) return "";
+  return `<div class="prompt choices">${prompt.choices
+    .map((choice) => `<button class="opener" data-answer="${h(choice)}">${h(choice)}</button>`)
+    .join("")}</div>`;
 }
 
 /** One proposed change, and the two buttons that decide it. */
@@ -1520,6 +1607,7 @@ async function sendToAssistant(event) {
   state.assistant = data;
   state.chats = data.chats ?? [];
   state.chatId = data.chat?.id ?? state.chatId;
+  if (data.models?.length) state.models = data.models;
   state.newChat = false;
   if ($("chatList")) {
     $("chatList").innerHTML = chatRail();
@@ -1644,6 +1732,17 @@ async function typeOut(text) {
   }
   body.innerHTML = md(text);
   scrollThread();
+}
+
+/** Kept in this browser only, so the name is right before any call returns. */
+function rememberModel(id) {
+  if (!id) return;
+  state.lastModel = id;
+  try {
+    localStorage.setItem("muxel.model", id);
+  } catch {
+    // A browser refusing storage is not a reason to fail a chat.
+  }
 }
 
 function scrollThread() {

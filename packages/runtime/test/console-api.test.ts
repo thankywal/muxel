@@ -140,6 +140,7 @@ vi.mock("../src/assistant/store.js", () => ({
     { id: "om1", role: "assistant", content: "Two.", createdAt: "z" },
   ]),
   stepsFor: vi.fn(async () => ({ om1: [{ tool: "list_waiting", ok: true }] })),
+  promptsFor: vi.fn(async () => ({})),
   usageFor: vi.fn(async () => ({
     om1: { model: "m1", inputTokens: 1200, outputTokens: 180 },
   })),
