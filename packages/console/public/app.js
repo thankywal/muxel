@@ -358,7 +358,7 @@ function shell() {
   $("shell").innerHTML = `
    <div class="shell">
     <aside>
-      <div class="brand"><img src="/assets/logo.jpg" alt="">
+      <div class="brand"><img src="/assets/logo.png" alt="">
         <div><b>Muxel</b><small>CONSOLE</small></div></div>
 
       <button class="new-chat" id="newChat">${icon("plus", 15)}New chat</button>
@@ -1298,7 +1298,7 @@ function drawAssistant() {
       <div class="thread" id="asThread">${
         blank
           ? `<div class="greet">
-               <img src="/assets/logo.jpg" alt="">
+               <img src="/assets/logo.png" alt="">
                <h2>${h(GREETINGS[0])}</h2>
                <p>I can read your businesses, your price lists, and everything your agents were asked.
                   I can propose changes too, and every one of those waits for your yes.</p>
@@ -1369,7 +1369,7 @@ function turnHtml(message, steps, cards, usage, waiting = {}) {
   return `<div class="turn ai" data-msg="${h(message.id)}">
       ${steps.length > 0 ? `<div class="steps">${steps.map(stepLine).join("")}</div>` : ""}
       <div class="ai-head">
-        <img class="ai-av" src="/assets/logo.jpg" alt="">
+        <img class="ai-av" src="/assets/logo.png" alt="">
         <b>${h(usage?.label ?? modelLabel())}</b>
         <span class="when">${h(ago(message.createdAt))}</span>
       </div>
@@ -1612,7 +1612,7 @@ async function sendToAssistant(event) {
     `<div class="turn user"><div class="ubub">${md(text)}</div></div>
      <div class="turn ai" id="asThinking">
        <div class="steps"></div>
-       <div class="ai-head"><img class="ai-av" src="/assets/logo.jpg" alt="">
+       <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${h(modelLabel())}</b>
          <span class="work-label">Thinking</span></div>
        <div class="ai-body thinking"><span></span><span></span><span></span></div>
