@@ -101,6 +101,47 @@ async function configNotes(token: string, target: string, upstreamSha: string): 
   }
 }
 
+/**
+ * How many new files one press copies.
+ *
+ * Each is two requests, a read from upstream and a write here, and a Worker on
+ * the free plan is allowed fifty subrequests per invocation. Eighteen leaves
+ * room for the eight the update needs around them, with a margin, so a large
+ * update takes several presses instead of dying at the limit halfway through.
+ */
+const MAX_BLOBS_PER_RUN = 18;
+
+/** Blobs already written here, which no tree points at yet. */
+const COPIED_KEY = "system:update_copied";
+
+async function copiedAlready(env: Env): Promise<string[]> {
+  const raw = await env.STATE.get(COPIED_KEY);
+  if (raw === null) return [];
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return Array.isArray(value) ? value.filter((sha): sha is string => typeof sha === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Notes what has been copied so the next press does not copy it again.
+ *
+ * A blob with nothing pointing at it is not in the repository's tree, so
+ * looking would say it is missing. Forgotten once the commit lands, because
+ * from then on the tree is where it is found.
+ */
+async function rememberCopied(env: Env, shas: readonly string[]): Promise<void> {
+  if (shas.length === 0) return;
+  const merged = [...new Set([...(await copiedAlready(env)), ...shas])];
+  await env.STATE.put(COPIED_KEY, JSON.stringify(merged.slice(-2000)));
+}
+
+async function forgetCopied(env: Env): Promise<void> {
+  await env.STATE.delete(COPIED_KEY);
+}
+
 /** Where an operator's answer is kept when the build could not tell. */
 export const SOURCE_REPO_KEY = "system:source_repo";
 
@@ -164,8 +205,50 @@ export async function runSelfUpdate(env: Env): Promise<UpdateOutcome> {
       (entry) => entry.type === "blob" && belongsToDeployment(entry.path),
     );
 
-    // Blob shas are content addressed and both repositories live on the same
-    // host, so the objects are already there and only the tree has to be made.
+    // A blob sha is content addressed, so a file whose content has not changed
+    // is already an object this repository holds, from its own history. Only
+    // genuinely new content has to be copied across.
+    //
+    // The old code copied none of it, on the belief that two repositories on
+    // one host share their objects. Forks do; this is not a fork, because the
+    // deploy button imports rather than forks. So GitHub was handed a tree
+    // referring to blobs the repository had never seen, and answered 422.
+    const held = new Set(baseTree.tree.filter((e) => e.type === "blob").map((e) => e.sha));
+    for (const sha of await copiedAlready(env)) held.add(sha);
+    const missing = files.filter((entry) => !held.has(entry.sha));
+
+    // Every copy is two requests, and a Worker on the free plan gets fifty per
+    // invocation. So a large update is done across several presses rather than
+    // failing at the limit, and what has been copied is remembered, because a
+    // blob no tree points at yet is not in the repository's tree to be found.
+    const budget = Math.min(missing.length, MAX_BLOBS_PER_RUN);
+    if (budget > 0) {
+      const copied: string[] = [];
+      for (const entry of missing.slice(0, budget)) {
+        const blob = await gh<{ content: string; encoding: string }>(
+          token,
+          `/repos/${UPSTREAM_SLUG}/git/blobs/${entry.sha}`,
+        );
+        const made = await gh<{ sha: string }>(token, `/repos/${target}/git/blobs`, {
+          method: "POST",
+          body: JSON.stringify({ content: blob.content, encoding: blob.encoding }),
+        });
+        copied.push(made.sha);
+      }
+      await rememberCopied(env, copied);
+
+      const left = missing.length - budget;
+      if (left > 0) {
+        return {
+          ok: true,
+          changed: 0,
+          message:
+            `Copied ${budget} of ${missing.length} changed files. Press Update again to continue; `
+            + "nothing is pushed until all of them are across.",
+        };
+      }
+    }
+
     const created = await gh<{ sha: string }>(token, `/repos/${target}/git/trees`, {
       method: "POST",
       body: JSON.stringify({
@@ -186,6 +269,7 @@ export async function runSelfUpdate(env: Env): Promise<UpdateOutcome> {
       `/repos/${target}/git/commits/${mine.commit.sha}`,
     );
     if (currentCommit.tree.sha === created.sha) {
+      await forgetCopied(env);
       return { ok: true, changed: 0, message: "Already up to date. Nothing was pushed." };
     }
 
@@ -203,6 +287,8 @@ export async function runSelfUpdate(env: Env): Promise<UpdateOutcome> {
       body: JSON.stringify({ sha: commit.sha, force: false }),
     });
 
+    // The copies are in the tree now, so the note of them has done its job.
+    await forgetCopied(env);
     return {
       ok: true,
       changed: files.length,

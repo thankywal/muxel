@@ -60,3 +60,43 @@ describe("what goes into a GitHub API path", () => {
     expect(update).toContain("isRepoSlug(target)");
   });
 });
+
+
+describe("the blobs a tree points at", () => {
+  const update = readFileSync(new URL("../src/web/self-update.ts", import.meta.url), "utf8");
+
+  it("copies content the target repository does not already hold", () => {
+    // A blob sha is content addressed, so unchanged files are already objects
+    // this repository has from its own history. New content is not: the deploy
+    // button imports rather than forks, so there is no shared object store, and
+    // a tree naming blobs it has never seen is answered with 422.
+    expect(update).toContain("/git/blobs/${entry.sha}");
+    expect(update).toContain("`/repos/${target}/git/blobs`");
+  });
+
+  it("works out what is missing rather than copying everything", () => {
+    // Copying all of them would be two requests per file for a repository of
+    // hundreds, which no invocation has the budget for.
+    expect(update).toContain("const held = new Set(");
+    expect(update).toContain("files.filter((entry) => !held.has(entry.sha))");
+  });
+
+  it("stops short of the subrequest limit instead of dying at it", () => {
+    // Two requests per copy, fifty per invocation on the free plan.
+    expect(update).toContain("MAX_BLOBS_PER_RUN");
+    expect(update).toContain("Press Update again to continue");
+  });
+
+  it("remembers what it copied, since nothing points at it yet", () => {
+    // A blob with no tree referring to it is not in the tree to be found, so a
+    // second press would copy the same file again and again.
+    expect(update).toContain("rememberCopied");
+    expect(update).toContain("copiedAlready");
+    // And forgets once the commit lands, because from then on the tree has it.
+    expect((update.match(/forgetCopied\(env\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("no longer claims the objects are already there", () => {
+    expect(update).not.toContain("the objects are already there");
+  });
+});
