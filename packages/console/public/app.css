@@ -109,6 +109,10 @@ nav { flex: 1; overflow-y: auto; padding: 0 12px 12px; }
 .conn b { display: block; font-weight: 600; color: var(--ink-2); word-break: break-all; font-size: 10.5px; }
 .conn a { font-size: 10.5px; }
 
+.nav-item .badge { margin-left: auto; min-width: 19px; height: 19px; padding: 0 6px; border-radius: 999px;
+  background: var(--brand); color: #fff; font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; }
+
 /* ---- topbar ---- */
 main { min-width: 0; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: flex-start; gap: 16px; padding: 20px 28px 0; }
@@ -271,6 +275,25 @@ tbody tr.click:hover { background: var(--surface-2); }
                background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; }
 .tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 .tabs button .n { opacity: .7; margin-left: 5px; }
+
+/* ---- editors ---- */
+textarea { padding: 11px 13px; border: 1px solid var(--line); border-radius: 9px;
+           background: var(--surface); color: var(--ink); font: inherit; line-height: 1.6; }
+textarea:focus { outline: none; border-color: var(--blue); }
+pre { margin: 0; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line);
+      border-radius: 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+      overflow-x: auto; white-space: pre; color: var(--ink-2); }
+.skill { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--line-soft); }
+.skill:last-child { border-bottom: none; }
+.skill > div { flex: 1; min-width: 0; }
+.skill b { display: block; font-size: 13.5px; }
+.skill small { color: var(--muted); font-size: 12.5px; }
+input[type="color"] { border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+                      height: 38px; cursor: pointer; }
+
+.facts { display: flex; flex-direction: column; gap: 5px; max-height: 150px; overflow-y: auto; }
+.facts div { font-size: 13px; color: var(--ink-2); padding: 6px 10px; background: var(--surface-2);
+             border: 1px solid var(--line); border-radius: 8px; }
 
 /* ---- overlays ---- */
 .modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,.4); display: grid; place-items: center;

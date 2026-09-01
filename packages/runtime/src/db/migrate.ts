@@ -426,7 +426,7 @@ export const TARGET_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
  */
 let verifiedVersion = 0;
 
-async function currentVersion(env: Env): Promise<number> {
+export async function currentVersion(env: Env): Promise<number> {
   await env.DB.prepare(
     "CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)",
   ).run();

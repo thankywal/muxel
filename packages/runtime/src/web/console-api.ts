@@ -33,6 +33,17 @@ import {
   conversationForCustomer,
   createBot,
   createProduct,
+  deleteDocument,
+  forgetCustomer,
+  forgetFacts,
+  getOperatorLocale,
+  listFacts,
+  listHandovers,
+  previousPrompt,
+  setBusinessPrompt,
+  setCustomerNote,
+  setCustomerStage,
+  setOperatorLocale,
   deleteConversationById,
   deleteMessageRow,
   deleteProduct,
@@ -40,6 +51,7 @@ import {
   getMedia,
   getMessageRow,
   getConsoleBot,
+  putConsoleBot,
   updateBusinessModel,
   updateMessageContent,
   wireFor,
@@ -64,9 +76,14 @@ import { escapeHtml } from "../telegram/format.js";
 import { clearSecret, hasSecret, putSecret } from "./secrets-vault.js";
 import { runSelfUpdate } from "./self-update.js";
 import { versionStatus } from "../updates.js";
+import { ingestDocument } from "../rag/ingest.js";
+import { SKILLS } from "../telegram/skills.js";
+import { LOCALE_NAMES, LOCALES, isLocale } from "../telegram/i18n.js";
+import { missingConfiguration } from "../env.js";
+import { TARGET_VERSION, currentVersion } from "../db/migrate.js";
 import { UPSTREAM_REPO } from "../version.js";
 import type { Env } from "../env.js";
-import { MODEL_PRESETS } from "../telegram/admin.js";
+import { MAX_PROMPT_CHARS, MODEL_PRESETS } from "../telegram/admin.js";
 import { CORS, json, operatorFor } from "./console.js";
 
 /** A business as the console draws it: what it is, where it answers, what it cost. */
@@ -95,6 +112,7 @@ async function businessCard(env: Env, businessId: string) {
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
 
 /**
  * Which send method a browser file wants.
@@ -176,6 +194,41 @@ async function visibleIds(env: Env, userId: number): Promise<string[]> {
   return (await listBusinesses(env, userId)).map((business) => business.id);
 }
 
+/**
+ * Points the control panel at a different Telegram bot.
+ *
+ * The old one is detached first, so the two never answer the same operator, and
+ * the new one is told where to listen. Same shape as attaching a business bot,
+ * and deliberately a separate function: putting the console's own credential
+ * through the path that adds a customer facing bot is how the control panel
+ * ends up answering customers.
+ */
+async function moveConsoleBot(
+  env: Env,
+  token: string,
+): Promise<{ ok: true; username: string } | { ok: false; reason: string }> {
+  const incoming = new TelegramClient(token);
+  let me: { username?: string };
+  try {
+    me = await incoming.getMe();
+  } catch {
+    return { ok: false, reason: "bot_rejected" };
+  }
+  const origin = (await env.STATE.get(ORIGIN_KEY)) ?? "";
+  if (origin.length === 0) return { ok: false, reason: "no_origin" };
+
+  const webhookPath = generateId(24);
+  const webhookSecret = generateShortId() + generateShortId();
+  await putConsoleBot(env, {
+    username: me.username ?? "unknown",
+    webhookPath,
+    tokenCiphertext: await seal(await resolveMasterKey(env), token),
+    webhookSecretHash: await sha256Hex(webhookSecret),
+  });
+  await incoming.setWebhook({ url: `${origin}/tg/${webhookPath}`, secretToken: webhookSecret });
+  return { ok: true, username: me.username ?? "unknown" };
+}
+
 function notFound(): Response {
   return json({ error: "not_found" }, 404);
 }
@@ -254,6 +307,84 @@ export async function handleConsoleApi(
     });
   }
 
+  // GET /inbox — the conversations a person has been asked to look at.
+  //
+  // The queue is deployment wide in the database, so it is filtered to what
+  // this operator can see rather than shown whole. An admin added to one
+  // business seeing another's customers in their inbox would be a leak with a
+  // friendly face.
+  if (method === "GET" && segments[0] === "inbox") {
+    const visible = new Set(await visibleIds(env, userId));
+    const waiting = (await listHandovers(env, 60)).filter((h) => visible.has(h.businessId));
+    return json({ waiting });
+  }
+
+  // GET /diagnostics — what this deployment can and cannot do right now.
+  if (method === "GET" && segments[0] === "diagnostics") {
+    const businesses = await listBusinesses(env, userId);
+    const [schema, events, bots] = await Promise.all([
+      currentVersion(env),
+      listEvents(env, 12),
+      Promise.all(
+        businesses.map(async (business) => ({
+          business: business.name,
+          bots: (await listBots(env, business.id)).map((bot) => ({
+            username: bot.username,
+            role: bot.role,
+            enabled: bot.enabled,
+          })),
+        })),
+      ),
+    ]);
+    return json({
+      missing: missingConfiguration(env),
+      schema: { at: schema, target: TARGET_VERSION, current: schema >= TARGET_VERSION },
+      origin: (await env.STATE.get(ORIGIN_KEY)) ?? "",
+      consoleBot: (await getConsoleBot(env))?.username ?? null,
+      bots,
+      // Only the failures, because a diagnostics page listing successes is a
+      // log with a different name.
+      failures: events.filter((event: { kind: string }) => event.kind.includes("fail") || event.kind.includes("error")),
+    });
+  }
+
+  // GET/PUT /locale — the language this operator reads the console in.
+  if (segments[0] === "locale") {
+    if (method === "GET") {
+      return json({
+        locale: await getOperatorLocale(env, userId),
+        available: LOCALES.map((code) => ({ code, label: LOCALE_NAMES[code] })),
+      });
+    }
+    if (method === "PUT") {
+      const body = (await request.json().catch(() => ({}))) as { locale?: string };
+      if (!isLocale(String(body.locale))) return json({ error: "unknown_locale" }, 400);
+      await setOperatorLocale(env, userId, String(body.locale) as never);
+      return json({ ok: true, locale: body.locale });
+    }
+  }
+
+  // GET /skills — the ready made instruction sets, in every language they have.
+  if (method === "GET" && segments[0] === "skills") {
+    return json({
+      skills: SKILLS.map((skill) => ({
+        id: skill.id,
+        label: skill.label,
+        summary: skill.summary,
+        body: skill.body,
+      })),
+    });
+  }
+
+  // POST /console-bot — hand the control panel to a different bot.
+  if (method === "POST" && segments[0] === "console-bot") {
+    const body = (await request.json().catch(() => ({}))) as { token?: string };
+    const token = String(body.token ?? "").trim();
+    if (token.length === 0) return json({ error: "bad_token" }, 400);
+    const moved = await moveConsoleBot(env, token);
+    return moved.ok ? json(moved) : json({ error: moved.reason }, 400);
+  }
+
   // GET /agents — the same businesses, with what the table column needs.
   if (method === "GET" && segments[0] === "agents") {
     const businesses = await listBusinesses(env, userId);
@@ -323,8 +454,9 @@ export async function handleConsoleApi(
     return json({ channels: rows.flat() });
   }
 
-  // GET /customers?page=&size=
-  if (method === "GET" && segments[0] === "customers") {
+  // GET /customers?page=&size= — the list. The length guard matters: without it
+  // this swallows /customers/:id and hands back a page of everybody.
+  if (method === "GET" && segments[0] === "customers" && segments.length === 1) {
     const url = new URL(request.url);
     const size = Math.min(50, Math.max(5, Number(url.searchParams.get("size") ?? 20) || 20));
     const page = Math.max(1, Number(url.searchParams.get("page") ?? 1) || 1);
@@ -471,6 +603,117 @@ export async function handleConsoleApi(
       }
     }
 
+    // The instructions the assistant answers by.
+    if (segments[2] === "prompt") {
+      if (method === "GET" && segments.length === 3) {
+        const [business, previous] = await Promise.all([
+          getBusiness(env, businessId),
+          previousPrompt(env, businessId),
+        ]);
+        return json({ prompt: business.systemPrompt, previous });
+      }
+      if (method === "PUT" && segments.length === 3) {
+        const body = (await request.json().catch(() => ({}))) as { prompt?: string };
+        await setBusinessPrompt(env, businessId, String(body.prompt ?? "").slice(0, MAX_PROMPT_CHARS));
+        return json({ ok: true, prompt: (await getBusiness(env, businessId)).systemPrompt });
+      }
+      // Undo is a write of the previous version, not a delete of this one, so
+      // the thing being undone is itself undoable.
+      if (method === "POST" && segments[3] === "undo") {
+        const previous = await previousPrompt(env, businessId);
+        if (previous === null) return json({ error: "nothing_to_undo" }, 400);
+        await setBusinessPrompt(env, businessId, previous);
+        return json({ ok: true, prompt: previous });
+      }
+    }
+
+    // A ready made instruction set, written in as ordinary instructions so the
+    // operator can edit it afterwards like anything they typed themselves.
+    if (method === "POST" && segments[2] === "skill" && segments.length === 3) {
+      const body = (await request.json().catch(() => ({}))) as { id?: string };
+      const skill = SKILLS.find((candidate) => candidate.id === body.id);
+      if (skill === undefined) return json({ error: "unknown_skill" }, 400);
+      await setBusinessPrompt(env, businessId, skill.body);
+      return json({ ok: true, prompt: skill.body });
+    }
+
+    // What the assistant reads before it answers.
+    if (segments[2] === "documents") {
+      if (method === "GET" && segments.length === 3) {
+        return json({ documents: await listDocuments(env, businessId, 50) });
+      }
+      if (method === "POST" && segments.length === 3) {
+        const file = await request.arrayBuffer();
+        if (file.byteLength === 0) return json({ error: "no_file" }, 400);
+        const filename = (request.headers.get("x-filename") ?? "document").slice(0, 120);
+        try {
+          const result = await ingestDocument(env, {
+            businessId,
+            filename,
+            contentType: request.headers.get("content-type") ?? "application/octet-stream",
+            body: file,
+          });
+          // `searchable` is the honest part: the index accepts a write and can
+          // answer from it a little later, so a document is stored and
+          // unfindable at the same time for about half a minute. Saying "added"
+          // during that gap is what makes a working upload look broken.
+          return json({
+            ok: true,
+            searchable: result.searchable,
+            chunks: result.chunkCount,
+            documents: await listDocuments(env, businessId, 50),
+          });
+        } catch (error) {
+          return json(
+            { error: "ingest_failed", message: error instanceof Error ? error.message : "unknown" },
+            400,
+          );
+        }
+      }
+      const documentId = segments[3];
+      if (method === "DELETE" && documentId !== undefined) {
+        await deleteDocument(env, businessId, documentId);
+        return json({ documents: await listDocuments(env, businessId, 50) });
+      }
+    }
+
+    // The chat bubble on the operator's own site.
+    if (segments[2] === "web") {
+      const channel = await getChannelForBusiness(env, businessId);
+      if (channel === null) return notFound();
+      if (method === "GET") {
+        const origin = (await env.STATE.get(ORIGIN_KEY)) ?? "";
+        return json({
+          channel: {
+            title: channel.title,
+            greeting: channel.greeting,
+            accent: channel.accent,
+            allowedOrigins: channel.allowedOrigins,
+            dailyLimit: channel.dailyLimit,
+            enabled: channel.enabled,
+          },
+          // The key is public by nature: it sits in a script tag on a page
+          // anyone can read. What protects the channel is the origin allowlist
+          // and the daily cap, not this being secret.
+          snippet:
+            origin === ""
+              ? ""
+              : `<script src="${origin}/w/${channel.key}/widget.js"></script>`,
+        });
+      }
+      if (method === "PATCH") {
+        const body = (await request.json().catch(() => ({}))) as {
+          title?: string;
+          greeting?: string;
+          accent?: string;
+          allowedOrigins?: string;
+          enabled?: boolean;
+        };
+        await updateChannel(env, channel.id, body);
+        return json({ ok: true });
+      }
+    }
+
     // Attaching a Telegram bot to a business that already exists, which is how
     // a business created as a website later gains a second channel.
     if (method === "POST" && segments[2] === "telegram" && segments.length === 3) {
@@ -480,6 +723,45 @@ export async function handleConsoleApi(
       const attached = await attachTelegramBot(env, { businessId, token });
       if (!attached.ok) return json({ error: attached.reason }, 400);
       return json(await businessCard(env, businessId));
+    }
+  }
+
+  // /customers/:id — one person, what is remembered about them, and the
+  // buttons that change it.
+  if (segments[0] === "customers" && segments.length >= 2) {
+    const customerId = segments[1];
+    if (customerId === undefined) return notFound();
+    const customer = await getCustomer(env, customerId);
+    if (!(await canAccessBusiness(env, userId, customer.businessId))) {
+      return json({ error: "no_access" }, 403);
+    }
+
+    if (method === "GET" && segments.length === 2) {
+      const [facts, business] = await Promise.all([
+        listFacts(env, customerId),
+        getBusiness(env, customer.businessId),
+      ]);
+      return json({ customer, facts, businessName: business.name });
+    }
+    if (method === "PATCH" && segments.length === 2) {
+      const body = (await request.json().catch(() => ({}))) as { note?: string; stage?: string };
+      if (typeof body.note === "string") {
+        await setCustomerNote(env, customerId, body.note.slice(0, 500));
+      }
+      if (["new", "lead", "customer", "blocked"].includes(String(body.stage))) {
+        await setCustomerStage(env, customerId, String(body.stage) as never);
+      }
+      return json({ customer: await getCustomer(env, customerId) });
+    }
+    // Forgetting what was remembered, without forgetting the person. The two
+    // are different requests and are kept as different doors.
+    if (method === "DELETE" && segments[2] === "facts") {
+      await forgetFacts(env, customerId);
+      return json({ ok: true, facts: [] });
+    }
+    if (method === "DELETE" && segments.length === 2) {
+      await forgetCustomer(env, customerId);
+      return json({ ok: true });
     }
   }
 

@@ -43,6 +43,12 @@ const state = {
   advNav: null,
   advHome: null,
   advTrail: [],
+  /** How many conversations are waiting, for the badge beside Inbox. */
+  waiting: 0,
+  bizTab: "overview",
+  openCustomer: null,
+  skills: null,
+  locale: "en",
 };
 
 // ------------------------------------------------------------------ plumbing
@@ -120,6 +126,8 @@ const nameOf = (c) => c?.displayName || (c?.username ? `@${c.username}` : "") ||
 
 const ICONS = {
   overview: '<path d="M3 3h7v7H3zM14 3h7v4h-7zM14 10h7v11h-7zM3 13h7v8H3z"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z"/>',
+  diagnostics: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
   agents: '<rect x="3.5" y="8" width="17" height="11" rx="3.5"/><path d="M12 3.5v4.5M8.5 13h.01M15.5 13h.01"/><circle cx="12" cy="3" r="1.4"/><path d="M1.5 12v3M22.5 12v3"/>',
   businesses: '<path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5"/>',
   channels: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
@@ -222,6 +230,7 @@ function donut(parts, total) {
 const NAV = [
   { group: "MAIN", items: [
     { id: "overview", label: "Overview" },
+    { id: "inbox", label: "Inbox" },
     { id: "agents", label: "Agents" },
     { id: "businesses", label: "Businesses" },
     { id: "channels", label: "Channels" },
@@ -231,12 +240,15 @@ const NAV = [
   { group: "SETUP", items: [{ id: "settings", label: "Settings" }] },
   { group: "ADVANCED", items: [
     { id: "logs", label: "Logs" },
+    { id: "diagnostics", label: "Diagnostics" },
     { id: "advanced", label: "Advanced" },
   ] },
 ];
 
 const TITLES = {
   overview: ["Overview", "Monitor your agents, channels, and conversations."],
+  inbox: ["Inbox", "Conversations a customer is waiting on a person for."],
+  diagnostics: ["Diagnostics", "What this deployment can and cannot do right now."],
   agents: ["Agents", "Create and manage the assistants that answer for you."],
   businesses: ["Businesses", "What each agent answers about, and where it answers."],
   channels: ["Channels", "Every way a customer can reach this deployment."],
@@ -244,7 +256,10 @@ const TITLES = {
   messages: ["Messages", "Read any conversation, and step into it when you want to."],
   settings: ["Settings", "What this deployment is running, and how it updates itself."],
   logs: ["Logs", "What this deployment recorded, newest first."],
-  advanced: ["Advanced", "Every screen the Telegram console bot has."],
+  advanced: [
+    "Advanced",
+    "The Telegram console bot's own screens. Most of what is here now has a page of its own; this is what is left, and the fallback if one of them ever misses something.",
+  ],
 };
 
 function shell() {
@@ -261,7 +276,11 @@ function shell() {
           section.items
             .map(
               (item) => `<div class="nav-item ${item.id === state.view ? "on" : ""}" data-view="${item.id}">
-                ${icon(item.id)}${h(item.label)}</div>`,
+                ${icon(item.id)}${h(item.label)}${
+                  item.id === "inbox" && state.waiting > 0
+                    ? `<span class="badge">${state.waiting}</span>`
+                    : ""
+                }</div>`,
             )
             .join(""),
       ).join("")}</nav>
@@ -321,6 +340,11 @@ async function checkHealth() {
 }
 
 async function whoAmI() {
+  // Their language too, because the ready made instruction sets are labelled
+  // in every language and picking one needs to know which.
+  api("locale", { quiet: true }).then(({ ok, data }) => {
+    if (ok && data.locale) state.locale = data.locale;
+  });
   const { ok, data } = await api("me", { quiet: true });
   if (!ok || !data.label) return;
   const label = data.label || "Operator";
@@ -357,6 +381,8 @@ async function render() {
   if (!(await apiReady())) return viewOutdated();
   const draw = {
     overview: viewOverview,
+    inbox: viewInbox,
+    diagnostics: viewDiagnostics,
     agents: viewAgents,
     businesses: viewBusinesses,
     channels: viewChannels,
@@ -555,6 +581,151 @@ function wireGoto() {
   $("view").querySelectorAll("[data-goto]").forEach(
     (a) => (a.onclick = (e) => (e.preventDefault(), go(a.dataset.goto))),
   );
+}
+
+/**
+ * The conversations a person has been asked to look at.
+ *
+ * This is the page an operator opens first, so it is a page and not a screen
+ * behind two taps. The queue is the handover table, which the assistant writes
+ * to when it cannot answer from what it has, and which a takeover clears. It is
+ * filtered to the businesses this operator can see, on the deployment's side.
+ */
+async function viewInbox() {
+  const { data } = await api("inbox");
+  const waiting = data.waiting ?? [];
+  state.waiting = waiting.filter((item) => item.state === "waiting").length;
+  drawNavBadge();
+
+  $("view").innerHTML =
+    waiting.length === 0
+      ? `<div class="card empty"><h3>Nothing is waiting</h3>
+           <p>Your agents are answering everything they are asked. A conversation appears here when one
+              of them meets a question it cannot answer from your price list and documents, and when you
+              take a chat over yourself.</p></div>`
+      : `<div class="card"><table>
+          <thead><tr><th>Customer</th><th>Business</th><th>State</th><th>Why</th><th>Waiting since</th></tr></thead>
+          <tbody>${waiting
+            .map(
+              (item) => `<tr class="click" data-customer="${h(item.customerId ?? "")}">
+                <td><b>${h(item.customerName || "Someone")}</b></td>
+                <td>${h(item.businessName)}</td>
+                <td>${
+                  item.state === "human"
+                    ? '<span class="tag brand">You are in it</span>'
+                    : '<span class="tag amber">Waiting</span>'
+                }</td>
+                <td style="color:var(--muted)">${h(item.reason || "no reason recorded")}</td>
+                <td style="color:var(--muted)">${h(ago(item.openedAt))}</td></tr>`,
+            )
+            .join("")}</tbody></table>
+          <div class="tfoot"><span>${waiting.length} conversation${waiting.length === 1 ? "" : "s"} open</span>
+            <span>Taking one over clears it from here.</span></div></div>`;
+
+  $("view").querySelectorAll("tr[data-customer]").forEach((r) => {
+    if (r.dataset.customer === "") return;
+    r.onclick = () => go("messages", { customerId: r.dataset.customer });
+  });
+}
+
+/** Redraws just the count, so a badge cannot cost a whole shell rebuild. */
+function drawNavBadge() {
+  const item = document.querySelector('.nav-item[data-view="inbox"]');
+  if (!item) return;
+  item.querySelector(".badge")?.remove();
+  if (state.waiting > 0) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = String(state.waiting);
+    item.appendChild(badge);
+  }
+}
+
+/**
+ * What this deployment can and cannot do, as facts rather than a log.
+ *
+ * The bot's version of this screen prints the last ten events and lets the
+ * reader work it out. A page can say the thing directly: what configuration is
+ * missing, whether the schema is current, which bots exist, and only the events
+ * that were failures.
+ */
+async function viewDiagnostics() {
+  const { data } = await api("diagnostics");
+  const missing = data.missing ?? [];
+  const schema = data.schema ?? {};
+  const ok = missing.length === 0 && schema.current && (data.origin ?? "") !== "";
+
+  $("view").innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><h2>Configuration</h2>
+        ${ok ? '<span class="tag green">All set</span>' : '<span class="tag amber">Needs attention</span>'}</div>
+      <table><tbody>
+        <tr><td style="width:280px">Required settings</td>
+          <td>${
+            missing.length === 0
+              ? '<span class="tag green">Complete</span>'
+              : `<span class="tag amber">Missing</span> <span style="color:var(--muted)">${missing
+                  .map((key) => h(key))
+                  .join(", ")}</span>`
+          }</td></tr>
+        <tr><td>Database schema</td>
+          <td>${
+            schema.current
+              ? `<span class="tag green">Current</span> <span style="color:var(--muted)">version ${h(schema.at)}</span>`
+              : `<span class="tag amber">Behind</span> <span style="color:var(--muted)">at ${h(schema.at)}, this build wants ${h(schema.target)}. It applies itself on the next request.</span>`
+          }</td></tr>
+        <tr><td>Address it tells Telegram</td>
+          <td>${
+            (data.origin ?? "") === ""
+              ? '<span class="tag amber">Not recorded yet</span> <span style="color:var(--muted)">nothing has reached this deployment on its public address</span>'
+              : `<code>${h(data.origin)}</code>`
+          }</td></tr>
+        <tr><td>Console bot</td>
+          <td>${
+            data.consoleBot
+              ? `<code>@${h(data.consoleBot)}</code>`
+              : '<span class="tag amber">None</span>'
+          }</td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-head"><h2>Bots</h2></div>
+      ${
+        (data.bots ?? []).length === 0
+          ? '<p class="loading">No businesses yet, so there are no bots to check.</p>'
+          : `<table><thead><tr><th>Business</th><th>Bot</th><th>Role</th><th>State</th></tr></thead>
+             <tbody>${data.bots
+               .flatMap((row) =>
+                 row.bots.length === 0
+                   ? [`<tr><td>${h(row.business)}</td><td colspan="3" style="color:var(--muted)">website only</td></tr>`]
+                   : row.bots.map(
+                       (bot) => `<tr><td>${h(row.business)}</td><td><code>@${h(bot.username)}</code></td>
+                         <td style="color:var(--muted)">${bot.role === "reply" ? "answers customers" : "admin"}</td>
+                         <td>${bot.enabled ? '<span class="tag green">On</span>' : '<span class="tag grey"><span class="d"></span>Off</span>'}</td></tr>`,
+                     ),
+               )
+               .join("")}</tbody></table>`
+      }
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Recent failures</h2>
+        <a href="#" data-goto="logs">All events</a></div>
+      ${
+        (data.failures ?? []).length === 0
+          ? '<p class="loading">Nothing has failed recently.</p>'
+          : `<table><tbody>${data.failures
+              .map(
+                (event) => `<tr><td style="width:130px;color:var(--muted)">${h(ago(event.createdAt))}</td>
+                  <td style="width:180px">${h(event.businessName ?? "—")}</td>
+                  <td><span class="tag">${h(event.kind.replace(/_/g, " "))}</span></td>
+                  <td style="color:var(--muted)">${h(event.detail)}</td></tr>`,
+              )
+              .join("")}</tbody></table>`
+      }
+    </div>`;
+  wireGoto();
 }
 
 // -------------------------------------------------------------------- agents
@@ -963,7 +1134,7 @@ async function viewCustomers() {
           </div></div>`;
   wirePager();
   $("view").querySelectorAll("tr[data-customer]").forEach(
-    (r) => (r.onclick = () => go("messages", { customerId: r.dataset.customer })),
+    (r) => (r.onclick = () => customerDrawer(r.dataset.customer)),
   );
 }
 
@@ -990,6 +1161,108 @@ function wirePager() {
   $("view").querySelectorAll("[data-page]").forEach(
     (b) => (b.onclick = () => ((state.page = Number(b.dataset.page)), render())),
   );
+}
+
+/**
+ * One person: what is remembered about them, and the switches that change it.
+ *
+ * Forgetting what was remembered and forgetting the person are two different
+ * requests, so they are two buttons with two different sentences. Blocking is a
+ * stage rather than a delete, because a blocked customer who writes again
+ * should stay blocked rather than arrive as a stranger.
+ */
+async function customerDrawer(customerId) {
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = '<div class="modal" style="max-width:560px"><p class="loading">Loading…</p></div>';
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.onclick = (e) => e.target === bg && close();
+
+  const { ok, data } = await api(`customers/${customerId}`);
+  if (!ok) return close();
+  const c = data.customer;
+  const STAGES = [
+    ["new", "New"],
+    ["lead", "Interested"],
+    ["customer", "Customer"],
+    ["blocked", "Blocked"],
+  ];
+
+  bg.querySelector(".modal").innerHTML = `
+    <h3 style="margin:0 0 3px">${h(nameOf(c))}</h3>
+    <p class="sub">${c.username ? "@" + h(c.username) + " · " : ""}${h(data.businessName)} ·
+      ${c.messageCount} messages · last seen ${h(ago(c.lastSeen))}</p>
+
+    <div class="field"><label>Stage</label>
+      <select id="cStage">${STAGES.map(
+        ([id, label]) => `<option value="${id}" ${c.stage === id ? "selected" : ""}>${label}</option>`,
+      ).join("")}</select>
+      <small>Blocked means the agent stops answering them, and keeps not answering if they write again.</small>
+    </div>
+
+    <div class="field"><label>Your note</label>
+      <textarea id="cNote" rows="3" maxlength="500"
+        placeholder="Anything you want to remember about them.">${h(c.note ?? "")}</textarea>
+    </div>
+
+    <div class="field" style="margin-bottom:10px">
+      <label>What the agent remembers <span style="font-weight:400;color:var(--muted)">(${
+        (data.facts ?? []).length
+      })</span></label>
+      ${
+        (data.facts ?? []).length === 0
+          ? '<small>Nothing yet. It writes these down as it talks to them.</small>'
+          : `<div class="facts">${data.facts
+              .map((fact) => `<div>${h(fact.fact)}</div>`)
+              .join("")}</div>
+             <a href="#" id="forgetFacts" style="font-size:12.5px;color:var(--muted);margin-top:7px">Forget all of it</a>`
+      }
+    </div>
+
+    <div class="actions" style="justify-content:space-between">
+      <button class="btn btn-danger btn-sm" id="forgetAll">Forget this person</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" id="openChat">Open the chat</button>
+        <button class="btn btn-primary btn-sm" id="saveCust">Save</button>
+      </div>
+    </div>`;
+
+  bg.querySelector("#saveCust").onclick = async () => {
+    await api(`customers/${customerId}`, {
+      method: "PATCH",
+      body: { note: bg.querySelector("#cNote").value, stage: bg.querySelector("#cStage").value },
+    });
+    close();
+    toast("Saved.");
+    render();
+  };
+  bg.querySelector("#openChat").onclick = () => (close(), go("messages", { customerId }));
+  if (bg.querySelector("#forgetFacts"))
+    bg.querySelector("#forgetFacts").onclick = async (e) => {
+      e.preventDefault();
+      const choice = await ask(
+        "Forget what the agent remembers",
+        "The conversation stays. Only the notes it made about this person while talking to them go.",
+        [{ key: "yes", label: "Forget it", primary: true }],
+      );
+      if (!choice) return;
+      await api(`customers/${customerId}/facts`, { method: "DELETE" });
+      close();
+      customerDrawer(customerId);
+    };
+  bg.querySelector("#forgetAll").onclick = async () => {
+    const choice = await ask(
+      `Forget ${nameOf(c)}`,
+      "Their record and everything remembered about them goes. If they write again they arrive as a stranger.",
+      [{ key: "yes", label: "Forget them", primary: true }],
+    );
+    if (!choice) return;
+    await api(`customers/${customerId}`, { method: "DELETE" });
+    close();
+    toast("Forgotten.");
+    render();
+  };
 }
 
 // ---------------------------------------------------------------------- logs
@@ -1052,24 +1325,56 @@ async function viewBusinesses() {
 async function businessDetail(businessId) {
   state.businessId = businessId;
   $("view").innerHTML = '<p class="loading">Loading…</p>';
-  const [{ data: b }, models] = await Promise.all([api(`businesses/${businessId}`), loadModels()]);
+  const { ok, data: b } = await api(`businesses/${businessId}`);
+  if (!ok) return;
+
+  const TABS = [
+    ["overview", "Overview"],
+    ["instructions", "Instructions"],
+    ["prices", "Price list"],
+    ["documents", "Documents"],
+    ["website", "Website"],
+  ];
+
   $("view").innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
       <a href="#" id="back" style="color:var(--muted);font-size:13px">← All businesses</a>
       <b style="font-size:16px">${h(b.name)}</b>
       ${[b.telegram ? chanTag("telegram") : "", b.web ? chanTag("web") : ""].filter(Boolean).join(" ")}
       <span style="flex:1"></span>
       <button class="btn btn-ghost btn-sm" id="openChats">Conversations</button>
-      <button class="btn btn-danger btn-sm" id="delBiz">Delete</button>
     </div>
 
-    <div class="grid g4" style="margin-bottom:16px">
+    <div class="grid g4" style="margin-bottom:18px">
       ${statCard("messages", "var(--violet)", "var(--violet-soft)", "Messages today", num(b.usage.messages))}
       ${statCard("customers", "var(--green)", "var(--green-soft)", "Customers", num(b.customers))}
       ${statCard("businesses", "var(--brand-ink)", "var(--brand-soft)", "Price list", num((b.products ?? []).length))}
       ${statCard("logs", "var(--blue)", "var(--blue-soft)", "Documents", num((b.documents ?? []).length))}
     </div>
 
+    <div class="subnav">${TABS.map(
+      ([id, label]) => `<button data-btab="${id}" class="${state.bizTab === id ? "on" : ""}">${label}</button>`,
+    ).join("")}</div>
+    <div id="bizTab"><p class="loading">Loading…</p></div>`;
+
+  $("back").onclick = (e) => (e.preventDefault(), (state.businessId = null), render());
+  $("openChats").onclick = () => go("agents", { businessId, customerId: null });
+  $("view").querySelectorAll("[data-btab]").forEach(
+    (t) => (t.onclick = () => ((state.bizTab = t.dataset.btab), businessDetail(businessId))),
+  );
+
+  ({
+    overview: bizOverview,
+    instructions: bizInstructions,
+    prices: bizPrices,
+    documents: bizDocuments,
+    website: bizWebsite,
+  }[state.bizTab] ?? bizOverview)(businessId, b);
+}
+
+async function bizOverview(businessId, b) {
+  const models = await loadModels();
+  $("bizTab").innerHTML = `
     <div class="grid g2" style="margin-bottom:16px">
       <div class="card">
         <div class="card-head"><h2>Which model answers</h2></div>
@@ -1084,76 +1389,38 @@ async function businessDetail(businessId) {
         </div>
       </div>
       <div class="card">
-        <div class="card-head"><h2>Channels</h2></div>
+        <div class="card-head"><h2>Telegram</h2></div>
         <div class="pad">
           ${
             b.telegram
-              ? `<p style="margin:0 0 10px">Telegram · <b>@${h(b.telegram.username)}</b></p>`
-              : `<div class="field" style="margin-bottom:10px"><label>Attach a Telegram bot</label>
+              ? `<p style="margin:0">Answering as <b>@${h(b.telegram.username)}</b>.</p>
+                 <p style="margin:8px 0 0;color:var(--muted);font-size:13px">To point a different bot at this
+                   business, remove this one from BotFather first.</p>`
+              : `<div class="field" style="margin:0"><label>Attach a Telegram bot</label>
                    <div style="display:flex;gap:8px">
-                     <input id="botToken" placeholder="123456:ABC-DEF…" autocomplete="off" style="flex:1">
+                     <input id="botToken" type="password" placeholder="123456:ABC-DEF…" autocomplete="off" style="flex:1">
                      <button class="btn btn-primary btn-sm" id="attachBot">Attach</button></div>
-                   <small>Create it with @BotFather. It is sealed with your deployment's own key
-                     and stored in your own Cloudflare account.</small></div>`
-          }
-          ${
-            b.web
-              ? `<label style="display:flex;gap:8px;align-items:center;font-size:13.5px">
-                   <input type="checkbox" id="webOn" ${b.web.enabled ? "checked" : ""}> Website widget is on</label>`
-              : ""
+                   <small>Create it with @BotFather. It is sealed with your deployment's own key and stored
+                     in your own Cloudflare account, never sent anywhere else.</small></div>`
           }
         </div>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-head"><h2>Price list</h2>
-        <button class="btn btn-ghost btn-sm" id="addProduct">Add item</button></div>
-      ${
-        (b.products ?? []).length === 0
-          ? '<p class="loading">Nothing here yet, so the agent will say it does not know a price rather than invent one.</p>'
-          : `<table><thead><tr><th>Item</th><th>Price</th><th>Description</th><th></th></tr></thead>
-             <tbody>${b.products
-               .map(
-                 (p) => `<tr><td><b>${h(p.name)}</b></td><td>${h(p.price)}</td>
-                   <td style="color:var(--muted)">${h(p.description)}</td>
-                   <td style="text-align:right"><a href="#" data-prod="${h(p.id)}"
-                     style="color:var(--muted);font-size:12.5px">Remove</a></td></tr>`,
-               )
-               .join("")}</tbody></table>`
-      }
-    </div>
-
-    <div class="card">
-      <div class="card-head"><h2>Documents</h2>
-        <span style="font-size:12.5px;color:var(--muted)">Upload from the console bot, under Advanced</span></div>
-      ${
-        (b.documents ?? []).length === 0
-          ? '<p class="loading">No documents yet.</p>'
-          : `<table><thead><tr><th>File</th><th>Status</th><th>Pieces</th></tr></thead><tbody>${b.documents
-              .map(
-                (d) => `<tr><td>${h(d.filename)}</td>
-                  <td><span class="tag ${d.status === "ready" ? "green" : ""}">${h(d.status)}</span>${
-                    d.error ? ` <span style="color:var(--muted)">${h(d.error)}</span>` : ""
-                  }</td><td>${d.chunkCount}</td></tr>`,
-              )
-              .join("")}</tbody></table>`
-      }
+    <div class="card" style="border-color:var(--line)">
+      <div class="card-head"><h2>Delete this business</h2></div>
+      <div class="pad" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <p style="margin:0;color:var(--muted);font-size:13.5px;flex:1;min-width:280px">Its conversations, price
+          list and documents go with it, and any Telegram bot pointed at it stops answering. This cannot be undone.</p>
+        <button class="btn btn-danger btn-sm" id="delBiz">Delete ${h(b.name)}</button>
+      </div>
     </div>`;
 
-  $("back").onclick = (e) => (e.preventDefault(), (state.businessId = null), render());
-  $("openChats").onclick = () => go("agents", { businessId, customerId: null });
   $("model").onchange = async (e) => {
     await api(`businesses/${businessId}`, { method: "PATCH", body: { model: e.target.value } });
     state.overview = null;
     toast("Model changed.");
   };
-  if ($("webOn"))
-    $("webOn").onchange = async (e) => {
-      await api(`businesses/${businessId}`, { method: "PATCH", body: { webEnabled: e.target.checked } });
-      state.overview = null;
-      toast(e.target.checked ? "Website widget on." : "Website widget off.");
-    };
   if ($("attachBot"))
     $("attachBot").onclick = async () => {
       const value = $("botToken").value.trim();
@@ -1167,15 +1434,6 @@ async function businessDetail(businessId) {
         businessDetail(businessId);
       }
     };
-  $("addProduct").onclick = () => addProductDialog(businessId);
-  $("view").querySelectorAll("[data-prod]").forEach(
-    (a) =>
-      (a.onclick = async (e) => {
-        e.preventDefault();
-        await api(`businesses/${businessId}/products/${a.dataset.prod}`, { method: "DELETE" });
-        businessDetail(businessId);
-      }),
-  );
   $("delBiz").onclick = async () => {
     const choice = await ask(
       `Delete ${b.name}`,
@@ -1189,6 +1447,307 @@ async function businessDetail(businessId) {
     go("businesses");
   };
 }
+
+/**
+ * The instructions the assistant answers by.
+ *
+ * A textarea, because that is what this is: the operator's own words, up to the
+ * same ceiling the Telegram console states. Undo writes the previous version
+ * back rather than deleting this one, so the undo is itself undoable.
+ */
+async function bizInstructions(businessId) {
+  const { data } = await api(`businesses/${businessId}/prompt`);
+  const skills = state.skills ?? (state.skills = (await api("skills")).data.skills ?? []);
+  const locale = state.locale ?? "en";
+
+  $("bizTab").innerHTML = `
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-head"><h2>Instructions</h2>
+          <span style="font-size:12.5px;color:var(--muted)"><span id="promptCount">${
+            (data.prompt ?? "").length
+          }</span> / 8000</span></div>
+        <div class="pad">
+          <p style="color:var(--muted);font-size:13px;margin:0 0 12px">How this business wants to be represented:
+            its tone, what it will and will not promise, anything the price list and documents do not say.</p>
+          <textarea id="prompt" rows="16" style="width:100%;resize:vertical"
+            placeholder="Answer in a warm, short style. Never promise a delivery date. If someone asks for a discount, tell them to ask the owner."
+          >${h(data.prompt ?? "")}</textarea>
+          <div style="display:flex;gap:8px;margin-top:12px;align-items:center">
+            <button class="btn btn-primary btn-sm" id="savePrompt">Save</button>
+            <button class="btn btn-ghost btn-sm" id="undoPrompt" ${data.previous ? "" : "disabled"}>Undo last change</button>
+            <span style="flex:1"></span>
+            <span id="promptSaved" style="font-size:12.5px;color:var(--green)"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Start from a ready made one</h2></div>
+        <div class="pad">
+          <p style="color:var(--muted);font-size:13px;margin:0 0 13px">Each of these writes a full set of
+            instructions you can then edit. Your current ones go into the undo history first.</p>
+          ${skills
+            .map(
+              (skill) => `<div class="skill" data-skill="${h(skill.id)}">
+                <div><b>${h(skill.label[locale] ?? skill.label.en)}</b>
+                  <small>${h(skill.summary[locale] ?? skill.summary.en)}</small></div>
+                <button class="btn btn-ghost btn-sm">Use</button></div>`,
+            )
+            .join("")}
+        </div>
+      </div>
+    </div>`;
+
+  const box = $("prompt");
+  box.oninput = () => ($("promptCount").textContent = box.value.length);
+  $("savePrompt").onclick = async () => {
+    $("savePrompt").disabled = true;
+    const { ok } = await api(`businesses/${businessId}/prompt`, {
+      method: "PUT",
+      body: { prompt: box.value },
+    });
+    $("savePrompt").disabled = false;
+    if (!ok) return;
+    $("promptSaved").textContent = "Saved";
+    setTimeout(() => ($("promptSaved").textContent = ""), 2500);
+  };
+  $("undoPrompt").onclick = async () => {
+    const { ok } = await api(`businesses/${businessId}/prompt/undo`, { method: "POST" });
+    if (ok) bizInstructions(businessId);
+  };
+  $("bizTab").querySelectorAll("[data-skill]").forEach(
+    (el) =>
+      (el.onclick = async () => {
+        const choice = await ask(
+          "Use this set of instructions",
+          "It replaces what is there now. The current instructions go into the undo history, so this is reversible.",
+          [{ key: "yes", label: "Use it", primary: true }],
+        );
+        if (!choice) return;
+        const { ok } = await api(`businesses/${businessId}/skill`, {
+          method: "POST",
+          body: { id: el.dataset.skill },
+        });
+        if (ok) {
+          toast("Instructions replaced.");
+          bizInstructions(businessId);
+        }
+      }),
+  );
+}
+
+async function bizPrices(businessId, b) {
+  $("bizTab").innerHTML = `
+    <div class="card">
+      <div class="card-head"><h2>Price list</h2>
+        <button class="btn btn-primary btn-sm" id="addProduct">Add item</button></div>
+      ${
+        (b.products ?? []).length === 0
+          ? `<div class="empty"><h3>Nothing here yet</h3>
+               <p>The agent quotes from this list and nowhere else. With it empty it will say it does not
+                  know a price rather than invent one, which is the right answer but a slow way to sell.</p>
+               <button class="btn btn-primary" id="addProduct2">Add your first item</button></div>`
+          : `<table><thead><tr><th>Item</th><th>Price</th><th>Description</th><th></th></tr></thead>
+             <tbody>${b.products
+               .map(
+                 (p) => `<tr><td><b>${h(p.name)}</b></td><td>${h(p.price)}</td>
+                   <td style="color:var(--muted)">${h(p.description)}</td>
+                   <td style="text-align:right"><a href="#" data-prod="${h(p.id)}"
+                     style="color:var(--muted);font-size:12.5px">Remove</a></td></tr>`,
+               )
+               .join("")}</tbody></table>
+             <div class="tfoot"><span>${b.products.length} item${b.products.length === 1 ? "" : "s"}</span>
+               <span>Uploading a price list under Documents adds to this too.</span></div>`
+      }
+    </div>`;
+  for (const id of ["addProduct", "addProduct2"]) if ($(id)) $(id).onclick = () => addProductDialog(businessId);
+  $("bizTab").querySelectorAll("[data-prod]").forEach(
+    (a) =>
+      (a.onclick = async (e) => {
+        e.preventDefault();
+        await api(`businesses/${businessId}/products/${a.dataset.prod}`, { method: "DELETE" });
+        businessDetail(businessId);
+      }),
+  );
+}
+
+/**
+ * What the assistant reads before it answers.
+ *
+ * The upload reports "indexed" separately from "stored", because the index
+ * accepts a write and can answer from it a little later. During that half
+ * minute a document exists and is unfindable, which is exactly when an operator
+ * tests it, so the page says which of the two has happened.
+ */
+async function bizDocuments(businessId, b) {
+  $("bizTab").innerHTML = `
+    <div class="card">
+      <div class="card-head"><h2>Documents</h2>
+        <button class="btn btn-primary btn-sm" id="pickDoc">Upload</button>
+        <input type="file" id="docFile" hidden accept=".pdf,.txt,.md,.csv,.json,.docx">
+      </div>
+      <div id="docState" hidden class="pad" style="padding-bottom:0"></div>
+      ${
+        (b.documents ?? []).length === 0
+          ? `<div class="empty"><h3>No documents yet</h3>
+               <p>A price list, a policy, a menu, an FAQ. The agent answers from these and says it does not
+                  know when they do not cover the question, rather than guessing.</p></div>`
+          : `<table><thead><tr><th>File</th><th>Status</th><th>Pieces</th><th>Added</th><th></th></tr></thead>
+             <tbody>${b.documents
+               .map(
+                 (d) => `<tr><td><b>${h(d.filename)}</b>
+                     <div style="color:var(--muted);font-size:12px">${h(d.contentType)}</div></td>
+                   <td>${
+                     d.status === "ready"
+                       ? '<span class="tag green">Ready</span>'
+                       : d.error
+                         ? `<span class="tag amber">Failed</span> <span style="color:var(--muted)">${h(d.error)}</span>`
+                         : `<span class="tag">${h(d.status)}</span>`
+                   }</td>
+                   <td>${num(d.chunkCount)}</td>
+                   <td style="color:var(--muted)">${h(ago(d.createdAt))}</td>
+                   <td style="text-align:right"><a href="#" data-doc="${h(d.id)}"
+                     style="color:var(--muted);font-size:12.5px">Remove</a></td></tr>`,
+               )
+               .join("")}</tbody></table>`
+      }
+    </div>`;
+
+  $("pickDoc").onclick = () => $("docFile").click();
+  $("docFile").onchange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = "";
+    const box = $("docState");
+    box.hidden = false;
+    box.innerHTML = `<p class="loading" style="padding:0">Reading ${h(file.name)} and indexing it…</p>`;
+    const { ok, data } = await api(`businesses/${businessId}/documents`, {
+      method: "POST",
+      raw: true,
+      body: file,
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+        "x-filename": file.name.replace(/[^\x20-\x7e]/g, "_"),
+      },
+    });
+    if (!ok) {
+      box.innerHTML = `<p style="margin:0;color:var(--red)">${h(data.message || "That file could not be read.")}</p>`;
+      return;
+    }
+    toast(
+      data.searchable
+        ? `Added. ${data.chunks} pieces, and the agent can already find them.`
+        : `Stored in ${data.chunks} pieces. The index catches up in about half a minute.`,
+    );
+    businessDetail(businessId);
+  };
+  $("bizTab").querySelectorAll("[data-doc]").forEach(
+    (a) =>
+      (a.onclick = async (e) => {
+        e.preventDefault();
+        const choice = await ask("Remove this document", "The agent stops answering from it immediately.", [
+          { key: "yes", label: "Remove", primary: true },
+        ]);
+        if (!choice) return;
+        await api(`businesses/${businessId}/documents/${a.dataset.doc}`, { method: "DELETE" });
+        businessDetail(businessId);
+      }),
+  );
+}
+
+async function bizWebsite(businessId) {
+  const { ok, data } = await api(`businesses/${businessId}/web`);
+  if (!ok) {
+    $("bizTab").innerHTML =
+      '<div class="card empty"><h3>No website channel</h3><p>This business was created without one.</p></div>';
+    return;
+  }
+  const c = data.channel;
+  $("bizTab").innerHTML = `
+    <div class="grid g2">
+      <div class="card">
+        <div class="card-head"><h2>The widget</h2>
+          <label style="display:flex;gap:7px;align-items:center;font-size:13px;font-weight:600">
+            <input type="checkbox" id="webOn" ${c.enabled ? "checked" : ""}> On</label></div>
+        <div class="pad">
+          <div class="field"><label>Title</label><input id="wTitle" value="${h(c.title)}" maxlength="60"></div>
+          <div class="field"><label>First thing it says</label>
+            <input id="wGreeting" value="${h(c.greeting)}" maxlength="300"
+              placeholder="Hello. Ask me anything about our prices or opening hours."></div>
+          <div class="field"><label>Colour</label>
+            <div style="display:flex;gap:9px;align-items:center">
+              <input type="color" id="wAccent" value="${h(c.accent)}" style="width:46px;padding:3px">
+              <input id="wAccentText" value="${h(c.accent)}" style="flex:1">
+            </div></div>
+          <div class="field" style="margin-bottom:0"><label>Sites allowed to show it</label>
+            <input id="wOrigins" value="${h(c.allowedOrigins)}" placeholder="https://yourshop.com, https://www.yourshop.com">
+            <small>Comma separated. Leave it empty and any site can embed it, which is fine while you are
+              testing and not what you want afterwards. The daily cap is ${num(c.dailyLimit)} messages either way.</small></div>
+          <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
+            <button class="btn btn-primary btn-sm" id="saveWeb">Save</button>
+            <span id="webSaved" style="font-size:12.5px;color:var(--green)"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Put it on your site</h2></div>
+        <div class="pad">
+          <p style="color:var(--muted);font-size:13px;margin:0 0 12px">One line, before the closing
+            <code>&lt;/body&gt;</code> tag of every page you want it on.</p>
+          ${
+            data.snippet === ""
+              ? `<p style="margin:0;color:var(--muted)">This deployment has not recorded its own public address
+                   yet, so the line cannot be written. It records it the first time anything reaches it there.</p>`
+              : `<pre id="snippet">${h(data.snippet)}</pre>
+                 <button class="btn btn-ghost btn-sm" id="copySnippet" style="margin-top:11px">Copy</button>`
+          }
+          <p style="color:var(--muted);font-size:12.5px;margin:14px 0 0">The key in that line is public by
+            nature: it sits in a script tag on a page anyone can read. What protects the channel is the list
+            of allowed sites and the daily cap, not the key being secret.</p>
+        </div>
+      </div>
+    </div>`;
+
+  $("webOn").onchange = async (e) => {
+    await api(`businesses/${businessId}/web`, { method: "PATCH", body: { enabled: e.target.checked } });
+    state.overview = null;
+    toast(e.target.checked ? "Widget on." : "Widget off.");
+  };
+  $("wAccent").oninput = (e) => ($("wAccentText").value = e.target.value);
+  $("wAccentText").oninput = (e) => {
+    if (/^#[0-9a-f]{6}$/i.test(e.target.value)) $("wAccent").value = e.target.value;
+  };
+  $("saveWeb").onclick = async () => {
+    $("saveWeb").disabled = true;
+    const { ok: saved } = await api(`businesses/${businessId}/web`, {
+      method: "PATCH",
+      body: {
+        title: $("wTitle").value,
+        greeting: $("wGreeting").value,
+        accent: $("wAccentText").value,
+        allowedOrigins: $("wOrigins").value,
+      },
+    });
+    $("saveWeb").disabled = false;
+    if (!saved) return;
+    $("webSaved").textContent = "Saved";
+    setTimeout(() => ($("webSaved").textContent = ""), 2500);
+  };
+  if ($("copySnippet"))
+    $("copySnippet").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(data.snippet);
+        toast("Copied.");
+      } catch {
+        // A browser that refuses the clipboard is not a failure worth a red
+        // message: the line is on screen and can be selected.
+        toast("Select the line and copy it.");
+      }
+    };
+}
+
 
 async function loadModels() {
   if (state.models.length > 0) return state.models;
@@ -1229,6 +1788,16 @@ async function viewSettings() {
         </div>
       </div>
       <div class="card" style="max-width:640px;margin-top:16px">
+        <div class="card-head"><h2>Language</h2></div>
+        <div class="pad">
+          <p style="color:var(--muted);font-size:13px;margin:0 0 12px">The language you read the console in.
+            It does not change the language your agents answer customers in; they follow whoever wrote to them.</p>
+          <div class="field" style="max-width:320px;margin:0">
+            <select id="uiLocale"></select>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="max-width:640px;margin-top:16px">
         <div class="card-head"><h2>Usage today</h2></div>
         <div class="pad" style="display:flex;gap:34px">
           <div><div style="color:var(--muted);font-size:12.5px">Messages</div>
@@ -1239,6 +1808,22 @@ async function viewSettings() {
             <div style="font-size:22px;font-weight:700">${num(data.usage?.outputTokens)}</div></div>
         </div>
       </div>`;
+    const locales = await api("locale");
+    if (locales.ok && $("uiLocale")) {
+      state.locale = locales.data.locale ?? "en";
+      $("uiLocale").innerHTML = (locales.data.available ?? [])
+        .map(
+          (l) => `<option value="${h(l.code)}" ${l.code === state.locale ? "selected" : ""}>${h(l.label)}</option>`,
+        )
+        .join("");
+      $("uiLocale").onchange = async (e) => {
+        const { ok: saved } = await api("locale", { method: "PUT", body: { locale: e.target.value } });
+        if (saved) {
+          state.locale = e.target.value;
+          toast("Language changed.");
+        }
+      };
+    }
     return;
   }
 
@@ -1310,7 +1895,42 @@ async function viewSettings() {
             repository only. It is checked against GitHub before it is stored.</small>
         </div>
       </div>
+    </div>
+
+    <div class="card" style="max-width:700px;margin-top:16px">
+      <div class="card-head"><h2>Console bot</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">The Telegram bot that is your private
+          control panel. It is never the bot your customers write to. Replacing it here detaches the old one
+          and points the new one at this deployment.</p>
+        <div class="field" style="margin:0">
+          <label>Move the console to a different bot</label>
+          <div style="display:flex;gap:8px">
+            <input id="consoleBotToken" type="password" placeholder="123456:ABC-DEF…" autocomplete="off" style="flex:1">
+            <button class="btn btn-ghost btn-sm" id="saveConsoleBot">Move</button></div>
+          <small>From @BotFather, and not the token of a bot that answers customers. Sealed with your
+            deployment's own key before it is stored.</small>
+        </div>
+      </div>
     </div>`;
+  $("saveConsoleBot").onclick = async () => {
+    const value = $("consoleBotToken").value.trim();
+    if (!value) return;
+    const choice = await ask(
+      "Move the console to a different bot",
+      "The bot you are using now stops being the console immediately, and the new one takes over. Make sure you can already message the new one.",
+      [{ key: "yes", label: "Move it", primary: true }],
+    );
+    if (!choice) return;
+    $("saveConsoleBot").disabled = true;
+    const { ok: moved, data: out } = await api("console-bot", { method: "POST", body: { token: value } });
+    $("saveConsoleBot").disabled = false;
+    if (moved) {
+      $("consoleBotToken").value = "";
+      toast(`The console is now @${out.username}.`);
+    }
+  };
+
   $("saveTok").onclick = async () => {
     const value = $("tok").value.trim();
     if (!value) return;
@@ -1466,9 +2086,10 @@ function drawScreen(data) {
       ${body.trim() === "" ? "" : `<div class="screen-body">${body}</div>`}
       ${
         atHome
-          ? `<p style="margin:14px 0 0;color:var(--muted);font-size:13px">Every screen this bot has is
-              listed beside this one. They cover the parts the rest of the console has no page for yet:
-              documents, the prompt, skills and a customer's remembered facts.</p>`
+          ? `<p style="margin:14px 0 0;color:var(--muted);font-size:13px">Every screen this bot has is listed
+              beside this one, exactly as it sends them. Nearly all of it now has a page of its own in the
+              console; this stays because a screen the bot grows tomorrow appears here the same day, and
+              because it is the same control panel you can reach from your phone.</p>`
           : ""
       }
       ${

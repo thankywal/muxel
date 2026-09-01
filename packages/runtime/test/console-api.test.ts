@@ -22,7 +22,19 @@ vi.mock("../src/db/queries.js", () => ({
   deleteBusiness: vi.fn(async () => undefined),
   deleteConversationById: vi.fn(async () => undefined),
   deleteMessageRow: vi.fn(async () => undefined),
+  deleteDocument: vi.fn(async () => []),
   deleteProduct: vi.fn(async () => undefined),
+  forgetCustomer: vi.fn(async () => undefined),
+  forgetFacts: vi.fn(async () => undefined),
+  getOperatorLocale: vi.fn(async () => "en"),
+  listFacts: vi.fn(async () => []),
+  listHandovers: vi.fn(async () => []),
+  previousPrompt: vi.fn(async () => null),
+  putConsoleBot: vi.fn(async () => undefined),
+  setBusinessPrompt: vi.fn(async () => undefined),
+  setCustomerNote: vi.fn(async () => undefined),
+  setCustomerStage: vi.fn(async () => undefined),
+  setOperatorLocale: vi.fn(async () => undefined),
   endHandover: vi.fn(async () => undefined),
   findOperator: vi.fn(async () => ({ telegramUserId: 1, role: "owner" as const })),
   getBusiness: vi.fn(async () => business),
@@ -72,6 +84,10 @@ vi.mock("../src/db/insights.js", () => ({
   ]),
 }));
 vi.mock("../src/web/self-update.js", () => ({ runSelfUpdate: vi.fn(async () => ({ ok: true, message: "done" })) }));
+vi.mock("../src/db/migrate.js", () => ({ currentVersion: vi.fn(async () => 10), TARGET_VERSION: 10 }));
+vi.mock("../src/rag/ingest.js", () => ({
+  ingestDocument: vi.fn(async () => ({ documentId: "d1", chunkCount: 3, searchable: true })),
+}));
 vi.mock("../src/updates.js", () => ({ versionStatus: vi.fn(async () => ({ running: "1", latest: "1", behind: false })) }));
 
 let operator: string | null = "u1";
@@ -115,6 +131,23 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["GET", "/conversations"],
   ["GET", "/events?limit=100"],
   ["GET", "/search?q=cake"],
+  ["GET", "/inbox"],
+  ["GET", "/diagnostics"],
+  ["GET", "/locale"],
+  ["PUT", "/locale", { locale: "en" }],
+  ["GET", "/skills"],
+  ["GET", "/businesses/b1/prompt"],
+  ["PUT", "/businesses/b1/prompt", { prompt: "be brief" }],
+  ["POST", "/businesses/b1/prompt/undo"],
+  ["POST", "/businesses/b1/skill", { id: "nope" }],
+  ["GET", "/businesses/b1/documents"],
+  ["POST", "/businesses/b1/documents"],
+  ["DELETE", "/businesses/b1/documents/d1"],
+  ["GET", "/customers/c1"],
+  ["PATCH", "/customers/c1", { note: "regular" }],
+  ["DELETE", "/customers/c1/facts"],
+  ["DELETE", "/customers/c1"],
+  ["POST", "/console-bot"],
   ["GET", "/businesses"],
   ["POST", "/businesses", { name: "Sunrise" }],
   ["GET", "/businesses/b1"],
@@ -184,6 +217,16 @@ describe("the console data API", () => {
     expect(Array.isArray(body.recentCustomers)).toBe(true);
     expect(Array.isArray(body.products)).toBe(true);
     expect(Array.isArray(body.documents)).toBe(true);
+  });
+
+  it("does not let the customer list swallow one customer", async () => {
+    // /customers had no length guard, so /customers/c1 matched the list route
+    // and handed back a page of everybody. The person's own record, their note
+    // and what the agent remembers were all unreachable behind a table.
+    const body = (await (await call("GET", "/customers/c1")).json()) as Record<string, unknown>;
+    expect(body).toHaveProperty("customer");
+    expect(body).toHaveProperty("facts");
+    expect(body).not.toHaveProperty("total");
   });
 
   it("says whether a delete reached the chat, rather than implying it did", async () => {

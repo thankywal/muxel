@@ -214,7 +214,7 @@ const PENDING_TTL_SECONDS = 600;
 const CONTEXT_TTL_SECONDS = 86_400;
 
 /** Largest instruction document accepted, so it cannot dominate every prompt. */
-const MAX_PROMPT_CHARS = 8000;
+export const MAX_PROMPT_CHARS = 8000;
 
 /** Screens list at most this many rows, keeping a keyboard usable on a phone. */
 const LIST_LIMIT = 12;
