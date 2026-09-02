@@ -41,7 +41,7 @@ import {
   type RuleKind,
 } from "../db/queries.js";
 import { listHandovers } from "../db/queries.js";
-import { productsView, saveProductEntry } from "../products.js";
+import { productsView, saveProductEntry, follow, type After } from "../products.js";
 import { syncNotes } from "../rag/ingest.js";
 import { readDocumentData, UNSURE_BELOW } from "../rag/nutrient.js";
 import { retrieve } from "../rag/retrieve.js";
@@ -55,6 +55,12 @@ export interface ToolContext {
   readonly env: Env;
   /** The operator asking. Every business id is checked against them. */
   readonly userId: number;
+  /**
+   * Work that may finish after the answer has gone out, such as re-indexing
+   * what a change altered. Absent on paths with no way to do that, which then
+   * wait for it. See products.ts follow().
+   */
+  readonly after?: After;
 }
 
 export interface AssistantTool {
@@ -518,7 +524,7 @@ export const TOOLS: readonly AssistantTool[] = [
         title: str(args, "title"),
         body: str(args, "body"),
       });
-      await syncNotes(ctx.env, id);
+      await follow(ctx.after, syncNotes(ctx.env, id), "the notes index");
       return notes;
     },
   },
@@ -536,7 +542,7 @@ export const TOOLS: readonly AssistantTool[] = [
     run: async (ctx, args) => {
       const id = await reachable(ctx, str(args, "business_id"));
       const notes = await deleteNote(ctx.env, id, str(args, "note_id"));
-      await syncNotes(ctx.env, id);
+      await follow(ctx.after, syncNotes(ctx.env, id), "the notes index");
       return notes;
     },
   },
@@ -600,7 +606,7 @@ export const TOOLS: readonly AssistantTool[] = [
         price: str(args, "price"),
         description: str(args, "description"),
         removed: false,
-      });
+      }, ctx.after);
       return productsView(ctx.env, id);
     },
   },
@@ -622,7 +628,7 @@ export const TOOLS: readonly AssistantTool[] = [
         price: "",
         description: "",
         removed: true,
-      });
+      }, ctx.after);
       return productsView(ctx.env, id);
     },
   },

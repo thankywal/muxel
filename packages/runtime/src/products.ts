@@ -173,9 +173,44 @@ export async function saveProductEntry(
     description: string;
     removed: boolean;
   },
+  after?: After,
 ): Promise<void> {
   await upsertCorrection(env, input);
-  await syncOwnerUpdates(env, input.businessId);
+  await follow(after, syncOwnerUpdates(env, input.businessId), "the price list's index");
+}
+
+/**
+ * Something to run once the answer has gone out. On a Worker that is
+ * ctx.waitUntil; a caller with no such thing leaves it undefined and waits.
+ */
+export type After = (work: Promise<unknown>) => void;
+
+/**
+ * The index is a view of the record, and a view can catch up.
+ *
+ * Every yes on a price re-rendered the owner-updates document, deleted its
+ * vectors, embedded it again and wrote it back, inside the request, before the
+ * tap was answered. On this account that is several seconds to the better part
+ * of twenty, during which the card did not move. Owners took it for a button
+ * that did nothing and reloaded, sometimes in the middle of a run.
+ *
+ * The correction row is what the console, the assistant and the Price list
+ * read, and it is written before this. What follows is the copy the customer's
+ * agent retrieves from, and it can be a few seconds behind the tap the way it
+ * always was behind the tap in practice. So it is handed to the caller's after
+ * hook when there is one, and awaited when there is not, because a caller with
+ * no way to run work after the response has to finish it before.
+ *
+ * A failure after the answer is logged, not lost silently: the record is right
+ * and the index is stale until the next sync of the same document, which every
+ * later change to the same business performs.
+ */
+export function follow(after: After | undefined, work: Promise<unknown>, what: string): Promise<void> {
+  if (after === undefined) return work.then(() => undefined);
+  after(work.catch((error: unknown) => {
+    console.error(`${what} did not update after the answer:`, error instanceof Error ? error.message : error);
+  }));
+  return Promise.resolve();
 }
 
 /** Just the names, for the reply path's empty-retrieval fallback. */
