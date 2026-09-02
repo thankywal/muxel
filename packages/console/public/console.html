@@ -97,7 +97,21 @@
 </head>
 <body>
 <div id="app">
-  <main id="onboardingWrap">
+  <!--
+    What the page looks like before it knows anything.
+
+    Both of the screens below start hidden, and the script decides which one to
+    show. Onboarding used to be visible by default, so every reload of a
+    connected console painted the sign-in page for as long as app.js took to
+    parse, and then replaced it. The boot screen is the honest state: we have
+    not read localStorage yet, so we do not yet know whose console this is.
+  -->
+  <div id="boot" class="boot">
+    <img class="boot-mark" src="/assets/logo.png" alt="" width="72" height="72">
+    <span class="boot-word">Muxel</span>
+  </div>
+
+  <main id="onboardingWrap" hidden>
     <!-- ===== onboarding ===== -->
     <section class="ob" id="onboarding">
 

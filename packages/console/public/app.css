@@ -29,6 +29,39 @@
   --shadow: 0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.03);
   --shadow-lg: 0 12px 40px rgba(15,23,42,.14);
   --r: 12px;
+  /* Native controls, scrollbars and the canvas behind the page. */
+  color-scheme: light dark;
+}
+/*
+ * Dark, said twice on purpose.
+ *
+ * The first block is the system's preference, and it has to be CSS rather than
+ * script: data-theme is set by app.js, and until that file has downloaded and
+ * run there is no attribute to match. Somebody on a dark desktop reloading the
+ * console got a full white page for that whole gap, on every load.
+ *
+ * :not([data-theme="light"]) so a person who has explicitly chosen light keeps
+ * light on a dark machine. The second block is that explicit choice going the
+ * other way, and it comes later so it wins.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --bg: #0b0f17;
+  --surface: #131926;
+  --surface-2: #0f1420;
+  --line: #232b3a;
+  --line-soft: #1b2130;
+  --ink: #e8edf5;
+  --ink-2: #c2cbdb;
+  --muted: #8592a8;
+  --brand-soft: #2a1a0e;
+  --brand-line: #6b3d18;
+  --blue-soft: #14203a;
+  --violet-soft: #1e1836;
+  --green-soft: #0d2a22;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,.55);
+}
 }
 [data-theme="dark"] {
   --bg: #0b0f17;
@@ -619,8 +652,11 @@ footer a:hover { color: var(--ink); }
 
 @media (max-width: 1180px) { .g4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
                              .g2, .g3 { grid-template-columns: 1fr; } }
-@media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { display: none; }
-                            .split { grid-template-columns: 1fr; } .searchbox { min-width: 0; } }
+/* The narrow-screen rules all live in one block, further down, with the rail
+   drawer they belong to. Two blocks for the same width is two places for them
+   to disagree, and the pair that existed did: one hid the rail outright while
+   the other was turning it into a drawer. */
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
 
 /* A capability that is switched on, said once above the field that switched it. */
 .on-note { margin: 0 0 14px; }
@@ -637,3 +673,141 @@ footer a:hover { color: var(--ink); }
   color: var(--ink-2);
   letter-spacing: .02em;
 }
+
+/* ---- before the console knows whose it is ----
+   Shown from the first paint until the script has read localStorage. The mark
+   breathes rather than spins: a spinner promises work is happening, and at this
+   point the only work is parsing a file. */
+.boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: var(--bg);
+  z-index: 60;
+}
+.boot-mark {
+  width: 72px;
+  height: 72px;
+  animation: boot-breathe 1.9s ease-in-out infinite;
+}
+.boot-word {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  /* The shimmer is a band of light moving across the letters. It reads as
+     loading without claiming a percentage nobody measured. */
+  background: linear-gradient(100deg, var(--line) 22%, var(--ink-2) 46%, var(--line) 70%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: boot-shimmer 1.9s linear infinite;
+}
+@keyframes boot-breathe {
+  0%, 100% { opacity: .55; transform: scale(.965); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+@keyframes boot-shimmer {
+  from { background-position: 160% 0; }
+  to   { background-position: -60% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-mark, .boot-word { animation: none; }
+  .boot-word { color: var(--muted); background: none; -webkit-text-fill-color: currentColor; }
+}
+
+/* The same mark, waiting inside a page that is already on screen. */
+.loading-mark {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 46px 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.loading-mark img { width: 30px; height: 30px; animation: boot-breathe 1.9s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .loading-mark img { animation: none; } }
+
+/* ---- the rail on a narrow screen ----
+   Below 900px the rail used to be display:none, which removed every way of
+   navigating: whatever page you landed on was the page you were stuck with.
+   It is a drawer now, and the button that opens it lives in the topbar. */
+.rail-open { display: none; }
+.rail-veil { display: none; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail-open { display: inline-flex; margin-right: 2px; }
+
+  .shell aside {
+    display: flex;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 262px;
+    max-width: 84vw;
+    z-index: 50;
+    transform: translateX(-102%);
+    transition: transform .22s cubic-bezier(.2,.75,.25,1);
+    box-shadow: var(--shadow-lg);
+  }
+  .shell.rail-on aside { transform: none; }
+
+  .rail-veil {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    background: rgba(9, 12, 20, .42);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .22s ease;
+  }
+  .shell.rail-on .rail-veil { opacity: 1; pointer-events: auto; }
+
+  /* The two boxes that were eating the header. Search keeps its icon and
+     loses its label and shortcut; the health pill keeps its dot and loses the
+     word, because the dot is the part that carries the state. */
+  .topbar { padding: 12px 14px 0; gap: 10px; align-items: center; }
+  .topbar h1 { font-size: 17px; }
+  .topbar p { display: none; }
+  .content { padding: 14px 14px 32px; }
+
+  /* A table wider than the phone scrolls inside its own card rather than
+     pushing the page sideways. The columns keep their widths: a table that
+     reflows to fit stops being readable as a table. */
+  .card { overflow-x: auto; }
+  .card table { min-width: 620px; }
+
+  .top-tools { gap: 6px; }
+  .searchbox { min-width: 0; padding: 8px; }
+  .searchbox span, .searchbox kbd { display: none; }
+  .pill { padding: 7px; gap: 0; font-size: 0; }
+  .pill .d { width: 8px; height: 8px; }
+}
+
+/* Phones, where even the compact header has to give something up. */
+@media (max-width: 560px) {
+  .topbar { gap: 8px; }
+  #bell { display: none; }
+}
+
+/* Opening the chat a customer sees. It is one click from the list, because
+   the first thing anybody wants to do with an agent is talk to it. */
+.try-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.try-link:hover { border-color: var(--brand-line); background: var(--brand-soft); color: var(--brand-ink); }
