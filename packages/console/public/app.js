@@ -1557,9 +1557,13 @@ function bindTurnActions() {
  * Says yes to every change still waiting in this conversation.
  *
  * Asked first, and told how many. One tap running twenty five changes is the
- * point of the button, and it is also the reason a mis-tap would be expensive.
- * Each one is still run on its own, so one that fails does not stop the rest,
- * and the owner sees which failed.
+ * point of the button, and also the reason a mis-tap would be expensive.
+ *
+ * It counts up as it goes, because twenty five writes take long enough that a
+ * card sitting there disabled and silent reads as a button that did nothing.
+ * And it reports what happened: every change that could not be made is counted
+ * and the first reason is said out loud, rather than the whole run ending in
+ * "Done." whatever came back.
  */
 async function approveAll() {
   const waiting = (state.assistant?.approvals ?? []).filter((a) => a.state === "waiting");
@@ -1570,20 +1574,40 @@ async function approveAll() {
     [{ key: "yes", label: `Do all ${waiting.length}`, primary: true }],
   );
   if (!choice) return;
-  $("allYes").disabled = true;
+
+  const button = $("allYes");
   $("view").querySelectorAll("[data-approve]").forEach((b) => (b.disabled = true));
   let last;
-  for (const approval of waiting) {
+  let made = 0;
+  const refused = [];
+  for (const [index, approval] of waiting.entries()) {
+    if (button) {
+      button.disabled = true;
+      button.textContent = `${index + 1} of ${waiting.length}…`;
+    }
     const { ok, data } = await api(`assistant/approvals/${approval.id}`, {
       method: "POST",
       body: { yes: true },
     });
-    if (ok) last = data;
+    // Two different `ok`s meet here. The outer one is whether the deployment
+    // answered at all; `data.ok` is whether the change was actually made. A
+    // change that failed comes back as a perfectly good HTTP 200.
+    if (!ok) {
+      refused.push("Your deployment did not answer.");
+      break;
+    }
+    last = data;
+    if (data.ok === false) refused.push(data.message || approval.summary);
+    else made += 1;
   }
+
   if (last) state.assistant = { ...state.assistant, approvals: last.approvals };
   state.overview = null;
-  const failed = (last?.approvals ?? []).filter((a) => a.state === "failed").length;
-  toast(failed > 0 ? `Done, ${failed} could not be made.` : "Done.");
+  toast(
+    refused.length === 0
+      ? `Done. ${made} made.`
+      : `${made} made, ${refused.length} not: ${refused[0]}`,
+  );
   drawAssistant();
 }
 
@@ -1928,8 +1952,13 @@ async function answerApproval(approvalId, yes) {
     method: "POST",
     body: { yes },
   });
-  if (!ok) return drawAssistant();
-  state.assistant = { ...state.assistant, approvals: data.approvals };
+  // `ok` is whether the deployment answered; `data.ok` is whether the change
+  // was made. A change that could not be made answers perfectly well.
+  if (!ok) {
+    toast("Your deployment did not answer.");
+    return drawAssistant();
+  }
+  if (data.approvals) state.assistant = { ...state.assistant, approvals: data.approvals };
   state.overview = null;
   toast(data.message ?? (yes ? "Done." : "Left as it was."));
   drawAssistant();

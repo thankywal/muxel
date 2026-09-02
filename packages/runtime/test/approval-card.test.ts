@@ -64,22 +64,47 @@ describe("the card", () => {
 });
 
 describe("saying yes to all of them", () => {
+  const body = app.slice(app.indexOf("async function approveAll"), app.indexOf("// ------", app.indexOf("async function approveAll")));
+
   it("asks first, and says how many", () => {
-    const at = app.indexOf("async function approveAll");
-    const body = app.slice(at, at + 1400);
     expect(body).toMatch(/await ask\(/);
     expect(body).toMatch(/Say yes to \$\{waiting\.length\} changes/);
   });
 
   it("runs them one at a time, so one failure does not stop the rest", () => {
-    const at = app.indexOf("async function approveAll");
-    const body = app.slice(at, at + 1400);
-    expect(body).toMatch(/for \(const approval of waiting\)/);
+    expect(body).toMatch(/for \(const \[index, approval\] of waiting\.entries\(\)\)/);
     expect(body).toMatch(/assistant\/approvals\/\$\{approval\.id\}/);
   });
 
-  it("says how many could not be made", () => {
-    const at = app.indexOf("async function approveAll");
-    expect(app.slice(at, at + 1600)).toMatch(/failed > 0 \? `Done, \$\{failed\} could not be made\./);
+  it("keeps the two meanings of ok apart", () => {
+    // The outer one is whether the deployment answered. `data.ok` is whether
+    // the change was made — and a change that could not be made comes back as
+    // a perfectly good HTTP 200. Reading only the outer one reported every
+    // refusal as a success.
+    expect(body).toMatch(/if \(data\.ok === false\)/);
+    expect(body).toMatch(/if \(!ok\) \{[\s\S]{0,160}did not answer/);
+  });
+
+  it("counts up while it runs, so a long one does not look frozen", () => {
+    // Twenty five writes take long enough that a disabled, silent card reads
+    // as a button that did nothing.
+    expect(body).toMatch(/\$\{index \+ 1\} of \$\{waiting\.length\}/);
+  });
+
+  it("says what was made and what was not, with a reason", () => {
+    expect(body).toMatch(/`Done\. \$\{made\} made\.`/);
+    expect(body).toMatch(/\$\{made\} made, \$\{refused\.length\} not: \$\{refused\[0\]\}/);
+  });
+});
+
+describe("saying yes to one of them", () => {
+  const body = app.slice(app.indexOf("async function answerApproval"), app.indexOf("// ------", app.indexOf("async function answerApproval")));
+
+  it("keeps the same two meanings apart", () => {
+    expect(body).toMatch(/if \(!ok\) \{[\s\S]{0,120}did not answer/);
+  });
+
+  it("does not wipe the list when the answer carried none", () => {
+    expect(body).toMatch(/if \(data\.approvals\) state\.assistant = /);
   });
 });
