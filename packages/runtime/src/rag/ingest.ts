@@ -315,6 +315,8 @@ async function indexText(
     contentType: string;
     byteSize: number;
     text: string;
+    /** Where the original is kept, or empty when it was not kept. */
+    objectKey?: string;
     onProgress?: (progress: IngestProgress) => Promise<void> | void;
     settleTimeoutMs?: number;
   },
@@ -332,7 +334,7 @@ async function indexText(
     filename: input.filename,
     contentType: input.contentType,
     byteSize: input.byteSize,
-    objectKey: "",
+    objectKey: input.objectKey ?? "",
   });
 
   try {
@@ -417,11 +419,22 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
     });
   }
 
-  // Optional archive of the original. Nothing reads it back.
+  // The archive of the original, and the note saying where it is.
+  //
+  // It used to be written under a key containing a fresh random id that was
+  // recorded nowhere, so the bytes were kept and could not be found again —
+  // the document row has always had an object_key column and it was always
+  // stored empty. That is fine while nothing reads the original back. Reading
+  // a document as data reads the file rather than the prose it was flattened
+  // into, so the key stops being a detail of the write and becomes the record.
+  let objectKey = "";
   if (env.DOCUMENTS !== undefined) {
-    await env.DOCUMENTS.put(`${input.businessId}/${generateId()}/${input.filename}`, input.body, {
-      httpMetadata: { contentType: input.contentType },
-    });
+    const key = `${input.businessId}/${generateId()}/${input.filename}`;
+    // Recorded only once the put has actually happened. A key on the row for
+    // an object that is not there is worse than no key: it turns "we did not
+    // keep the original" into "the original is missing".
+    await env.DOCUMENTS.put(key, input.body, { httpMetadata: { contentType: input.contentType } });
+    objectKey = key;
   }
 
   const text = await readUpload(env, input);
@@ -439,6 +452,7 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
     contentType: input.contentType,
     byteSize: input.body.byteLength,
     text,
+    objectKey,
     ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
     ...(input.settleTimeoutMs === undefined ? {} : { settleTimeoutMs: input.settleTimeoutMs }),
   });

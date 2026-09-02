@@ -25,6 +25,8 @@ import {
   type Approval,
 } from "./store.js";
 import { ASK_OWNER, findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
+import { documentDataConfigured } from "../rag/nutrient.js";
+import { webSearchConfigured } from "../web-search.js";
 
 /** How many times the model may call tools before it has to answer. */
 const MAX_STEPS = 6;
@@ -38,7 +40,8 @@ const MAX_STEPS = 6;
  * here is a fact about this codebase, and a claim that stops being true is a
  * line to change rather than a line to soften.
  */
-const ABOUT_MUXEL = [
+function aboutMuxel(capability: Capabilities): string {
+  return [
   "About the product you are part of, so you can answer questions about it:",
   "",
   "Muxel answers an owner's customers on Telegram and through a chat widget on their website. It",
@@ -64,16 +67,49 @@ const ABOUT_MUXEL = [
   "Diagnostics behind the owner's badge at the bottom of the left rail. Updates are a button in",
   "Settings; the deployment pulls the new version into the owner's own repository itself.",
   "",
-  "What Muxel does not do: it does not browse the web, it does not send email, it does not take",
-  "payments, and it has no access to anything outside this deployment. If you are asked for",
-  "something in that list, say plainly that it is not something Muxel does.",
-].join("\n");
+  "Two things reach outside this deployment, and only when the owner has added their own key for",
+  "them under Settings. Neither is on the path that answers customers: both are yours, here, with",
+  "the owner. What each one is:",
+  "",
+  capability.webSearch
+    ? "  web_search is on. It returns live results from the web — pages, what things sell for and "
+      + "who sells them, and businesses on the map. That is the web talking, not this business: say "
+      + "which you are repeating, and name the source when you quote a price."
+    : "  web_search is off, because no SerpApi key has been added. You cannot look anything up on "
+      + "the web. If they want that, tell them where the key goes: Settings, Web search.",
+  "",
+  capability.documentData
+    ? "  read_document_data is on. It reads an uploaded file as structured rows with a confidence "
+      + "for each, so you can tell the owner which rows to look at hardest. It saves nothing: every "
+      + "row still becomes a card they tap."
+    : "  read_document_data is off, because no Nutrient DWS key has been added. You can still read "
+      + "documents as text with search_knowledge. If they want the structured reading, tell them "
+      + "where the key goes: Settings, Document data.",
+  "",
+  "What Muxel does not do: it does not send email, it does not take payments, and it reaches",
+  "nothing outside this deployment beyond the two above. If you are asked for something in that",
+  "list, say plainly that it is not something Muxel does.",
+  ].join("\n");
+}
 
-const SYSTEM = [
+/**
+ * What this deployment can actually do right now.
+ *
+ * Read once per turn and handed to both the prompt and nothing else, because
+ * the tools read the same vault themselves. One question — is the key there —
+ * asked in one place, so the prompt cannot promise what the tool refuses.
+ */
+export interface Capabilities {
+  readonly webSearch: boolean;
+  readonly documentData: boolean;
+}
+
+function systemPrompt(capability: Capabilities): string {
+  return [
   "You are the assistant for the owner of this Muxel deployment. You are talking to the owner,",
   "not to their customers.",
   "",
-  ABOUT_MUXEL,
+  aboutMuxel(capability),
   "",
   "You can read anything in this deployment and you can propose changes. You cannot make a change",
   "yourself: when you call a tool that writes, it appears under your message as a card with a Do it",
@@ -114,7 +150,8 @@ const SYSTEM = [
   "",
   "Answer in the language the owner writes in. Keep it short: they are reading it on a screen",
   "beside their work, not in a report.",
-].join("\n");
+  ].join("\n");
+}
 
 /**
  * What the loop is doing, as it does it.
@@ -192,6 +229,14 @@ export async function ask(
   const { userId, chatId, question } = input;
   const say = input.onEvent ?? (() => undefined);
   const businesses = await listBusinesses(env, userId);
+  // Asked once for the whole turn. The prompt has to say which of the two
+  // outside capabilities exist, and saying it wrong in either direction costs
+  // the owner a turn: promised and refused, or denied and available.
+  const [webSearch, documentData] = await Promise.all([
+    webSearchConfigured(env),
+    documentDataConfigured(env),
+  ]);
+  const system = systemPrompt({ webSearch, documentData });
   const ctx: ToolContext = { env, userId };
   const messageId = await addOperatorMessage(env, { chatId, userId, role: "user", content: question });
 
@@ -225,7 +270,7 @@ export async function ask(
     say({ type: "status", label: step === 0 ? "Thinking" : "Working" });
     const turn = await converse(env, {
       model,
-      system: `${SYSTEM}\n\nThe businesses here: ${
+      system: `${system}\n\nThe businesses here: ${
         businesses.length === 0
           ? "none yet."
           : businesses.map((business) => `${business.name} (id ${business.id})`).join(", ")

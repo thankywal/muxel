@@ -54,11 +54,18 @@
     }
   ],
 
-  // There is deliberately no R2 binding. Muxel would only use it to archive the
-  // original of an uploaded document, which nothing ever reads back, and
-  // enabling R2 requires a payment method even inside its free tier. Everything
-  // else here runs on the Workers Free plan. Add a binding named DOCUMENTS if
-  // you want originals kept; the runtime picks it up automatically.
+  // There is deliberately no R2 binding, and it stays that way: enabling R2
+  // requires a payment method even inside its free tier, and everything else
+  // here runs on the Workers Free plan with no card. That is a claim on the
+  // front page, so it decides this.
+  //
+  // What has changed is that the archive is no longer write only. It used to
+  // keep the original of an uploaded document and never read it back; reading a
+  // document as data through Nutrient DWS reads the file itself rather than the
+  // prose it was flattened into, so an owner who wants that needs the original
+  // kept. Add a binding named DOCUMENTS and the runtime picks it up; without
+  // one, read_document_data says the original was not kept rather than reading
+  // something else and calling it the document.
 
   "kv_namespaces": [
     {

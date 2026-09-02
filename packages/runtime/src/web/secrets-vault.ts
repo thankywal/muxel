@@ -17,7 +17,16 @@ import type { Env } from "../env.js";
 import { resolveMasterKey } from "../secrets.js";
 
 /** The names a deployment understands, so a typo cannot create a dead entry. */
-export const SECRET_NAMES = ["github_token", "cloudflare_token"] as const;
+export const SECRET_NAMES = [
+  "github_token",
+  "cloudflare_token",
+  // Two keys for services outside Cloudflare, both the owner's own. They are
+  // what switches on the two capabilities this deployment cannot provide by
+  // itself: live web data, and reading a document as structured data rather
+  // than as prose. Absent means the capability is off, not that it failed.
+  "serpapi_key",
+  "nutrient_key",
+] as const;
 export type SecretName = (typeof SECRET_NAMES)[number];
 
 const key = (name: SecretName): string => `secret:${name}`;
