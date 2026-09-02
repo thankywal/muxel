@@ -3782,6 +3782,7 @@ async function viewSettings() {
           Your customers' agents never use it — they answer from your material or hand over to you.</p>
         ${outsidePanel({
           on: data.outside?.webSearch === true,
+          hint: data.keyHint?.serpapi_key ?? "",
           id: "serp",
           placeholder: "SerpApi key",
           leaves: "Only the words you search for, from your Worker to SerpApi.",
@@ -3803,6 +3804,7 @@ async function viewSettings() {
           a card you tap Yes on.</p>
         ${outsidePanel({
           on: data.outside?.documentData === true,
+          hint: data.keyHint?.nutrient_key ?? "",
           id: "nut",
           placeholder: "Nutrient DWS key",
           leaves: "The file itself, from your Worker to Nutrient, when you ask for a document to be read.",
@@ -4010,6 +4012,17 @@ function outsidePanel(panel) {
         <input id="key-${panel.id}" type="password" placeholder="${h(panel.placeholder)}" autocomplete="off"
           style="flex:1">
         <button class="btn btn-primary btn-sm" id="save-${panel.id}">Save</button></div>
+      ${
+        // Which key, under the field it was typed into. An owner who holds
+        // several needs to know the right one landed, and "this is on" does
+        // not tell them that. A deployment that saved a key before hints
+        // existed has none to show and says so rather than pretending.
+        panel.on
+          ? `<div class="key-hint">Saved <code>${h(panel.hint || "\u2022".repeat(10))}</code>${
+              panel.hint ? "" : " — saved before this deployment kept a record of which key. Paste it again to see it here."
+            }</div>`
+          : ""
+      }
       <small><b>What leaves your account:</b> ${h(panel.leaves)} Nothing reaches us — this page is talking
         to your own deployment. ${panel.where}</small>
     </div>`;

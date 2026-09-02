@@ -21,7 +21,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { TOOLS } from "../src/assistant/tools.js";
-import { SECRET_NAMES } from "../src/web/secrets-vault.js";
+import { SECRET_NAMES, maskKey } from "../src/web/secrets-vault.js";
 import { evaluateConsole } from "./console-harness.js";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
@@ -148,6 +148,70 @@ describe("the archive can be found again", () => {
   });
 });
 
+describe("which key is saved, without showing it", () => {
+  // An owner may hold several keys, and "this is on" does not tell them the
+  // right one landed. What they must never get, and what a shared screen must
+  // never carry, is the key.
+  const KEY = "4d2afbc517c69559af64554e888b6cee06e5e919525368c8ae72120c20e5f67c";
+
+  it("shows both ends and nothing in between", () => {
+    const masked = maskKey(KEY);
+    expect(masked.startsWith("4d2a")).toBe(true);
+    expect(masked.endsWith("f67c")).toBe(true);
+    expect(KEY).not.toContain(masked);
+    // The middle is the key. Every character of it has to be gone.
+    for (const chunk of [KEY.slice(4, -4)]) expect(masked).not.toContain(chunk);
+    expect(masked.replace(/[\u2022]/g, "")).toBe("4d2af67c");
+  });
+
+  it("does not publish how long the key is", () => {
+    // A fixed mask, so a short key and a long one look the same. Length is a
+    // small thing to leak and there is no reason to leak it.
+    expect(maskKey(KEY).length).toBe(maskKey(`${KEY}${KEY}`).length);
+    // And there has to be a mask at all: two ends butted together are not a
+    // masked key, they are a shorter key with the same first and last four.
+    expect(maskKey(KEY).length).toBeGreaterThan(8);
+    expect(maskKey(KEY)).toMatch(/\u2022{4,}/);
+  });
+
+  it("shows nothing at all for a key too short to mask", () => {
+    // Hiding two characters out of eight is not hiding them.
+    expect(maskKey("abcdefgh")).not.toContain("a");
+    expect(maskKey("abcdefgh")).not.toContain("h");
+  });
+
+  it("is written when the key is stored, not read back from it", () => {
+    // The whole reason this is safe: no path that draws a screen ever opens
+    // the envelope. If secretHint ever decrypts, the promise on the panel
+    // stops being true and this is where that is caught.
+    const vault = read("../src/web/secrets-vault.ts");
+    const put = vault.slice(vault.indexOf("export async function putSecret"), vault.indexOf("export async function getSecret"));
+    expect(put).toContain("maskKey(value)");
+    const hint = vault.slice(vault.indexOf("export async function secretHint"));
+    expect(hint).not.toContain("open(");
+    expect(hint).not.toContain("resolveMasterKey");
+  });
+
+  it("is forgotten with the key it describes", () => {
+    // A hint outliving its key would leave a shadow on the screen of a
+    // capability the owner has switched off.
+    const vault = read("../src/web/secrets-vault.ts");
+    const clear = vault.slice(vault.indexOf("export async function clearSecret"), vault.indexOf("export async function secretHint"));
+    expect(clear).toContain("hintKey(name)");
+    expect(clear).toContain("key(name)");
+  });
+
+  it("reaches the console as a sibling of the booleans, never inside them", () => {
+    // A console that predates hints still reads outside.webSearch as a
+    // boolean. Folding the hint into that field would make an older page
+    // report every capability as on.
+    expect(api).toContain("keyHint: { serpapi_key: serpHint, nutrient_key: nutrientHint }");
+    expect(api).toContain("outside: { webSearch, documentData }");
+    expect(app).toContain("data.keyHint?.serpapi_key");
+    expect(app).toContain("data.keyHint?.nutrient_key");
+  });
+});
+
 describe("the field itself, rendered", () => {
   const drawn = (on: boolean) =>
     evaluateConsole().outsidePanel({
@@ -184,6 +248,25 @@ describe("the field itself, rendered", () => {
     const html = drawn(true);
     expect(html).toContain('type="password"');
     expect(html).not.toMatch(/value=/);
+  });
+
+  it("draws the mask under the field, and only when a key is stored", () => {
+    const on = evaluateConsole().outsidePanel({
+      on: true,
+      id: "serp",
+      placeholder: "SerpApi key",
+      leaves: "x",
+      where: "y",
+      hint: "4d2a\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022f67c",
+    });
+    expect(on).toContain("4d2a");
+    expect(on.indexOf('id="key-serp"')).toBeLessThan(on.indexOf("key-hint"));
+    expect(drawn(false)).not.toContain("key-hint");
+  });
+
+  it("says so when a key was stored before hints existed", () => {
+    // Silence there would read as "no key", under a panel that says one is on.
+    expect(drawn(true)).toContain("Paste it again to see it here");
   });
 });
 
