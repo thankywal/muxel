@@ -1551,7 +1551,11 @@ export async function handleConsoleApi(
   }
 
   if (method === "POST" && segments[0] === "update") {
-    return json(await runSelfUpdate(env));
+    const [outcome, version] = await Promise.all([runSelfUpdate(env), versionStatus()]);
+    // The version this push is bringing. The console watches for the deployment
+    // to start reporting it, which is the one observable "the build is done" —
+    // Cloudflare will not tell either of us how far through it is.
+    return json({ ...outcome, expect: version.latest ?? "" });
   }
 
   // Telling the deployment where its own source lives, for a build that could

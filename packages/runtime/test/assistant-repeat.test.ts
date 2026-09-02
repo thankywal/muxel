@@ -39,7 +39,7 @@ describe("what the model is told about its own proposals", () => {
   });
 
   it("says a waiting change is waiting, and where the button is", () => {
-    expect(outcomeNote([row("waiting")])).toMatch(/still waiting for the owner to tap Do it/);
+    expect(outcomeNote([row("waiting")])).toMatch(/still waiting for the owner to tap Yes/);
   });
 
   it("does not turn a failure into a success", () => {
@@ -67,8 +67,8 @@ describe("what the model is told to ask for", () => {
     expect(loop).toMatch(/Typing yes does nothing/);
   });
 
-  it("names the button that does run it", () => {
-    expect(loop).toMatch(/tap Do it/);
+  it("names the control that does run it", () => {
+    expect(loop).toMatch(/tap Yes/);
   });
 
   it("tells it not to propose a thing twice", () => {
@@ -86,7 +86,7 @@ describe("what the model is told to ask for", () => {
 describe("what the owner sees while something is waiting", () => {
   it("is told once, above the box they are about to type into", () => {
     expect(app).toMatch(/const waiting = approvals\.filter\(\(a\) => a\.state === "waiting"\)/);
-    expect(app).toMatch(/waiting for you — tap Do it on the card/);
+    expect(app).toMatch(/waiting for you — tap Yes on the card/);
   });
 
   it("can get back to the card that raised it", () => {

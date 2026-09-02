@@ -81,7 +81,7 @@ const SYSTEM = [
   "message, in your own words, so the card is not the first they hear of it.",
   "",
   "Never ask them to reply \"yes\". Typing yes does nothing — the button on the card is the only",
-  "thing that runs a change. Say \"tap Do it below\" or nothing at all; the card speaks for itself.",
+  "thing that runs a change. Say \"tap Yes below\" or nothing at all; the card speaks for itself.",
   "",
   "Every message you sent before is followed by a note in square brackets saying what became of",
   "what it proposed. Read it. If something is still waiting, the owner has not tapped the button",
@@ -155,7 +155,7 @@ export function outcomeNote(approvals: readonly Approval[]): string {
     if (approval.state === "approved") return `${what} — the owner approved this and it is done`;
     if (approval.state === "declined") return `${what} — the owner said no`;
     if (approval.state === "failed") return `${what} — approved but it failed: ${approval.result}`;
-    return `${what} — still waiting for the owner to tap Do it on the card`;
+    return `${what} — still waiting for the owner to tap Yes on the card`;
   });
   return `\n\n[What you proposed in this message: ${said.join("; ")}]`;
 }

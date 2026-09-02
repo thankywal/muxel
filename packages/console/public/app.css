@@ -81,6 +81,20 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 
 /* ---- shell ---- */
 .shell { display: grid; grid-template-columns: 252px 1fr; min-height: 100vh; }
+/* A line from upstream, across the top of everything. It spans both columns so
+   it reads as being about the whole console rather than about one page. */
+.notice { grid-column: 1 / -1; display: flex; align-items: center; gap: 11px;
+          padding: 10px 18px; background: var(--blue-soft); border-bottom: 1px solid var(--line);
+          font-size: 13.5px; color: var(--ink-2); }
+.notice.update { background: var(--brand-soft); border-bottom-color: var(--brand-line);
+                 color: var(--brand-ink); }
+.notice svg { flex: none; }
+.notice .grow { flex: 1; }
+.notice .btn { background: var(--surface); border: 1px solid var(--line); }
+.notice.update .btn { background: var(--brand); color: #fff; border-color: transparent; }
+.notice-x { border: 0; background: none; color: inherit; opacity: .6; cursor: pointer;
+            font-size: 19px; line-height: 1; padding: 0 4px; }
+.notice-x:hover { opacity: 1; }
 aside { background: var(--surface); border-right: 1px solid var(--line); display: flex;
         flex-direction: column; position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 18px 18px 14px; }
@@ -450,15 +464,45 @@ tbody tr.click:hover { background: var(--surface-2); }
   background: var(--surface-2); }
 .prompt-row input:focus { outline: none; border-color: var(--brand-line); }
 
-/* ---- the assistant's proposed changes ---- */
-.approval { max-width: 100%; margin-top: 12px; border: 1px solid var(--brand-line);
-            background: var(--brand-soft); border-radius: 13px; padding: 12px 14px; }
-.approval.approved { border-color: var(--line); background: var(--green-soft); }
-.approval.declined, .approval.failed { border-color: var(--line); background: var(--surface-2); }
-.approval-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
-.approval-head b { font-size: 13.5px; }
-.approval-what { color: var(--muted); font-size: 12px; margin-top: 5px; word-break: break-word; }
-.approval-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 11px; }
+/* The update's progress. The fill reaches the end only when the deployment
+   itself reports the new version; everything before that is a wait. */
+.bar { height: 8px; border-radius: 999px; background: var(--surface-2);
+       border: 1px solid var(--line); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--brand);
+            transition: width .6s cubic-bezier(.4, 0, .2, 1); }
+.bar-label { display: flex; justify-content: space-between; gap: 12px; margin: 9px 0 0;
+             font-size: 13px; color: var(--muted); }
+.bar-label b { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ---- the assistant's proposed changes ----
+   One card for the turn, a row per change. Eleven separate boxes down the
+   thread was the thing that made a long proposal unreadable. */
+.changes { margin-top: 12px; border: 1px solid var(--brand-line); border-radius: 13px;
+           background: var(--brand-soft); overflow: hidden; }
+.changes-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+                padding: 11px 14px; border-bottom: 1px solid var(--brand-line); }
+.changes-head b { font-size: 13.5px; }
+.change { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+          border-bottom: 1px solid var(--brand-line); }
+.change:last-child { border-bottom: 0; }
+.change-what { flex: 1; min-width: 0; }
+.change-what b { display: block; font-size: 13.5px; font-weight: 600; }
+.change-what small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px;
+                     word-break: break-word; }
+.change.approved { background: var(--green-soft); }
+.change.declined, .change.failed { background: var(--surface-2); }
+
+/* Yes and No as one control, so the answer is a position rather than a guess
+   about which of two buttons was the safe one. */
+.switch { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 999px;
+          background: var(--surface); overflow: hidden; }
+.switch button { border: 0; background: none; padding: 6px 15px; font-size: 12.5px;
+                 font-weight: 600; color: var(--muted); cursor: pointer; }
+.switch button + button { border-left: 1px solid var(--line); }
+.switch button[data-yes="1"] { color: var(--brand-ink); }
+.switch button[data-yes="1"]:hover { background: var(--brand); color: #fff; }
+.switch button[data-yes="0"]:hover { background: var(--surface-2); color: var(--ink-2); }
+.switch button:disabled { opacity: .45; cursor: default; }
 
 /* ---- forms ---- */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }

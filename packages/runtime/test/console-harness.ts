@@ -30,6 +30,8 @@ export function evaluateConsole(): {
     steps: unknown[],
     cards: unknown[],
   ) => string;
+  /** Every change one answer proposed, in the single card that holds them. */
+  approvalCard: (approvals: unknown[]) => string;
 } {
   const noop = (): unknown => undefined;
   const element = new Proxy(
@@ -86,6 +88,7 @@ export function evaluateConsole(): {
        md,
        costLine: (usage, allowance) => { state.assistant = { allowance }; return costLine(usage); },
        turnHtml: (message, steps, cards) => turnHtml(message, steps, cards, undefined, {}),
+       approvalCard,
      });`,
     context,
   );

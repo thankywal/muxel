@@ -65,6 +65,8 @@ const state = {
   lastModel: localStorage.getItem("muxel.model") ?? null,
   /** Pressed New chat and not yet said anything. */
   newChat: false,
+  /** The repeating check for a line from upstream. Started once. */
+  noticeTimer: null,
   /** The turn in flight, so the stop square has something to stop. */
   pending: null,
   stopped: false,
@@ -171,6 +173,7 @@ const ICONS = {
   exit: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
   doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   retry: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
@@ -421,6 +424,73 @@ function shell() {
   bindChatRail();
   checkHealth();
   whoAmI();
+  showNotice();
+}
+
+/** How often the console asks whether there is anything to say. */
+const NOTICE_EVERY_MS = 5 * 60_000;
+const NOTICE_SEEN = "muxel.notice.seen";
+
+/**
+ * A line from the people who wrote Muxel, at the top of the console.
+ *
+ * Pulled, never pushed. There is no list of deployments and there is not going
+ * to be one, so nobody can be sent anything: the console is already served from
+ * this host, and it asks that host whether there is a line to show. No
+ * deployment is contacted, identified or written down by any of it.
+ *
+ * Dismissal is remembered against the notice's id, in this browser, so a new
+ * notice needs a new id to be seen by somebody who dismissed the last one.
+ */
+async function showNotice() {
+  if (state.noticeTimer === null) {
+    state.noticeTimer = setInterval(showNotice, NOTICE_EVERY_MS);
+  }
+  let notice;
+  try {
+    const response = await fetch(`/notice.json?t=${Math.floor(Date.now() / NOTICE_EVERY_MS)}`);
+    if (!response.ok) return;
+    notice = await response.json();
+  } catch {
+    // Nothing to say is the same as not being able to ask. Neither is worth
+    // telling the owner about; they came here to run their shop.
+    return;
+  }
+  const id = String(notice.id ?? "").trim();
+  const text = String(notice.text ?? "").trim();
+  if (id.length === 0 || text.length === 0) return dropNotice();
+  if (readSeen().includes(id)) return dropNotice();
+
+  dropNotice();
+  const bar = document.createElement("div");
+  bar.className = `notice ${notice.kind === "update" ? "update" : ""}`;
+  bar.id = "notice";
+  bar.innerHTML = `${icon(notice.kind === "update" ? "settings" : "bell", 16)}
+    <span class="grow">${h(text)}</span>
+    ${notice.action === "update" ? '<button class="btn btn-sm" id="noticeGo">Update now</button>' : ""}
+    <button class="notice-x" id="noticeX" aria-label="Dismiss">&times;</button>`;
+  document.querySelector(".shell")?.prepend(bar);
+  if ($("noticeGo")) {
+    $("noticeGo").onclick = () => {
+      state.settingsTab = "deployment";
+      go("settings");
+    };
+  }
+  $("noticeX").onclick = () => {
+    localStorage.setItem(NOTICE_SEEN, JSON.stringify([...readSeen(), id].slice(-30)));
+    dropNotice();
+  };
+}
+
+const dropNotice = () => document.getElementById("notice")?.remove();
+
+function readSeen() {
+  try {
+    const held = JSON.parse(localStorage.getItem(NOTICE_SEEN) ?? "[]");
+    return Array.isArray(held) ? held : [];
+  } catch {
+    return [];
+  }
 }
 
 /** The conversations with the assistant, newest first, under the rail. */
@@ -1321,7 +1391,7 @@ function drawAssistant() {
             ? ""
             : `<button type="button" class="waiting-bar" id="toWaiting">
                  ${icon("bell", 14)}${waiting.length} change${waiting.length === 1 ? "" : "s"}
-                 waiting for you — tap Do it on the card</button>`
+                 waiting for you — tap Yes on the card</button>`
         }
         <div class="composer">
           <textarea id="asText" rows="1" placeholder="Ask about your businesses, or tell it what to change"
@@ -1374,7 +1444,7 @@ function turnHtml(message, steps, cards, usage, waiting = {}) {
         <span class="when">${h(ago(message.createdAt))}</span>
       </div>
       <div class="ai-body">${md(message.content)}</div>
-      ${cards.map(approvalCard).join("")}
+      ${cards.length > 0 ? approvalCard(cards) : ""}
       ${waiting.open && waiting.prompt ? promptCard(waiting.prompt) : ""}
       <div class="ai-acts">
         <button class="t-act" data-copy="${h(message.id)}" title="Copy">${icon("copy", 14)}Copy</button>
@@ -1480,6 +1550,41 @@ function bindTurnActions() {
     };
   });
   if ($("botTokSave")) $("botTokSave").onclick = connectTelegramFromChat;
+  if ($("allYes")) $("allYes").onclick = approveAll;
+}
+
+/**
+ * Says yes to every change still waiting in this conversation.
+ *
+ * Asked first, and told how many. One tap running twenty five changes is the
+ * point of the button, and it is also the reason a mis-tap would be expensive.
+ * Each one is still run on its own, so one that fails does not stop the rest,
+ * and the owner sees which failed.
+ */
+async function approveAll() {
+  const waiting = (state.assistant?.approvals ?? []).filter((a) => a.state === "waiting");
+  if (waiting.length === 0) return;
+  const choice = await ask(
+    `Say yes to ${waiting.length} changes`,
+    "They are made one after another, in the order they were proposed. Anything that fails is left alone and reported.",
+    [{ key: "yes", label: `Do all ${waiting.length}`, primary: true }],
+  );
+  if (!choice) return;
+  $("allYes").disabled = true;
+  $("view").querySelectorAll("[data-approve]").forEach((b) => (b.disabled = true));
+  let last;
+  for (const approval of waiting) {
+    const { ok, data } = await api(`assistant/approvals/${approval.id}`, {
+      method: "POST",
+      body: { yes: true },
+    });
+    if (ok) last = data;
+  }
+  if (last) state.assistant = { ...state.assistant, approvals: last.approvals };
+  state.overview = null;
+  const failed = (last?.approvals ?? []).filter((a) => a.state === "failed").length;
+  toast(failed > 0 ? `Done, ${failed} could not be made.` : "Done.");
+  drawAssistant();
 }
 
 /**
@@ -1549,31 +1654,60 @@ function promptCard(prompt) {
 }
 
 /** One proposed change, and the two buttons that decide it. */
-const approvalCard = (a) => `
-  <div class="approval ${a.state}">
-    <div class="approval-head">
+/**
+ * Every change one answer proposed, in one card.
+ *
+ * They used to be a card each, so a turn that proposed a business and ten
+ * prices produced eleven boxes down the thread and the owner had to hunt for
+ * the end of them. It is one card now: a row per change with a switch, the
+ * count in the header, and one control that says yes to all of them.
+ *
+ * A switch acts when it is flipped. There is no separate save, because a list
+ * of unsaved intentions is a second state to keep and a second thing to explain
+ * — and the row already says what it will do.
+ */
+function approvalCard(approvals) {
+  const waiting = approvals.filter((a) => a.state === "waiting");
+  return `<div class="changes">
+      <div class="changes-head">
+        <b>${
+          waiting.length > 0
+            ? `${waiting.length} change${waiting.length === 1 ? "" : "s"} waiting for you`
+            : `${approvals.length} change${approvals.length === 1 ? "" : "s"}`
+        }</b>
+        ${
+          waiting.length > 1
+            ? `<button class="btn btn-primary btn-sm" id="allYes">Yes to all</button>`
+            : ""
+        }
+      </div>
+      ${approvals.map(changeRow).join("")}
+    </div>`;
+}
+
+/** One proposed change: what it is, what it would do, and the switch. */
+const changeRow = (a) => `
+  <div class="change ${a.state}">
+    <div class="change-what">
       <b>${h(a.summary)}</b>
-      ${APPROVAL_TAG[a.state] ?? ""}
+      <small>${h(a.tool)}${
+        Object.keys(a.args).length === 0
+          ? ""
+          : ` · ${h(
+              Object.entries(a.args)
+                .filter(([key]) => key !== "business_id")
+                .map(([key, value]) => `${key}: ${String(value).slice(0, 60)}`)
+                .join(" · "),
+            )}`
+      }${a.result ? ` · ${h(a.result)}` : ""}</small>
     </div>
-    <div class="approval-what">${h(a.tool)}${
-      Object.keys(a.args).length === 0
-        ? ""
-        : ` · ${h(
-            Object.entries(a.args)
-              .filter(([key]) => key !== "business_id")
-              .map(([key, value]) => `${key}: ${String(value).slice(0, 60)}`)
-              .join(" · "),
-          )}`
-    }</div>
     ${
       a.state === "waiting"
-        ? `<div class="approval-acts">
-             <button class="btn btn-ghost btn-sm" data-approve="${h(a.id)}" data-yes="0">No</button>
-             <button class="btn btn-primary btn-sm" data-approve="${h(a.id)}" data-yes="1">Do it</button>
+        ? `<div class="switch" role="group" aria-label="${h(a.summary)}">
+             <button data-approve="${h(a.id)}" data-yes="0">No</button>
+             <button data-approve="${h(a.id)}" data-yes="1">Yes</button>
            </div>`
-        : a.result
-          ? `<div class="approval-what">${h(a.result)}</div>`
-          : ""
+        : APPROVAL_TAG[a.state] ?? ""
     }
   </div>`;
 
@@ -3492,23 +3626,7 @@ async function viewSettings() {
         viewSettings();
       }
     };
-    $("doUpdate").onclick = async () => {
-      $("doUpdate").disabled = true;
-      $("updateOut").innerHTML = '<p class="loading" style="padding:0">Reading the new code and pushing it…</p>';
-      const { data: out } = await api("update", { method: "POST" });
-      $("doUpdate").disabled = false;
-      $("updateOut").innerHTML =
-        `<p style="margin:0;color:${out.ok ? "var(--green)" : "var(--red)"}">${h(out.message)}</p>` +
-        (out.ok
-          ? '<p style="color:var(--muted);font-size:13px;margin:8px 0 0">Cloudflare builds and deploys it from your repository. Give it a couple of minutes, then reload.</p>'
-          : "") +
-        (out.notes ?? [])
-          .map(
-            (note) => `<p style="margin:10px 0 0;padding:11px 14px;background:var(--brand-soft);
-              border:1px solid var(--brand-line);border-radius:10px;font-size:13px;color:var(--brand-ink)">${h(note)}</p>`,
-          )
-          .join("");
-    };
+    $("doUpdate").onclick = () => runUpdate(v.running);
     return;
   }
 
@@ -3641,6 +3759,99 @@ async function viewSettings() {
       viewSettings();
     };
 }
+
+/**
+ * Pushes the update, then watches for it to land.
+ *
+ * The old version said "give it a couple of minutes, then reload", which asks
+ * the owner to guess. The deployment reports the version it is running, so the
+ * console can simply watch that: when it changes to the one that was pushed,
+ * the new code is live and it says so.
+ *
+ * The bar reaches the end only on that observation. Cloudflare does not report
+ * how far through a build it is and neither does this, so the middle stretch
+ * creeps and is labelled as waiting rather than as measuring. It stops short of
+ * the end until the deployment itself answers with a new version.
+ */
+const UPDATE_POLL_MS = 5_000;
+/** After this, Cloudflare has had long enough that silence is worth saying. */
+const UPDATE_PATIENCE_MS = 6 * 60_000;
+
+async function runUpdate(runningBefore) {
+  const out = $("updateOut");
+  $("doUpdate").disabled = true;
+  drawProgress(6, "Reading the new code and pushing it to your repository");
+
+  const { data: pushed } = await api("update", { method: "POST" });
+  if (!pushed.ok) {
+    $("doUpdate").disabled = false;
+    out.innerHTML =
+      `<p style="margin:0;color:var(--red)">${h(pushed.message ?? "That did not work.")}</p>` +
+      (pushed.notes ?? []).map(updateNote).join("");
+    return;
+  }
+
+  // The version upstream is the one this push is bringing. When the deployment
+  // starts reporting it, Cloudflare has finished.
+  const expect = String(pushed.expect ?? "");
+  const observable = expect.length > 0 && expect !== runningBefore;
+  drawProgress(30, "Cloudflare is building your deployment", pushed.notes ?? []);
+
+  const started = Date.now();
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, UPDATE_POLL_MS));
+    const waited = Date.now() - started;
+    const { ok, data } = await api("system", { quiet: true });
+    const running = data?.version?.running;
+
+    if (ok && observable && running === expect) {
+      drawProgress(100, `Your deployment is running ${h(expect)}`);
+      out.insertAdjacentHTML(
+        "beforeend",
+        '<button class="btn btn-primary btn-sm" id="updateReload" style="margin-top:14px">Reload the console</button>',
+      );
+      $("updateReload").onclick = () => location.reload();
+      return;
+    }
+
+    if (waited > UPDATE_PATIENCE_MS) {
+      // Not a failure, and not a success either. Cloudflare may still be
+      // building, or this release may not have changed the version number, in
+      // which case nothing here can ever see it land.
+      drawProgress(
+        95,
+        observable
+          ? "Cloudflare is taking longer than usual. It may still be building."
+          : "Pushed. This release did not change the version number, so this page cannot tell when it lands.",
+      );
+      out.insertAdjacentHTML(
+        "beforeend",
+        '<button class="btn btn-ghost btn-sm" id="updateReload" style="margin-top:14px">Reload and check</button>',
+      );
+      $("updateReload").onclick = () => location.reload();
+      return;
+    }
+
+    // Creeping, not measuring: it approaches the end without arriving, because
+    // arriving is a thing only the deployment can tell us.
+    drawProgress(
+      30 + Math.round(62 * (1 - Math.exp(-waited / 90_000))),
+      "Cloudflare is building your deployment",
+      pushed.notes ?? [],
+    );
+  }
+}
+
+function drawProgress(percent, label, notes = []) {
+  $("updateOut").innerHTML = `
+    <div class="bar" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width:${percent}%"></span></div>
+    <p class="bar-label">${h(label)}<b>${percent}%</b></p>
+    ${notes.map(updateNote).join("")}`;
+}
+
+const updateNote = (note) => `<p style="margin:10px 0 0;padding:11px 14px;background:var(--brand-soft);
+  border:1px solid var(--brand-line);border-radius:10px;font-size:13px;color:var(--brand-ink)">${h(note)}</p>`;
 
 // ------------------------------------------------------------------ advanced
 

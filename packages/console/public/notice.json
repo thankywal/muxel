@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "A notice for everyone using Muxel, read by the console in their browser.",
+    "",
+    "There is no list of deployments and there will not be one, so nothing can be",
+    "pushed to anybody. This is pulled: the console is already served from this",
+    "host, so it asks this host for a line to show, and no deployment is",
+    "contacted, identified or recorded by doing it.",
+    "",
+    "To say something to every owner: change `id` to anything not used before,",
+    "write the text, and deploy the console. Every open console picks it up",
+    "within a few minutes; a dismissal is remembered against the id, so reusing",
+    "one means the people who already dismissed it never see the new words.",
+    "",
+    "Set `id` to \"\" to say nothing at all.",
+    "",
+    "`action` is optional. \"update\" adds a button that opens",
+    "Settings -> Deployment, which is where the update is."
+  ],
+  "id": "",
+  "kind": "info",
+  "text": "",
+  "action": ""
+}
