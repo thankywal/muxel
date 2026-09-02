@@ -275,6 +275,8 @@ export async function ask(
 
   let text = "";
   let prompt: Prompt | null = null;
+  /** Whether this turn has already been told it called nothing. Once only. */
+  let asked = false;
   // Every step of the loop is a call, and the owner pays for all of them. One
   // number for the turn, not for the last leg of it.
   const spent = { model, inputTokens: 0, outputTokens: 0 };
@@ -299,7 +301,37 @@ export async function ask(
     spent.outputTokens += turn.outputTokens ?? 0;
 
     text = turn.text.trim();
-    if (turn.toolCalls.length === 0) break;
+    if (turn.toolCalls.length === 0) {
+      // Nothing was called. On the first round that means the model has looked
+      // at nothing and changed nothing, and it has just written the only thing
+      // the owner will see.
+      //
+      // Which is how "I'll add those six prices to Shwe Coffee Shop for you.
+      // Tap Yes below to confirm." reached an owner with no cards under it and
+      // nothing written. The turn read as done because the model had stopped
+      // talking, and stopping is exactly what a model does after it promises.
+      //
+      // Nothing here reads the prose. There is no way to tell a promise from an
+      // answer by looking at words, and guessing at it in English would fail in
+      // Burmese the same afternoon. What the system knows for certain is what
+      // was called, which was nothing, so that is what it says back. One round,
+      // once per turn: a turn that genuinely needs no tool says the same thing
+      // again and is believed the second time.
+      if (asked) break;
+      asked = true;
+      steps.push({ role: "assistant", content: turn.text, tool_calls: undefined });
+      steps.push({
+        role: "user",
+        content:
+          "You called nothing, so nothing has been looked at and nothing has been proposed. The "
+          + "owner can only see the message above, and if it said you would change something, that "
+          + "is now untrue: a card is the only thing that changes anything. Do it now with the "
+          + "tools, all of it, or if this really was an answer that needed no tool, say the same "
+          + "thing again and it will be sent.",
+      });
+      say({ type: "status", label: "Working" });
+      continue;
+    }
 
     steps.push({ role: "assistant", content: turn.text, tool_calls: (turn.raw as { tool_calls?: unknown })?.tool_calls });
 

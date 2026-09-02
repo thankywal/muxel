@@ -89,7 +89,11 @@ export interface GenerateInput {
 /** One message in the wire format, so a loop can replay its own working. */
 export type ChatMessage =
   | { role: "assistant"; content: string | null; tool_calls?: unknown }
-  | { role: "tool"; tool_call_id: string; content: string };
+  | { role: "tool"; tool_call_id: string; content: string }
+  // Something the loop needs to say to the model mid-turn that is not the
+  // result of a tool it called. There is only one of these today: that it
+  // called nothing at all, which has no tool_call_id to answer against.
+  | { role: "user"; content: string };
 
 interface Attempt {
   readonly text: string;
