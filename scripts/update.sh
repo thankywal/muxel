@@ -41,14 +41,25 @@ fi
 sha=""
 if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-}" ]; then
   sha=$(gh api "repos/${UPSTREAM_REPO}/commits/main" --jq '.sha')
+  # A check that has not finished has a null conclusion, and null is neither a
+  # pass nor a failure. Folding it in with the failures reported a run that was
+  # still going as a run that had failed — an owner reading this log would go
+  # looking for a break upstream that was not there.
   state=$(gh api "repos/${UPSTREAM_REPO}/commits/${sha}/check-runs" --jq \
     '[.check_runs[].conclusion]
-     | if length == 0 then "pending"
+     | if length == 0 or any(. == null) then "pending"
        elif all(. == "success" or . == "skipped" or . == "neutral") then "success"
        else "failed" end')
   echo "Upstream ${sha:0:8} checks: ${state}"
   if [ "$state" != "success" ]; then
-    echo "Not applying. This runs again on the next schedule."
+    # Said differently for each, because they are different situations and only
+    # one of them is anybody's problem. Neither promises another run: whether
+    # one comes depends on a schedule this script cannot see.
+    if [ "$state" = "pending" ]; then
+      echo "Upstream is still being checked. Nothing applied; try again once it settles."
+    else
+      echo "Upstream checks failed. Nothing applied, deliberately."
+    fi
     exit 0
   fi
 fi
