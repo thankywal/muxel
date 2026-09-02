@@ -84,6 +84,7 @@ vi.mock("../src/web/secrets-vault.js", () => ({
   getSecret: vi.fn(async () => "gh-token"),
   hasSecret: vi.fn(async () => false),
   putSecret: vi.fn(async () => undefined),
+  secretHint: vi.fn(async () => null),
 }));
 vi.mock("../src/cloudflare/access.js", () => ({
   cloudflareAccess: vi.fn(async () => ({ token: "t", accountId: "acc123", name: "Test Account" })),

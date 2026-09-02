@@ -625,3 +625,15 @@ footer a:hover { color: var(--ink); }
 /* A capability that is switched on, said once above the field that switched it. */
 .on-note { margin: 0 0 14px; }
 .on-note a { color: var(--muted); }
+
+/* Which key is saved, under the field it was typed into. Never the key. */
+.key-hint { margin: 7px 0 0; font-size: 12.5px; color: var(--muted); }
+.key-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--ink-2);
+  letter-spacing: .02em;
+}

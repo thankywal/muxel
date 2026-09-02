@@ -82,7 +82,7 @@ import { resolveMasterKey } from "../secrets.js";
 import { ORIGIN_KEY } from "../setup.js";
 import { TelegramClient, type MediaKind } from "../telegram/api.js";
 import { escapeHtml } from "../telegram/format.js";
-import { clearSecret, getSecret, hasSecret, putSecret } from "./secrets-vault.js";
+import { clearSecret, getSecret, hasSecret, putSecret, secretHint } from "./secrets-vault.js";
 import { runSelfUpdate, sourceRepoFor, SOURCE_REPO_KEY } from "./self-update.js";
 import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
@@ -180,8 +180,11 @@ async function businessCard(env: Env, businessId: string) {
  *  14  the two outside capabilities and the owner's own keys for them: live
  *      web data through SerpApi, and a document read as data through Nutrient
  *      DWS
+ *  15  which key is stored, masked. Additive: a console reading this from a
+ *      deployment that predates it gets nothing and says so, rather than
+ *      showing the wrong key or hiding the panel.
  */
-export const API_REVISION = 14;
+export const API_REVISION = 15;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -1485,14 +1488,17 @@ export async function handleConsoleApi(
 
   // What this deployment is running, and whether anything is waiting for it.
   if (method === "GET" && segments[0] === "system") {
-    const [version, hasToken, usage, access, webSearch, documentData] = await Promise.all([
-      versionStatus(),
-      hasSecret(env, "github_token"),
-      todayUsageAll(env),
-      cloudflareAccess(env),
-      hasSecret(env, "serpapi_key"),
-      hasSecret(env, "nutrient_key"),
-    ]);
+    const [version, hasToken, usage, access, webSearch, documentData, serpHint, nutrientHint] =
+      await Promise.all([
+        versionStatus(),
+        hasSecret(env, "github_token"),
+        todayUsageAll(env),
+        cloudflareAccess(env),
+        hasSecret(env, "serpapi_key"),
+        hasSecret(env, "nutrient_key"),
+        secretHint(env, "serpapi_key"),
+        secretHint(env, "nutrient_key"),
+      ]);
     return json({
       apiRevision: API_REVISION,
       version,
@@ -1509,6 +1515,12 @@ export async function handleConsoleApi(
       // from this and the assistant's prompt reads the same vault, so one
       // answer serves both and they cannot disagree.
       outside: { webSearch, documentData },
+      // Which key, written the way a card number is written on a receipt. An
+      // owner who holds several needs to know the right one saved, and "a key
+      // is set" does not tell them that. Kept a sibling of `outside` rather
+      // than folded into it so a console that predates hints still reads the
+      // booleans it expects.
+      keyHint: { serpapi_key: serpHint, nutrient_key: nutrientHint },
       usage,
     });
   }

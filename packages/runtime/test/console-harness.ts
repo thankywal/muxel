@@ -43,6 +43,7 @@ export function evaluateConsole(): {
     placeholder: string;
     leaves: string;
     where: string;
+    hint?: string;
   }) => string;
 } {
   const noop = (): unknown => undefined;
