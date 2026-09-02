@@ -97,6 +97,29 @@ describe("the ownership claims", () => {
     }
   });
 
+  it("say what will be charged for, and that none of it is for sale yet", () => {
+    // Feasibility was the question the pitch could not answer: a page that
+    // says only what is free reads, to anyone deciding whether this is a
+    // company, as a page that says there is no company. So the intro screens
+    // say where the money will come from. In the present tense about today,
+    // and about the future only as to what, never as to never.
+    for (const [name, html] of screens) {
+      expect(html, name).toContain("The runtime is not the thing Muxel charges for.");
+      for (const line of ["verified Messenger, Instagram and WhatsApp channels",
+                          "one console over many businesses for agencies",
+                          "a hosted tier for owners who would rather not touch Cloudflare"]) {
+        expect(html, `${name}: ${line}`).toContain(line);
+      }
+      // The inversion that makes the policy a policy rather than a menu: the
+      // tier where we see anything is the expensive one.
+      expect(html, name).toContain("the only one where we can see anything");
+      // And nothing on the page may read as a price list for things that do
+      // not exist. There is no billing in this codebase; the page says so.
+      expect(html, name).toContain("None of that exists yet. Today there is nothing to buy.");
+      expect(html, name).not.toMatch(/\$\d+\s*(\/|per)\s*(mo|month)/i);
+    }
+  });
+
   it("do not claim a machine is never needed, only that none stays on", () => {
     // Somebody has to press Deploy in a browser. The true claim is that nothing
     // of theirs keeps running afterwards, and that is what is written.
