@@ -141,7 +141,11 @@ async function businessCard(env: Env, businessId: string) {
     locale: business.locale,
     createdAt: business.createdAt,
     telegram: telegram === null ? null : { username: telegram.username, enabled: telegram.enabled },
-    web: channel === null ? null : { enabled: channel.enabled, title: channel.title },
+    // The key goes with it. It is public by design — it sits in the script tag
+    // on the owner's own site — and without it the console can name a web
+    // agent and cannot offer to open it, which is the first thing anyone
+    // wants to do with one.
+    web: channel === null ? null : { enabled: channel.enabled, title: channel.title, key: channel.key },
     usage,
     customers: customers.length,
   };
@@ -183,8 +187,10 @@ async function businessCard(env: Env, businessId: string) {
  *  15  which key is stored, masked. Additive: a console reading this from a
  *      deployment that predates it gets nothing and says so, rather than
  *      showing the wrong key or hiding the panel.
+ *  16  the address a web agent answers on, so the console can offer to open
+ *      it. Additive: without it the agents list simply has no link.
  */
-export const API_REVISION = 15;
+export const API_REVISION = 16;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -719,12 +725,17 @@ export async function handleConsoleApi(
   if (method === "GET" && segments[0] === "agents") {
     const businesses = await listBusinesses(env, userId);
     const ids = businesses.map((business) => business.id);
-    const [cards, unaided, activity] = await Promise.all([
+    const [cards, unaided, activity, origin] = await Promise.all([
       Promise.all(businesses.map((business) => businessCard(env, business.id))),
       unaidedShare(env, ids),
       lastActivity(env, ids),
+      env.STATE.get(ORIGIN_KEY),
     ]);
     return json({
+      // Where this deployment answers from. The console needs it to build the
+      // address of a web agent, and it cannot work that out for itself: the
+      // page is served from somewhere else entirely.
+      origin: origin ?? "",
       agents: cards.map((card) => {
         const share = unaided.get(card.id) ?? { conversations: 0, handed: 0 };
         return {

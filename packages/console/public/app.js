@@ -182,6 +182,8 @@ const ICONS = {
   chat: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9.9 9.9 0 0 1-4-.8L3 21l1.9-4.6A8.3 8.3 0 0 1 3.6 11.5 8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  external: '<path d="M15 3h6v6M10 14 21 3M21 14v7H3V3h7"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V7a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
 };
@@ -385,9 +387,17 @@ function shell() {
         ${icon("chevron", 15)}
       </button>
     </aside>
+    <div class="rail-veil" id="railVeil"></div>
 
     <main class="${chatting ? "chatting" : ""}">
       <div class="topbar">
+        <!--
+          The way back to the navigation on a narrow screen. The rail is off
+          canvas there, and without this there was no way to reach Overview,
+          Businesses or a past chat at all: the page you landed on was the page
+          you were stuck with.
+        -->
+        <button class="icon-btn rail-open" id="railOpen" aria-label="Menu">${icon("menu", 18)}</button>
         ${
           chatting
             ? `<button class="model-pick" id="modelPick">
@@ -402,7 +412,7 @@ function shell() {
           <button class="icon-btn" id="themeBtn" title="Theme">${icon(themeNow() === "dark" ? "sun" : "moon", 16)}</button>
         </div>
       </div>
-      <div class="content" id="view"><p class="loading">Loading…</p></div>
+      <div class="content" id="view">${waitingMark()}</div>
       ${
         chatting
           ? ""
@@ -416,8 +426,20 @@ function shell() {
     </main>
    </div>`;
 
-  $("shell").querySelectorAll(".nav-item").forEach((n) => (n.onclick = () => go(n.dataset.view)));
-  $("newChat").onclick = () => openChat(null);
+  // Opening the drawer, and every way of closing it again. A drawer that only
+  // closes by its own button is a trap on a phone, where the thing you want is
+  // usually the page behind it.
+  // The class goes on the .shell the CSS actually selects, which is the div
+  // inside #shell rather than #shell itself. Putting it on the wrapper toggled
+  // a class nothing was listening for: the drawer stayed shut and said nothing.
+  const railBox = $("shell").querySelector(".shell");
+  const rail = (on) => railBox?.classList.toggle("rail-on", on);
+  $("railOpen").onclick = () => rail(true);
+  $("railVeil").onclick = () => rail(false);
+  $("shell").querySelectorAll(".nav-item").forEach(
+    (n) => (n.onclick = () => { rail(false); go(n.dataset.view); }),
+  );
+  $("newChat").onclick = () => { rail(false); openChat(null); };
   $("ownerBadge").onclick = openOwnerMenu;
   $("openPalette").onclick = openPalette;
   $("themeBtn").onclick = toggleTheme;
@@ -520,6 +542,7 @@ function bindChatRail() {
   list.querySelectorAll("[data-chat]").forEach((row) => {
     row.onclick = (event) => {
       if (event.target.closest("[data-drop]")) return;
+      document.querySelector(".shell")?.classList.remove("rail-on");
       openChat(row.dataset.chat);
     };
   });
@@ -761,7 +784,7 @@ function go(view, next = {}) {
 async function render() {
   const view = $("view");
   if (!view) return;
-  view.innerHTML = '<p class="loading">Loading…</p>';
+  view.innerHTML = waitingMark();
   // Advanced used to be exempt, back when these calls went through a proxy and
   // the Telegram screens were reachable even on a deployment with no data API.
   // They are not any more: a build old enough to lack the API answers the
@@ -2027,6 +2050,13 @@ async function viewAgents() {
   if (state.businessId) return agentConfig();
   const { data } = await api("agents");
   const all = data.agents ?? [];
+  // Where a web agent answers, built from what the deployment reported about
+  // itself. Empty on a deployment that predates the field, in which case the
+  // column simply is not offered rather than pointing somewhere wrong.
+  const tryUrl = (agent) =>
+    data.origin && agent.web?.enabled && agent.web?.key
+      ? `${String(data.origin).replace(/\/+$/, "")}/w/${agent.web.key}`
+      : "";
   const shown = all.filter((a) => (state.filter === "all" ? true : state.filter === "live" ? a.live : !a.live));
 
   $("view").innerHTML = `
@@ -2044,7 +2074,7 @@ async function viewAgents() {
              <button class="btn btn-primary" id="newBiz2">Set up your first agent</button></div>`
         : `<div class="card"><table>
             <thead><tr><th>Agent</th><th>Status</th><th>Channels</th><th>Messages today</th>
-              <th>Answered alone</th><th>Last activity</th></tr></thead>
+              <th>Answered alone</th><th>Last activity</th><th>Try it</th></tr></thead>
             <tbody>${shown
               .map(
                 (a) => `<tr class="click" data-business="${h(a.id)}">
@@ -2057,7 +2087,13 @@ async function viewAgents() {
                       ? '<span style="color:var(--muted)">no data yet</span>'
                       : `<div style="font-size:12px;margin-bottom:3px">${a.unaided}%</div><div class="bar"><i style="width:${a.unaided}%"></i></div>`
                   }</td>
-                  <td style="color:var(--muted)">${h(ago(a.lastActivity))}</td></tr>`,
+                  <td style="color:var(--muted)">${h(ago(a.lastActivity))}</td>
+                  <td>${
+                    tryUrl(a)
+                      ? `<a class="try-link" href="${h(tryUrl(a))}" target="_blank" rel="noopener"
+                            title="Opens the chat your customers see">${icon("external", 13)}Open</a>`
+                      : '<span style="color:var(--muted)">not on the web</span>'
+                  }</td></tr>`,
               )
               .join("")}</tbody></table>
             <div class="tfoot"><span>Showing ${shown.length} of ${all.length} agents</span></div></div>`
@@ -2117,7 +2153,7 @@ async function agentConfig() {
     <div class="subnav">${TABS.map(
       ([id, label]) => `<button data-atab="${id}" class="${state.agentTab === id ? "on" : ""}">${label}</button>`,
     ).join("")}</div>
-    <div id="agentTab"><p class="loading">Loading…</p></div>`;
+    <div id="agentTab">${waitingMark()}</div>`;
 
   $("back").onclick = (e) => (e.preventDefault(), go("agents", { businessId: null, customerId: null }));
   $("openChats").onclick = () => go("messages", { customerId: null });
@@ -2858,7 +2894,7 @@ function wirePager() {
 async function customerDrawer(customerId) {
   const bg = document.createElement("div");
   bg.className = "modal-bg";
-  bg.innerHTML = '<div class="modal" style="max-width:560px"><p class="loading">Loading…</p></div>';
+  bg.innerHTML = `<div class="modal" style="max-width:560px">${waitingMark()}</div>`;
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.onclick = (e) => e.target === bg && close();
@@ -3008,7 +3044,7 @@ async function viewBusinesses() {
 
 async function businessDetail(businessId) {
   state.businessId = businessId;
-  $("view").innerHTML = '<p class="loading">Loading…</p>';
+  $("view").innerHTML = waitingMark();
   const { ok, data: b } = await api(`businesses/${businessId}`);
   if (!ok) return;
 
@@ -3041,7 +3077,7 @@ async function businessDetail(businessId) {
     <div class="subnav">${TABS.map(
       ([id, label]) => `<button data-btab="${id}" class="${state.bizTab === id ? "on" : ""}">${label}</button>`,
     ).join("")}</div>
-    <div id="bizTab"><p class="loading">Loading…</p></div>`;
+    <div id="bizTab">${waitingMark()}</div>`;
 
   $("back").onclick = (e) => (e.preventDefault(), (state.businessId = null), render());
   $("openChats").onclick = () => go("agents", { businessId, customerId: null });
@@ -4164,8 +4200,8 @@ async function viewAdvanced() {
   $("view").innerHTML = `
     <p style="margin:0 0 14px"><a href="#" id="backToDiag" style="color:var(--muted);font-size:13px">← Diagnostics</a></p>
     <div class="split">
-      <div class="card list" id="advNav"><p class="loading">Loading…</p></div>
-      <div class="card" id="advPane"><p class="loading">Loading…</p></div>
+      <div class="card list" id="advNav">${waitingMark()}</div>
+      <div class="card" id="advPane">${waitingMark()}</div>
     </div>`;
   $("backToDiag").onclick = (e) => (e.preventDefault(), go("diagnostics"));
   if (state.advNav === null) {
@@ -4903,13 +4939,26 @@ function productDialog(businessId, item) {
 
 // ------------------------------------------------------------------- connect
 
+/**
+ * The one place that decides which of the three screens is on.
+ *
+ * Boot is on until this runs, so a reload of a connected console never paints
+ * the sign-in page on its way to the console. Whichever screen wins, boot goes.
+ */
 function showConsole(on) {
+  const booting = $("boot");
+  if (booting) booting.hidden = true;
   $("onboardingWrap").hidden = on;
   $("shell").hidden = !on;
   if (on) {
     shell();
     render();
   }
+}
+
+/** The mark, waiting, inside a page that is already drawn. */
+function waitingMark(what = "Loading") {
+  return `<div class="loading-mark"><img src="/assets/logo.png" alt="">${h(what)}</div>`;
 }
 
 function disconnect(event) {
