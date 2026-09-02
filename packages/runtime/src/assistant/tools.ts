@@ -82,6 +82,15 @@ const bool = (args: Record<string, unknown>, key: string): boolean | undefined =
 /** Refuses a business the asker cannot see, before anything reads it. */
 async function reachable(ctx: ToolContext, businessId: string): Promise<string> {
   if (businessId.length === 0) throw new Error("Which business? Give its id from list_businesses.");
+  // Existence, then access. Access alone answered yes for an owner whatever the
+  // id was, so a change to a business that was never there ran, wrote a row
+  // nothing would ever read, and reported Done. A card is also bound at
+  // proposal time (assistant/target.ts); this is the same check at the second
+  // door, because a business can be deleted between the card and the tap.
+  const exists = await ctx.env.DB.prepare("SELECT 1 AS ok FROM business WHERE id = ?")
+    .bind(businessId)
+    .first<{ ok: number }>();
+  if (exists === null) throw new Error("There is no business with that id. Use list_businesses.");
   if (!(await canAccessBusiness(ctx.env, ctx.userId, businessId))) {
     throw new Error("That business is not one you can see.");
   }
@@ -568,7 +577,9 @@ export const TOOLS: readonly AssistantTool[] = [
   {
     name: "save_price",
     description:
-      "Add or correct one item on the price list. The agent quotes from this and nowhere else.",
+      "Add or correct one item on the price list. The agent quotes from this and nowhere else. "
+      + "business_id must be a business that exists now: one you are creating in this message has "
+      + "no id yet, so propose its prices in your next message, once the owner has said yes to it.",
     parameters: {
       type: "object",
       properties: {
@@ -706,7 +717,7 @@ export const TOOLS: readonly AssistantTool[] = [
       "Delete a business and everything in it: its material, its conversations and its channels. "
       + "Only when the owner has asked for exactly this.",
     writes: true,
-    summarise: (args) => `Delete the business ${str(args, "business_id")} and everything in it`,
+    summarise: () => "Delete the business and everything in it",
     parameters: { type: "object", properties: BUSINESS_ARG, required: ["business_id"] },
     run: async (ctx, args) => {
       const businessId = await reachable(ctx, str(args, "business_id"));
