@@ -785,30 +785,39 @@ async function render() {
   const view = $("view");
   if (!view) return;
   view.innerHTML = waitingMark();
-  // Advanced used to be exempt, back when these calls went through a proxy and
-  // the Telegram screens were reachable even on a deployment with no data API.
-  // They are not any more: a build old enough to lack the API answers the
-  // browser's preflight with an error, so nothing on it can be reached from a
-  // page at all. Every view reads the one fact.
-  if (!(await apiReady())) return viewOutdated();
-  if (state.chats === null && state.apiRevision >= NEEDS.assistant) loadChats();
-  const needs = NEEDS[state.view] ?? 1;
-  if (state.apiRevision < needs) return viewNeedsUpdate(state.view, needs);
-  const draw = {
-    overview: viewOverview,
-    inbox: viewInbox,
-    assistant: viewAssistant,
-    diagnostics: viewDiagnostics,
-    agents: viewAgents,
-    businesses: viewBusinesses,
-    channels: viewChannels,
-    customers: viewCustomers,
-    messages: viewMessages,
-    settings: viewSettings,
-    logs: viewLogs,
-    advanced: viewAdvanced,
-  }[state.view];
-  (draw ?? viewOverview)();
+  try {
+    // Advanced used to be exempt, back when these calls went through a proxy
+    // and the Telegram screens were reachable even on a deployment with no data
+    // API. They are not any more: a build old enough to lack the API answers
+    // the browser's preflight with an error, so nothing on it can be reached
+    // from a page at all. Every view reads the one fact.
+    if (!(await apiReady())) return viewOutdated();
+    if (state.chats === null && state.apiRevision >= NEEDS.assistant) loadChats();
+    const needs = NEEDS[state.view] ?? 1;
+    if (state.apiRevision < needs) return viewNeedsUpdate(state.view, needs);
+    const draw = {
+      overview: viewOverview,
+      inbox: viewInbox,
+      assistant: viewAssistant,
+      diagnostics: viewDiagnostics,
+      agents: viewAgents,
+      businesses: viewBusinesses,
+      channels: viewChannels,
+      customers: viewCustomers,
+      messages: viewMessages,
+      settings: viewSettings,
+      logs: viewLogs,
+      advanced: viewAdvanced,
+    }[state.view];
+    // Awaited, because the boot screen comes down after this and a view that
+    // is still fetching has not drawn anything yet.
+    await (draw ?? viewOverview)();
+  } finally {
+    // Whatever happened. A deployment that cannot be reached is a page saying
+    // so, which is a real screen; leaving the mark up over it would be the
+    // console pretending it is still trying.
+    booted();
+  }
 }
 
 /** Fill the rail once, from whichever view the console opened on. */
@@ -827,8 +836,14 @@ async function apiReady() {
   // "ready" is remembered; "absent" is asked again each visit, so the console
   // starts working by itself once the deployment catches up.
   if (state.api !== "ready") {
-    const { status, data } = await api("system", { quiet: true });
-    state.api = status === 404 || status === 0 ? "absent" : "ready";
+    // Given a deadline, because the boot screen now waits on this. A Worker
+    // that accepts the connection and never answers used to leave a small mark
+    // spinning inside a console you could still click out of; it would leave
+    // the whole screen covered instead, with nothing to press.
+    const { status, data } = await api("system", { quiet: true, signal: AbortSignal.timeout(12000) });
+    // A timeout, a refused preflight and an offline deployment are one thing
+    // to every caller: no answer.
+    state.api = status === 404 || status <= 0 ? "absent" : "ready";
     // A deployment from before this field reports nothing, which is revision 1:
     // the first data API, and everything since then is something it lacks.
     state.apiRevision = Number(data.apiRevision ?? 1) || 1;
@@ -4943,20 +4958,40 @@ function productDialog(businessId, item) {
  * The one place that decides which of the three screens is on.
  *
  * Boot is on until this runs, so a reload of a connected console never paints
- * the sign-in page on its way to the console. Whichever screen wins, boot goes.
+ * the sign-in page on its way to the console.
+ *
+ * It does not take boot down itself. Taking it down here put the console's own
+ * frame on screen — rail, header, an empty content area — with a second and
+ * differently shaped loading mark inside it, while the first view was still
+ * being fetched. That is two loading screens for one page load, in the order
+ * that makes the second one look like something went wrong. The sign-in screen
+ * has nothing to fetch and ends boot as soon as it is up; the console ends it
+ * once it has actually drawn a view.
  */
 function showConsole(on) {
-  const booting = $("boot");
-  if (booting) booting.hidden = true;
   $("onboardingWrap").hidden = on;
   $("shell").hidden = !on;
   if (on) {
     shell();
     render();
+  } else {
+    booted();
   }
 }
 
-/** The mark, waiting, inside a page that is already drawn. */
+/** Boot is over, because something real is now behind it. */
+function booted() {
+  const booting = $("boot");
+  if (booting) booting.hidden = true;
+}
+
+/**
+ * The mark, waiting, inside a page that is already drawn.
+ *
+ * For moving between views once the console is up. The first view of a page
+ * load happens behind the boot screen, so this is never the thing an owner
+ * sees while the console is still arriving.
+ */
 function waitingMark(what = "Loading") {
   return `<div class="loading-mark"><img src="/assets/logo.png" alt="">${h(what)}</div>`;
 }

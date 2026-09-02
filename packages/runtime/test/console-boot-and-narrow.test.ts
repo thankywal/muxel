@@ -55,8 +55,12 @@ describe("the first paint", () => {
     // line in the top corner is what a broken view looks like.
     expect(css).toMatch(/\.boot-mark \{[\s\S]*?width: min\(168px/);
     expect(css).toMatch(/\.loading-mark \{[\s\S]*?place-content: center/);
-    expect(css).toMatch(/\.loading-mark \{[\s\S]*?min-height: 52vh/);
-    expect(css).toMatch(/\.loading-mark img \{[\s\S]*?width: min\(120px/);
+    // The waiting state inside a drawn page is centred but modest: the whole
+    // screen belongs to boot, where there is genuinely nothing else, and a view
+    // fetching a short list should not look like a page that has emptied
+    // itself.
+    expect(css).toMatch(/\.loading-mark \{[\s\S]*?min-height: 220px/);
+    expect(css).toMatch(/\.loading-mark img \{[\s\S]*?width: 64px/);
     // A dialog is small on purpose and must not be given a half-screen mark.
     expect(css).toContain(".modal .loading-mark");
   });
@@ -65,16 +69,69 @@ describe("the first paint", () => {
     // Not a spinner. A spinner says work is happening; at this point the only
     // work is a script parsing, and the honest state is "we do not know yet
     // whose console this is".
-    const boot = html.slice(html.indexOf('<div id="boot"'), html.indexOf("</div>", html.indexOf('<div id="boot"')));
-    expect(boot).toContain("/assets/logo.png");
     expect(css).toContain("@keyframes boot-shimmer");
     expect(css).toContain("@keyframes boot-breathe");
   });
 
+  it("owes the network nothing to draw itself", () => {
+    // It appeared with no mark at all, and once with the top third of one:
+    // /assets/logo.png is 188KB and the loading screen was waiting on it. A
+    // loading screen that needs a loading screen is not one.
+    expect(css).toMatch(/--mark: url\("data:image\/png;base64,/);
+    expect(css).toMatch(/\.boot-mark \{[\s\S]*?background: var\(--mark\)/);
+    const boot = html.slice(html.indexOf('<div id="boot"'), html.indexOf("</div>", html.indexOf('<div id="boot"')) + 6);
+    expect(boot, "the boot screen must not fetch anything").not.toContain("src=");
+    // Small enough to belong in a stylesheet the page already blocks on.
+    const inline = css.match(/--mark: url\("data:image\/png;base64,([^"]+)"\)/)?.[1] ?? "";
+    expect(inline.length).toBeGreaterThan(2000);
+    expect(inline.length).toBeLessThan(24_000);
+  });
+
+  // The guarantee this has always made is that boot comes down on both paths.
+  // What changed is where: taking it down inside showConsole put the console's
+  // own frame on screen with a second loading mark inside it while the first
+  // view was still being fetched, which is two loading screens for one page
+  // load. So the assertion is about the guarantee now, not about the line that
+  // used to keep it.
   it("takes the boot screen down whichever screen wins", () => {
-    const show = app.slice(app.indexOf("function showConsole"), app.indexOf("function disconnect"));
-    expect(show).toContain('$("boot")');
-    expect(show).toContain("hidden = true");
+    const show = app.slice(app.indexOf("function showConsole"), app.indexOf("function booted"));
+    // The sign-in screen has nothing to fetch, so it ends boot as it appears.
+    expect(show).toMatch(/\} else \{[\s\S]{0,80}booted\(\)/);
+    const render = app.slice(app.indexOf("async function render()"), app.indexOf("async function apiReady"));
+    // The console ends it once a view is drawn, whatever the view turned out
+    // to be — including a page saying the deployment could not be reached.
+    expect(render).toMatch(/\} finally \{[\s\S]{0,240}booted\(\)/);
+    expect(app).toMatch(/function booted\(\) \{[\s\S]{0,120}hidden = true/);
+  });
+
+  it("does not hand over to a second loading mark on the way in", () => {
+    // The bug, in one line: showConsole took boot down, then drew the rail and
+    // the header around an empty content area holding waitingMark(), and the
+    // owner watched a full screen mark become a small different one.
+    const show = app.slice(app.indexOf("function showConsole"), app.indexOf("function booted"));
+    // The `if (on)` branch alone. The `else` is the sign-in screen, which is
+    // supposed to end boot.
+    const onwards = show.slice(show.indexOf("if (on) {"), show.indexOf("} else {"));
+    expect(onwards).toContain("shell()");
+    expect(onwards).not.toContain("booted()");
+    expect(onwards).not.toContain('$("boot")');
+  });
+
+  it("waits for the view before it says the console has arrived", () => {
+    // Without the await, the boot screen comes down on the frame the draw was
+    // started, not the frame it finished, which is the same two screens again.
+    const render = app.slice(app.indexOf("async function render()"), app.indexOf("async function apiReady"));
+    expect(render).toMatch(/await \(draw \?\? viewOverview\)\(\)/);
+  });
+
+  it("gives the call the boot screen waits on a deadline", () => {
+    // A Worker that accepts the connection and never answers used to leave a
+    // small mark spinning inside a console you could still click out of. It
+    // would cover the whole screen now, with nothing to press.
+    const ready = app.slice(app.indexOf("async function apiReady"), app.indexOf("async function overview"));
+    expect(ready).toMatch(/api\("system", \{ quiet: true, signal: AbortSignal\.timeout\(\d+\) \}\)/);
+    // A timeout answers -1, which was landing in the "ready" branch.
+    expect(ready).toMatch(/status <= 0/);
   });
 
   it("is dark before the script runs, on a machine that is dark", () => {
