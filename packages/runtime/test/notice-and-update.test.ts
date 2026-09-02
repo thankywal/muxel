@@ -14,10 +14,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { evaluateConsole } from "./console-harness.js";
 
 const read = (name: string): string =>
   readFileSync(new URL(`../../console/public/${name}`, import.meta.url), "utf8");
 const app = read("app.js");
+const { versionBlock } = evaluateConsole();
 const api = readFileSync(new URL("../src/web/console-api.ts", import.meta.url), "utf8");
 
 describe("the notice", () => {
@@ -99,5 +101,36 @@ describe("the version this release brings", () => {
     const version = readFileSync(new URL("../../../VERSION", import.meta.url), "utf8").trim();
     const source = readFileSync(new URL("../src/version.ts", import.meta.url), "utf8");
     expect(source).toContain(`MUXEL_VERSION = "${version}"`);
+  });
+});
+
+describe("the version the panel prints", () => {
+  it("is drawn by one function, so the panel and its own bar cannot disagree", () => {
+    // A bar reading "your deployment is running 0.21.0, 100%" used to sit under
+    // a line still reading "Running 0.20.1 · an update is available", because
+    // the line was captured when the panel opened and never read again.
+    expect(app).toContain('<div id="versionNow">${versionBlock(');
+    expect(app).toMatch(/box\.innerHTML = versionBlock\(version, repo\)/);
+  });
+
+  it("is repainted from every reading the update takes", () => {
+    const at = app.indexOf("async function runUpdate");
+    const body = app.slice(at, app.indexOf("function drawProgress"));
+    expect(body).toMatch(/if \(ok\) paintVersion\(data\.version, data\.repo \?\? ""\)/);
+    // Before the decision, not after it: the line has to be right whether the
+    // update landed on this poll or not.
+    expect(body.indexOf("paintVersion")).toBeLessThan(body.indexOf("running === expect"));
+  });
+
+  it("says an update is available only while one is", () => {
+    expect(versionBlock({ running: "0.20.1", latest: "0.21.0", behind: true }, "a/b"))
+      .toContain("An update is available");
+    const current = versionBlock({ running: "0.21.0", latest: "0.21.0", behind: false }, "a/b");
+    expect(current).toContain("This deployment is up to date");
+    expect(current).not.toContain("An update is available");
+  });
+
+  it("does not print a repository it was not given", () => {
+    expect(versionBlock({ running: "0.21.0", behind: false }, "")).not.toContain("· from");
   });
 });

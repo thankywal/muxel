@@ -3577,17 +3577,7 @@ async function viewSettings() {
       <div class="card" style="max-width:700px">
         <div class="card-head"><h2>Version</h2></div>
         <div class="pad">
-          <p style="color:var(--muted);font-size:13.5px;margin:0 0 13px">
-            Running <b style="color:var(--ink)">${h(v.running ?? "unknown")}</b>${
-              v.latest ? ` · latest is <b style="color:var(--ink)">${h(v.latest)}</b>` : ""
-            } · from <b style="color:var(--ink)">${h(data.repo ?? "")}</b></p>
-          ${
-            v.behind
-              ? `<p style="margin:0 0 14px;color:var(--brand-ink)"><b>An update is available.</b> One click copies
-                   the new code into your own GitHub repository. Cloudflare builds and deploys it from there, so
-                   nothing of ours ever touches your account.</p>`
-              : '<p style="margin:0 0 14px;color:var(--muted)">This deployment is up to date.</p>'
-          }
+          <div id="versionNow">${versionBlock(v, data.repo ?? "")}</div>
           <div class="field" style="max-width:420px;margin:0 0 14px">
             <label>Where it pushes the new code</label>
             <div style="display:flex;gap:8px">
@@ -3600,7 +3590,7 @@ async function viewSettings() {
                 : "The build could not work this out, so the update has nowhere to push. It is the repository Cloudflare builds this deployment from, as owner/name."
             }</small>
           </div>
-          <button class="btn ${v.behind ? "btn-primary" : "btn-ghost"} btn-sm" id="doUpdate"
+          <button class="btn btn-sm ${v.behind ? "btn-primary" : "btn-ghost"}" id="doUpdate"
             ${data.githubToken && data.sourceRepo ? "" : "disabled"}>Update now</button>
           ${
             data.githubToken
@@ -3761,6 +3751,40 @@ async function viewSettings() {
 }
 
 /**
+ * What version this deployment is on, and whether that is the newest.
+ *
+ * Its own function because two things draw it: the panel when it opens, and the
+ * update while it watches. They used to be two readings of the same fact, and
+ * the older one stayed on screen — so a bar reading "your deployment is running
+ * 0.21.0, 100%" sat directly under a line still saying "Running 0.20.1 · an
+ * update is available". One of them was always wrong.
+ */
+const versionBlock = (v, repo) => `
+  <p style="color:var(--muted);font-size:13.5px;margin:0 0 13px">
+    Running <b style="color:var(--ink)">${h(v.running ?? "unknown")}</b>${
+      v.latest ? ` · latest is <b style="color:var(--ink)">${h(v.latest)}</b>` : ""
+    }${repo ? ` · from <b style="color:var(--ink)">${h(repo)}</b>` : ""}</p>
+  ${
+    v.behind
+      ? `<p style="margin:0 0 14px;color:var(--brand-ink)"><b>An update is available.</b> One click copies
+           the new code into your own GitHub repository. Cloudflare builds and deploys it from there, so
+           nothing of ours ever touches your account.</p>`
+      : '<p style="margin:0 0 14px;color:var(--muted)">This deployment is up to date.</p>'
+  }`;
+
+/** Repaints that line from a reading the update just took. */
+function paintVersion(version, repo) {
+  const box = $("versionNow");
+  if (box === null || version === undefined) return;
+  box.innerHTML = versionBlock(version, repo);
+  const button = $("doUpdate");
+  if (button !== null) {
+    button.classList.toggle("btn-primary", Boolean(version.behind));
+    button.classList.toggle("btn-ghost", !version.behind);
+  }
+}
+
+/**
  * Pushes the update, then watches for it to land.
  *
  * The old version said "give it a couple of minutes, then reload", which asks
@@ -3803,6 +3827,7 @@ async function runUpdate(runningBefore) {
     const waited = Date.now() - started;
     const { ok, data } = await api("system", { quiet: true });
     const running = data?.version?.running;
+    if (ok) paintVersion(data.version, data.repo ?? "");
 
     if (ok && observable && running === expect) {
       drawProgress(100, `Your deployment is running ${h(expect)}`);
