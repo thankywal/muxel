@@ -9,6 +9,7 @@
  */
 
 import type { Env } from "../env.js";
+import type { After } from "../products.js";
 import { getApproval, settleApproval } from "./store.js";
 import { findTool, type ToolContext } from "./tools.js";
 
@@ -21,6 +22,7 @@ export async function decide(
   userId: number,
   approvalId: string,
   yes: boolean,
+  after?: After,
 ): Promise<Decision> {
   const approval = await getApproval(env, userId, approvalId);
   if (approval === null) return { ok: false, message: "That change is not one of yours." };
@@ -45,7 +47,7 @@ export async function decide(
   const claimed = await settleApproval(env, userId, approvalId, "approved", "");
   if (!claimed) return { ok: false, message: "That was already decided." };
 
-  const ctx: ToolContext = { env, userId };
+  const ctx: ToolContext = { env, userId, after };
   try {
     await tool.run(ctx, approval.args);
     await env.DB.prepare("UPDATE operator_approval SET result = ? WHERE id = ?")

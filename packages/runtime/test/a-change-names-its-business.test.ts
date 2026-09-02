@@ -104,3 +104,32 @@ describe("the second door", () => {
     expect(findTool("delete_business")?.summarise?.({ business_id: "h0t99fvcn15ardh1" })).not.toContain("h0t99");
   });
 });
+
+/**
+ * And that it proposes all of them.
+ *
+ * Asked for six prices for a business that already existed, the model proposed
+ * two and said it would do the rest once those had been approved. It was
+ * reading the first half of "propose one thing at a time when one depends on
+ * another" and dropping the condition. Six round trips for a job asked for
+ * once, and Yes to all never appears above a single card.
+ */
+describe("how many changes one message may carry", () => {
+  const prompt = loop.slice(loop.indexOf("function systemPrompt"), loop.indexOf("\n}\n", loop.indexOf("function systemPrompt")));
+
+  it("says the default is all of them, before it says anything about waiting", () => {
+    const all = prompt.indexOf("Propose everything the owner asked for");
+    const exception = prompt.indexOf("The exception is a change that needs another one");
+    expect(all).toBeGreaterThan(-1);
+    expect(exception).toBeGreaterThan(all);
+  });
+
+  it("keeps the one real dependency, and closes the door on inventing others", () => {
+    expect(prompt).toContain("the business has to exist before you can add prices");
+    expect(prompt).toContain("Nothing else waits for anything.");
+  });
+
+  it("no longer carries the sentence that was misread", () => {
+    expect(prompt).not.toContain("Propose one thing at a time");
+  });
+});

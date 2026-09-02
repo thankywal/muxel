@@ -530,6 +530,13 @@ tbody tr.click:hover { background: var(--surface-2); }
                      word-break: break-word; }
 .change.approved { background: var(--green-soft); }
 .change.declined, .change.failed { background: var(--surface-2); }
+/* In flight. The tap has been sent and the deployment has not answered yet,
+   which on a price is a re-index and can take seconds: a row that only went
+   grey read as a button that did nothing. */
+.change.running { background: var(--brand-soft); }
+.change.running .tag .d, .change.queued .tag .d { animation: tap-pulse 1s ease-in-out infinite; }
+.tag.amber .d { background: var(--amber); }
+@keyframes tap-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 
 /* Yes and No as one control, so the answer is a position rather than a guess
    about which of two buttons was the safe one. */

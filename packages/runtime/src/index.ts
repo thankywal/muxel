@@ -99,7 +99,7 @@ export default {
       // The data API the web console lays out for itself, checked first so a
       // path under it never falls through to the screen renderer.
       if (rest.startsWith("/api/")) {
-        const answered = await handleConsoleApi(env, request, rest.slice("/api".length));
+        const answered = await handleConsoleApi(env, request, rest.slice("/api".length), (work) => ctx.waitUntil(work));
         if (answered !== null) return answered;
       }
       const handled = await handleConsoleRequest(env, request, rest);

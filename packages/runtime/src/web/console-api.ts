@@ -119,7 +119,7 @@ import { TARGET_VERSION, currentVersion } from "../db/migrate.js";
 import { UPSTREAM_REPO_URL } from "../version.js";
 import type { Env } from "../env.js";
 import { MAX_PROMPT_CHARS, MODEL_PRESETS } from "../telegram/admin.js";
-import { productsView, saveProductEntry } from "../products.js";
+import { productsView, saveProductEntry, type After } from "../products.js";
 import { OWNER_UPDATES_FILENAME, markExtractionPending, pendingExtractions, runExtraction } from "../rag/extract.js";
 import { CORS, json, operatorFor } from "./console.js";
 
@@ -342,6 +342,8 @@ export async function handleConsoleApi(
   env: Env,
   request: Request,
   path: string,
+  /** ctx.waitUntil on the Worker: work that may finish after the response. */
+  after?: After,
 ): Promise<Response | null> {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
 
@@ -713,7 +715,7 @@ export async function handleConsoleApi(
       // the caller: the answer carries that chat's changes back, and a chat id
       // supplied by the browser would be a way to read another one's.
       const chatId = await chatOfApproval(env, userId, segments[2]);
-      const outcome = await decide(env, userId, segments[2], body.yes === true);
+      const outcome = await decide(env, userId, segments[2], body.yes === true, after);
       return json({
         ...outcome,
         approvals: chatId === null ? [] : await listChatApprovals(env, userId, chatId),
@@ -973,7 +975,7 @@ export async function handleConsoleApi(
           price: String(body.price ?? ""),
           description: String(body.description ?? ""),
           removed: false,
-        });
+        }, after);
         return json({ products: await productsView(env, businessId) }, 201);
       }
       // Addressed by name, because that is the key a correction has. An item
@@ -992,7 +994,7 @@ export async function handleConsoleApi(
             price: "",
             description: "",
             removed: true,
-          });
+          }, after);
         } else {
           const body = (await request.json().catch(() => ({}))) as {
             name?: string;
@@ -1005,7 +1007,7 @@ export async function handleConsoleApi(
             price: String(body.price ?? entry.price),
             description: String(body.description ?? entry.description),
             removed: false,
-          });
+          }, after);
         }
         return json({ products: await productsView(env, businessId) });
       }

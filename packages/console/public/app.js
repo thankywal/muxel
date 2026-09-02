@@ -1203,7 +1203,34 @@ const APPROVAL_TAG = {
   approved: '<span class="tag green">Done</span>',
   declined: '<span class="tag grey"><span class="d"></span>Declined</span>',
   failed: '<span class="tag amber">Failed</span>',
+  // Two states the deployment never sends. They are this page's own record of
+  // a tap it has made and not yet heard back on, and of the taps a run has
+  // still to make. The next answer from the deployment replaces both.
+  running: '<span class="tag amber"><span class="d"></span>Making the change…</span>',
+  queued: '<span class="tag grey"><span class="d"></span>Next</span>',
 };
+
+/**
+ * Says on the card which change is being made right now, and which are next.
+ *
+ * A yes on a price is a write and a re-index, and the deployment answers when
+ * both are done. Before this the only thing that moved in the meantime was the
+ * text on one small button, and a run of five read as a card that had frozen;
+ * owners reloaded in the middle of it. The rows are a view of the record, so
+ * the record is what changes: the tapped change is marked running, the rest of
+ * a run queued, and the card is painted from it like any other change of state.
+ */
+function markInFlight(runningId, queuedIds = []) {
+  const queued = new Set(queuedIds);
+  state.assistant = {
+    ...state.assistant,
+    approvals: (state.assistant?.approvals ?? []).map((a) =>
+      a.id === runningId ? { ...a, state: "running" }
+        : queued.has(a.id) && a.state === "waiting" ? { ...a, state: "queued" }
+          : a),
+  };
+  paintChanges();
+}
 
 /**
  * The owner talking to their own deployment.
@@ -1713,6 +1740,9 @@ async function approveAll() {
     // Re-read every time, because the card is painted again between rounds.
     // Nothing in it is tappable while the run is going: a row about to be run
     // still has its Yes, and a second tap on it would be a second write.
+    // This one is being made; the ones after it are next. Painted before the
+    // request, because the request is the slow part.
+    markInFlight(approval.id, waiting.slice(index + 1).map((a) => a.id));
     const button = $("allYes");
     if (button) {
       button.disabled = true;
@@ -2088,6 +2118,8 @@ function scrollThread() {
 }
 
 async function answerApproval(approvalId, yes) {
+  // The row says the tap has been taken, before the deployment has answered.
+  if (yes) markInFlight(approvalId);
   $("view").querySelectorAll("[data-approve]").forEach((b) => (b.disabled = true));
   const { ok, data } = await api(`assistant/approvals/${approvalId}`, {
     method: "POST",
