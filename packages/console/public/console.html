@@ -61,6 +61,15 @@
   ol.steps b { display: block; margin-bottom: 3px; font-size: 14.5px; }
   ol.steps p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
 
+  .own h2 { margin-bottom: 20px; }
+  .own .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+  .own .one { display: flex; gap: 13px; }
+  .own .ic { width: 38px; height: 38px; border-radius: 11px; background: var(--brand-soft);
+             display: grid; place-items: center; flex: none; color: var(--brand-ink); }
+  .own .ic svg { width: 19px; height: 19px; }
+  .own b { display: block; font-size: 14.5px; margin-bottom: 4px; }
+  .own p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+
   .why .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .why .one { display: flex; gap: 13px; }
   /* The tile is what makes each of these read as one thing rather than a run
@@ -81,7 +90,7 @@
   .err.on { display: block; }
 
   @media (max-width: 980px) {
-    .ob .hero, .ob .below, .why .grid { grid-template-columns: 1fr; }
+    .ob .hero, .ob .below, .why .grid, .own .grid { grid-template-columns: 1fr; }
     .ob h1 { font-size: 32px; }
   }
 </style>
@@ -146,6 +155,50 @@
             <div class="openers" id="demoChips"></div>
           </div>
         </section>
+      </div>
+
+      <!--
+        The three things an owner asks before they will try this: what do I
+        have to run, what do I have to pay, and is it mine.
+
+        Every number here is one this deployment can be held to. 10,000 neurons
+        a day is Cloudflare's published free inclusion and the figure the cost
+        line under every answer counts against; 878 replies is the measurement
+        in ai/gateway.ts, on Gemma 4 with thinking off, not an estimate.
+      -->
+      <div class="panel pad own">
+        <h2>No VPS. Nothing of yours left running. No bill from us.</h2>
+        <div class="grid">
+          <div class="one">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+            <div>
+              <b>Nothing to run</b>
+              <p>No VPS to rent, no server to patch, no computer of yours that has to stay on.
+                 Cloudflare runs the code in your account, and it is running whether your laptop is
+                 open or not.</p>
+            </div>
+          </div>
+          <div class="one">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+            <div>
+              <b>Nothing to pay us</b>
+              <p>There is no Muxel account, no plan, no card and no trial that ends. We have no way to
+                 charge you, because there is nothing here to sign up for.</p>
+            </div>
+          </div>
+          <div class="one">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+              stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <div>
+              <b>The free plan covers it</b>
+              <p>Cloudflare includes 10,000 neurons a day, which we measured at about 880 replies on
+                 Gemma&nbsp;4. Past that the bill is Cloudflare's and not ours — and the agent is
+                 yours either way.</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="below">

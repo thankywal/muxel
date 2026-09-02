@@ -74,9 +74,17 @@ describe("the layout", () => {
     expect(page).toContain("Already deployed? Connect it.");
   });
 
-  it("stacks to one column on a narrow screen", () => {
-    // Two side-by-side grids and a 2x2 inside one of them. On a phone all three
-    // have to collapse, or the page scrolls sideways.
-    expect(page).toMatch(/\.ob \.hero, \.ob \.below, \.why \.grid \{ grid-template-columns: 1fr; \}/);
+  it("stacks every one of its columns on a narrow screen", () => {
+    // Asked of the stylesheet rather than pinned to one line of it: any grid
+    // added later has to be collapsed too, and a fixed string would only ever
+    // notice that the line changed, not that a new grid was left out.
+    const narrow = page.slice(page.indexOf("@media (max-width: 980px)"));
+    const columned = [...page.matchAll(/^\s*(\.[\w-]+(?: \.[\w-]+)?) \{[^}]*grid-template-columns: (?!1fr;)/gm)]
+      .map((match) => match[1])
+      .filter((selector) => selector.startsWith(".ob") || selector.startsWith(".why") || selector.startsWith(".own"));
+    expect(columned.length).toBeGreaterThanOrEqual(3);
+    for (const selector of columned) {
+      expect(narrow, selector).toContain(selector);
+    }
   });
 });

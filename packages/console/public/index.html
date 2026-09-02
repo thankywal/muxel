@@ -29,6 +29,16 @@
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; }
   footer { border-top: 1px solid var(--line); padding: 26px 0 44px; color: var(--muted); font-size: 14px;
            display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .own-band { padding: 30px 32px; margin: 8px 0 20px; }
+  .own-band h2 { margin: 0 0 22px; font-size: 22px; letter-spacing: -.02em; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+  .grid3 .one { display: flex; gap: 13px; }
+  .grid3 .ic { width: 38px; height: 38px; border-radius: 11px; background: #fff4ec;
+               display: grid; place-items: center; flex: none; color: var(--orange-ink); }
+  .grid3 .ic svg { width: 19px; height: 19px; }
+  .grid3 b { display: block; font-size: 15px; margin-bottom: 4px; }
+  .grid3 p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+  @media (max-width: 760px) { .grid3 { grid-template-columns: 1fr; } }
   @media (max-width: 640px) { .hero h1 { font-size: 36px; } }
 </style>
 </head>
@@ -93,6 +103,46 @@
         </div>
       </div>
       <div class="openers" id="demoChips"></div>
+    </div>
+  </section>
+
+  <!--
+    The three things an owner asks before they will try this: what do I have to
+    run, what do I have to pay, and is it mine. Word for word the same as the
+    console's own intro screen, because they are the same claims.
+  -->
+  <section class="card own-band">
+    <h2>No VPS. Nothing of yours left running. No bill from us.</h2>
+    <div class="grid3">
+      <div class="one">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+        <div>
+          <b>Nothing to run</b>
+          <p>No VPS to rent, no server to patch, no computer of yours that has to stay on.
+             Cloudflare runs the code in your account, and it is running whether your laptop is
+             open or not.</p>
+        </div>
+      </div>
+      <div class="one">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+        <div>
+          <b>Nothing to pay us</b>
+          <p>There is no Muxel account, no plan, no card and no trial that ends. We have no way to
+             charge you, because there is nothing here to sign up for.</p>
+        </div>
+      </div>
+      <div class="one">
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+          stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <div>
+          <b>The free plan covers it</b>
+          <p>Cloudflare includes 10,000 neurons a day, which we measured at about 880 replies on
+             Gemma&nbsp;4. Past that the bill is Cloudflare's and not ours — and the agent is
+             yours either way.</p>
+        </div>
+      </div>
     </div>
   </section>
 
