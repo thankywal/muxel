@@ -28,7 +28,7 @@ const screens = [
 
 const CLAIMS = [
   "No VPS to rent, no server to patch, no computer of yours that has to stay on.",
-  "There is no Muxel account, no plan, no card and no trial that ends.",
+  "Deploying it costs nothing and asks for no card",
   "Cloudflare includes 10,000 neurons a day",
 ];
 
@@ -63,7 +63,37 @@ describe("the ownership claims", () => {
     // "Costs nothing" without this line would be false the day somebody is
     // busy, and they would find out from Cloudflare rather than from us.
     for (const [name, html] of screens) {
-      expect(html, name).toContain("Past that the bill is Cloudflare's and not ours");
+      expect(html, name).toContain("you are on Cloudflare's own pricing, in your own account");
+    }
+  });
+
+  it("say what today costs, and never promise what tomorrow cannot", () => {
+    // The page used to say "we have no way to charge you, because there is
+    // nothing here to sign up for". True on the day it was written, and a
+    // promise the moment anybody read it: a hosted tier, a support plan or a
+    // paid model would all have made a liar of it, and the people who would
+    // remember are the ones who chose it for that line.
+    //
+    // "Start at $0" is the same fact with no forecast attached. What is
+    // written here can be checked today and does not bind next year.
+    const forbidden = [
+      "no way to charge",
+      "nothing here to sign up for",
+      "free forever",
+      "always free",
+      "no plan, no card",
+      "trial that ends",
+      "never charge",
+      "no bill from us",
+    ];
+    for (const [name, html] of screens) {
+      for (const promise of forbidden) {
+        expect(html.toLowerCase(), `${name}: "${promise}"`).not.toContain(promise);
+      }
+      // The claim's own heading, not the band's: the h2 also says it, so
+      // checking for the words alone would pass with the old promise still
+      // sitting underneath them.
+      expect(html, name).toContain("<b>Start at $0</b>");
     }
   });
 
