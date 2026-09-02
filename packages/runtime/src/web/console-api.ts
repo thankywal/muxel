@@ -1488,7 +1488,7 @@ export async function handleConsoleApi(
 
   // What this deployment is running, and whether anything is waiting for it.
   if (method === "GET" && segments[0] === "system") {
-    const [version, hasToken, usage, access, webSearch, documentData, serpHint, nutrientHint] =
+    const [version, hasToken, usage, access, webSearch, documentData, serpHint, nutrientHint, githubHint, cloudflareHint] =
       await Promise.all([
         versionStatus(),
         hasSecret(env, "github_token"),
@@ -1498,6 +1498,8 @@ export async function handleConsoleApi(
         hasSecret(env, "nutrient_key"),
         secretHint(env, "serpapi_key"),
         secretHint(env, "nutrient_key"),
+        secretHint(env, "github_token"),
+        secretHint(env, "cloudflare_token"),
       ]);
     return json({
       apiRevision: API_REVISION,
@@ -1520,7 +1522,16 @@ export async function handleConsoleApi(
       // is set" does not tell them that. Kept a sibling of `outside` rather
       // than folded into it so a console that predates hints still reads the
       // booleans it expects.
-      keyHint: { serpapi_key: serpHint, nutrient_key: nutrientHint },
+      // Every key this deployment holds, masked. One shape for all of them,
+      // because the Security page says the same thing about each and a section
+      // that had to say it differently would be a section saying something
+      // else. Keyed by the vault's own names so there is nothing to translate.
+      keyHint: {
+        serpapi_key: serpHint,
+        nutrient_key: nutrientHint,
+        github_token: githubHint,
+        cloudflare_token: cloudflareHint,
+      },
       usage,
     });
   }
