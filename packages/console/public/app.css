@@ -684,17 +684,20 @@ footer a:hover { color: var(--ink); }
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 14px;
+  gap: 22px;
   background: var(--bg);
   z-index: 60;
 }
 .boot-mark {
-  width: 72px;
-  height: 72px;
+  /* Big. This is the whole screen for a moment and the mark is the only thing
+     on it; at 72px it read as a page that had failed to load rather than as a
+     page that was loading. */
+  width: min(168px, 34vw);
+  height: min(168px, 34vw);
   animation: boot-breathe 1.9s ease-in-out infinite;
 }
 .boot-word {
-  font-size: 15px;
+  font-size: clamp(17px, 2.4vw, 24px);
   font-weight: 700;
   letter-spacing: .14em;
   text-transform: uppercase;
@@ -720,16 +723,28 @@ footer a:hover { color: var(--ink); }
   .boot-word { color: var(--muted); background: none; -webkit-text-fill-color: currentColor; }
 }
 
-/* The same mark, waiting inside a page that is already on screen. */
+/* The same screen, inside a page that is already drawn. It fills the column and
+   centres, because a small line in the top corner is what an empty page looks
+   like when something has gone wrong. */
 .loading-mark {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 46px 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  min-height: 52vh;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: 13px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
-.loading-mark img { width: 30px; height: 30px; animation: boot-breathe 1.9s ease-in-out infinite; }
+.loading-mark img {
+  width: min(120px, 26vw);
+  height: min(120px, 26vw);
+  animation: boot-breathe 1.9s ease-in-out infinite;
+}
+/* Inside a dialog there is less room, and the box is small on purpose. */
+.modal .loading-mark { min-height: 190px; }
+.modal .loading-mark img { width: 76px; height: 76px; }
 @media (prefers-reduced-motion: reduce) { .loading-mark img { animation: none; } }
 
 /* ---- the rail on a narrow screen ----

@@ -48,6 +48,19 @@ describe("the first paint", () => {
     expect(html).toContain('<div id="boot" class="boot">');
   });
 
+  it("gives the mark the whole screen, not a corner of it", () => {
+    // At 72px in the middle of an empty page it read as a page that had failed
+    // to load rather than one that was loading. The waiting state inside an
+    // already-drawn page had the same problem for the same reason: a small
+    // line in the top corner is what a broken view looks like.
+    expect(css).toMatch(/\.boot-mark \{[\s\S]*?width: min\(168px/);
+    expect(css).toMatch(/\.loading-mark \{[\s\S]*?place-content: center/);
+    expect(css).toMatch(/\.loading-mark \{[\s\S]*?min-height: 52vh/);
+    expect(css).toMatch(/\.loading-mark img \{[\s\S]*?width: min\(120px/);
+    // A dialog is small on purpose and must not be given a half-screen mark.
+    expect(css).toContain(".modal .loading-mark");
+  });
+
   it("shows the mark while it reads localStorage", () => {
     // Not a spinner. A spinner says work is happening; at this point the only
     // work is a script parsing, and the honest state is "we do not know yet
