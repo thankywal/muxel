@@ -1765,15 +1765,25 @@ export async function handleConsoleApi(
  * did not make.
  */
 async function probeKey(name: "serpapi_key" | "nutrient_key", token: string): Promise<string | null> {
-  const url =
-    name === "serpapi_key"
-      ? `https://serpapi.com/account.json?api_key=${encodeURIComponent(token)}`
-      : "https://api.nutrient.io/account/info";
   try {
-    const response = await fetch(url, {
-      ...(name === "nutrient_key" ? { headers: { authorization: `Bearer ${token}` } } : {}),
-      signal: AbortSignal.timeout(10_000),
-    });
+    const response =
+      name === "serpapi_key"
+        // SerpApi's account endpoint reports the plan and the searches left,
+        // and spends none of them.
+        ? await fetch(`https://serpapi.com/account.json?api_key=${encodeURIComponent(token)}`, {
+            signal: AbortSignal.timeout(10_000),
+          })
+        // Nutrient has no account endpoint on this API. The extract endpoint
+        // with nothing attached is refused either way; what differs is how.
+        // A bad key is 401 before any document is read, so this costs no
+        // extraction credits, and a 400 for the missing file means the key got
+        // far enough to be asked about the body.
+        : await fetch("https://api.nutrient.io/extraction/extract", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}` },
+            body: new FormData(),
+            signal: AbortSignal.timeout(10_000),
+          });
     if (response.status === 401 || response.status === 403) return "the service did not recognise that key";
     return null;
   } catch {

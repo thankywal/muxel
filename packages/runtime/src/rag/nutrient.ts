@@ -31,7 +31,7 @@ import { MuxelError } from "@muxel/core";
 import type { Env } from "../env.js";
 import { getSecret } from "../web/secrets-vault.js";
 
-const ENDPOINT = "https://api.nutrient.io/ai/extract-data";
+const ENDPOINT = "https://api.nutrient.io/extraction/extract";
 const TIMEOUT_MS = 55_000;
 
 /** More rows than any price list has; fewer than a runaway extraction invents. */
@@ -75,7 +75,15 @@ export async function documentDataConfigured(env: Env): Promise<boolean> {
   return (await getSecret(env, "nutrient_key")) !== null;
 }
 
-/** What DWS is asked to find. Named fields, because it returns them per field. */
+/**
+ * What DWS is asked to find.
+ *
+ * A JSON Schema, because the extract endpoint maps a document onto one and
+ * answers with those fields — which is the whole reason to use it over asking
+ * a model to read prose. Named fields also mean the confidences come back
+ * named: output.metadata mirrors output.data, so the confidence for
+ * data.items[3].price is at metadata.items[3].price.
+ */
 const SCHEMA = {
   type: "object",
   properties: {
@@ -110,9 +118,20 @@ export async function readDocumentData(
 
   const form = new FormData();
   form.append("file", new Blob([input.bytes], { type: input.contentType }), input.filename);
+  // One outer "instructions" field holding the schema, as the API requires.
+  // Sending schema as its own form field is the documented way to get a 400.
   form.append(
-    "data",
-    JSON.stringify({ schema: SCHEMA, includeConfidence: true, model: "auto" }),
+    "instructions",
+    JSON.stringify({
+      schema: SCHEMA,
+      // "understand" reads the document rather than only its text layer, which
+      // is what a price list exported from a spreadsheet needs.
+      parseConfig: { mode: "understand" },
+      options: { includeCitations: true },
+      instructions:
+        "This is a price list. Each item is one product or service with the price as written, "
+        + "including its currency and unit. Copy names and prices verbatim. Never invent a value.",
+    }),
   );
 
   let response: Response;
@@ -172,10 +191,15 @@ const text = (value: unknown): string => (typeof value === "string" ? value.trim
  * nothing in it.
  */
 function itemsOf(body: unknown): ReadItem[] {
-  const root = (body ?? {}) as Record<string, unknown>;
-  const held = (root.data ?? root.result ?? root) as Record<string, unknown>;
-  const rows = Array.isArray(held.items) ? held.items : Array.isArray(root.items) ? root.items : [];
-  const scores = confidenceRows(root, held);
+  const output = ((body ?? {}) as Record<string, unknown>).output;
+  const held = (output ?? body ?? {}) as Record<string, unknown>;
+  const data = (held.data ?? {}) as Record<string, unknown>;
+  const rows = Array.isArray(data.items) ? data.items : [];
+  // metadata mirrors data exactly, so the citation for data.items[i] is at
+  // metadata.items[i]. Reading it positionally is not a guess about the shape;
+  // it is the shape the API documents.
+  const meta = (held.metadata ?? {}) as Record<string, unknown>;
+  const citations = Array.isArray(meta.items) ? meta.items : [];
 
   const items: ReadItem[] = [];
   for (const [index, entry] of rows.entries()) {
@@ -187,49 +211,48 @@ function itemsOf(body: unknown): ReadItem[] {
       name,
       price: text(row.price).slice(0, 60),
       description: text(row.description).slice(0, 200),
-      confidence: scoreAt(scores, index, row),
+      confidence: scoreAt(citations[index]),
     });
     if (items.length >= MAX_ITEMS) break;
   }
   return items;
 }
 
-function confidenceRows(root: Record<string, unknown>, held: Record<string, unknown>): unknown[] {
-  for (const holder of [held, root]) {
-    const block = holder.confidence ?? holder.confidences ?? holder.confidence_scores;
-    if (Array.isArray(block)) return block;
-    if (typeof block === "object" && block !== null) {
-      const inner = (block as Record<string, unknown>).items;
-      if (Array.isArray(inner)) return inner;
-    }
-  }
-  return [];
-}
-
 /**
  * @returns The confidence for one row, or null when DWS gave none.
  *
- * Null rather than a default, because a row whose confidence is unknown and a
- * row DWS was certain about are not the same thing, and defaulting to 1 would
- * quietly turn the first into the second.
+ * Null rather than a default, because the API's own wording is that confidence
+ * is present "when available". A row whose confidence is unknown and a row DWS
+ * was certain about are not the same thing, and defaulting to 1 would quietly
+ * turn the first into the second — on exactly the row that needed a person.
  */
-function scoreAt(scores: unknown[], index: number, row: Record<string, unknown>): number | null {
-  const inline = numberOf(row.confidence);
-  if (inline !== null) return inline;
+function scoreAt(citation: unknown): number | null {
+  if (typeof citation !== "object" || citation === null) return null;
+  const fields = citation as Record<string, unknown>;
 
-  const entry = scores[index];
-  const direct = numberOf(entry);
-  if (direct !== null) return direct;
-  if (typeof entry !== "object" || entry === null) return null;
-
-  const fields = entry as Record<string, unknown>;
   // Per field, so the row is only as good as its weakest part: a name read
-  // perfectly beside a price that was a guess is not a confident row.
-  const each = [fields.name, fields.price, fields.description]
-    .map((value) => numberOf(value))
+  // perfectly beside a price that was a guess is not a confident row, and the
+  // price is the half that goes on the price list.
+  const each = ["name", "price", "description"]
+    .map((field) => confidenceOf(fields[field]))
     .filter((value): value is number => value !== null);
-  if (each.length === 0) return numberOf(fields.confidence ?? fields.score);
-  return Math.min(...each);
+  if (each.length > 0) return Math.min(...each);
+
+  // A scalar row rather than an object of fields.
+  return confidenceOf(citation);
+}
+
+/** Reads the composite confidence off one citation object. */
+function confidenceOf(value: unknown): number | null {
+  if (typeof value === "number") return numberOf(value);
+  if (typeof value !== "object" || value === null) return null;
+  const citation = value as Record<string, unknown>;
+  const composite = numberOf(citation.confidence);
+  if (composite !== null) return composite;
+  // Falls back to the OCR score only when there is no composite one. It is a
+  // narrower signal — how well the characters were read, not how sure the API
+  // is that this is the right field — so it is never preferred over the other.
+  return numberOf(citation.recognitionScore);
 }
 
 function numberOf(value: unknown): number | null {

@@ -59,7 +59,7 @@ describe("the keys are the owner's", () => {
     // the field they typed it into, not as a tool refusing three days later.
     expect(api).toContain("async function probeKey");
     expect(api).toContain("serpapi.com/account.json");
-    expect(api).toContain("api.nutrient.io/account/info");
+    expect(api).toContain("api.nutrient.io/extraction/extract");
     // A service that is merely unreachable is not a rejection. Refusing the
     // key then would send the owner hunting for a mistake they did not make.
     const probe = api.slice(api.indexOf("async function probeKey"));
