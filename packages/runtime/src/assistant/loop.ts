@@ -25,6 +25,7 @@ import {
   type Approval,
 } from "./store.js";
 import { ASK_OWNER, findTool, TOOL_SPECS, type ToolContext } from "./tools.js";
+import { resolveTarget, summaryFor } from "./target.js";
 import { documentDataConfigured } from "../rag/nutrient.js";
 import { webSearchConfigured } from "../web-search.js";
 
@@ -307,11 +308,36 @@ export async function ask(
       }
 
       if (tool.writes) {
+        // A change is to something, and the something has to exist before the
+        // change can be a card. A business the model is creating in this same
+        // message does not exist yet, whatever id it has put on the change: so
+        // once a creation has been proposed, nothing else that names a business
+        // is proposed until the owner has said yes to it. The prompt says this
+        // in words; twenty prices landed on the wrong shop anyway.
+        const target = await resolveTarget(env, userId, call.args);
+        const creating = approvals.find((a) => a.tool === "create_business");
+        const refused =
+          target.kind === "missing"
+            ? target.message
+            : target.kind === "business" && creating !== undefined
+              ? `Not proposed. You proposed creating a business in this same message, and it has no id `
+                + `until the owner says yes, so a change that names a business now would go to a different `
+                + `one: this one named "${target.name}". Tell the owner to tap Yes on the new business first, `
+                + `and propose what goes in it in your next message, once it exists.`
+              : "";
+        if (refused !== "") {
+          steps.push({ role: "tool", tool_call_id: call.id, content: refused });
+          took.push({ tool: tool.name, ok: false });
+          say({ type: "step", tool: tool.name, ok: false });
+          continue;
+        }
         const approval = await askApproval(env, {
           userId,
           tool: tool.name,
           args: call.args,
-          summary: tool.summarise?.(call.args) ?? tool.name,
+          // The card says what, and to which. "Price: Batch Brew at $4.00" was
+          // approved for the wrong shop because nothing on it said which shop.
+          summary: summaryFor(tool.summarise?.(call.args) ?? tool.name, target),
         });
         approvals.push(approval);
         // The model is told plainly that nothing has happened. Telling it the
