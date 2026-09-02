@@ -2,27 +2,11 @@
 
 # Muxel
 
-Self-hosted AI support agent. Answers your customers on Telegram from your own
-price list and policies, running entirely inside your own Cloudflare account.
-
-> **The one click deploy is broken at Cloudflare's end right now, 12 August
-> 2026.** Pressing Deploy on their setup form throws
-> `ZodError: previews_base_config.deploy_command` and stops, leaving a
-> repository holding two files and a Worker answering `Hello world`, while the
-> dashboard reports success. It is not something this project can fix: the
-> field it rejects belongs to a build setting that
-> [Cloudflare's own documentation](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/)
-> says cannot be set from a repository. The same commit that deployed cleanly
-> on 11 August fails today, unchanged, and Cloudflare's own
-> `hello-world-do-template` fails with the identical error on two unrelated
-> accounts, so the flow is broken for every repository, not this one. Reported
-> to Cloudflare as
-> [workers-sdk#15147](https://github.com/cloudflare/workers-sdk/issues/15147),
-> where you can watch for the fix.
->
-> Install with [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) instead. It
-> takes one command, skips GitHub entirely, and produces exactly the same
-> deployment. This notice will go once the button works again.
+An AI agent platform that runs inside your own Cloudflare account. Retrieval
+over your own documents, tools, and an approval gate on every change. It
+answers your customers on the website you already have and on Telegram, from
+your own price list and policies, and nothing of yours passes through a server
+of ours.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
@@ -305,7 +289,7 @@ marks those models rather than letting you pick one that will fail on the first
 customer message.
 
 Gemma 4 is the default. Measured on a retrieval reply it costs about a third of
-a US cent per thousand answers, and roughly 330 replies a day fall inside the
+a US cent per thousand answers, and roughly 880 replies a day fall inside the
 free daily allowance. Embeddings always run on `bge-m3`, which is multilingual
 and effectively free.
 
@@ -534,9 +518,39 @@ the stored credentials as well as the webhook.
 
 Muxel charges nothing, and a small shop fits inside the Cloudflare free plan.
 
+That is not a promotional period. It costs us nothing to serve a deployment,
+because there is nothing of ours in it: every reply is generated on your
+Workers AI, stored in your D1 and retrieved from your Vectorize. The inference
+bill that is the largest cost at a typical AI product is, here, your own
+Cloudflare bill, and for a small shop it is zero.
+
+### What Muxel will charge for
+
+The runtime is not the thing we charge for. When Muxel does charge, it will be
+for the parts that need a company behind them:
+
+- **Verified channels.** Messenger, Instagram and WhatsApp require a verified
+  business and an app review at Meta, which is weeks of paperwork a shop will
+  never do. Telegram and the website widget stay free, because there your own
+  Worker talks to the platform directly and nothing of ours is in the path.
+- **Agencies.** One console over many businesses, with your own name on it, for
+  the people who already put the script tag on their clients' sites.
+- **A hosted tier**, for owners who would rather not touch Cloudflare at all.
+  It will be the most expensive one, on purpose: it is the only tier where we
+  can see anything, and the only one that costs us anything.
+
+The line between free and paid is not a pricing decision. It falls where the
+architecture changes: everything your own deployment can do by itself is free,
+and everything that needs somebody to be a company, in front of Meta or in
+front of you, is what we sell.
+
+None of it exists yet. Today there is nothing to buy, and this section is here
+so that nobody who chose Muxel for the paragraph above finds out otherwise from
+an invoice.
+
 | Resource   | Free allowance                        | What it means here                |
 | ---------- | ------------------------------------- | --------------------------------- |
-| Workers AI | 10,000 neurons a day                  | about 330 replies a day on Gemma 4 |
+| Workers AI | 10,000 neurons a day                  | about 880 replies a day on Gemma 4 |
 | Vectorize  | 5 M stored, 30 M queried dimensions   | about 4,800 chunks of documents   |
 | D1         | 5 GB, 100 k row writes a day          | far past what a shop generates    |
 | Workers    | 100,000 requests a day                | far past what a shop generates    |
