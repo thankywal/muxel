@@ -205,7 +205,7 @@ describe("which key is saved, without showing it", () => {
     // A console that predates hints still reads outside.webSearch as a
     // boolean. Folding the hint into that field would make an older page
     // report every capability as on.
-    expect(api).toContain("keyHint: { serpapi_key: serpHint, nutrient_key: nutrientHint }");
+    expect(api).toMatch(/keyHint: \{[\s\S]*serpapi_key: serpHint/);
     expect(api).toContain("outside: { webSearch, documentData }");
     expect(app).toContain("data.keyHint?.serpapi_key");
     expect(app).toContain("data.keyHint?.nutrient_key");
@@ -267,6 +267,47 @@ describe("the field itself, rendered", () => {
   it("says so when a key was stored before hints existed", () => {
     // Silence there would read as "no key", under a panel that says one is on.
     expect(drawn(true)).toContain("Paste it again to see it here");
+  });
+});
+
+describe("every section on the Security page says it the same way", () => {
+  // The two new panels are not the only place an owner keeps a key. Four
+  // hand-written versions of "which key is this" is four places for the
+  // promise around it to drift, so there is one renderer and every section
+  // calls it.
+  const security = app.slice(app.indexOf('<h2>GitHub token</h2>'), app.indexOf('<h2>Console bot</h2>'));
+
+  it("draws the mask for the GitHub and Cloudflare keys too", () => {
+    expect(security).toContain("keyLine(data.keyHint?.github_token");
+    expect(security).toContain("keyLine(data.keyHint?.cloudflare_token");
+  });
+
+  it("draws it only where a key is actually stored", () => {
+    // A mask under an empty field would say a key is set when none is.
+    expect(security).toContain("${data.githubToken ? keyLine(");
+    expect(security).toContain("${data.cloudflare ? keyLine(");
+  });
+
+  it("has one renderer, not one per section", () => {
+    expect(app).toContain("function keyLine(hint)");
+    // outsidePanel uses it rather than repeating it.
+    const panel = app.slice(app.indexOf("function outsidePanel"), app.indexOf("function paintVersion"));
+    expect(panel).toContain("keyLine(panel.hint)");
+    expect(panel).not.toContain("class=\"key-hint\"");
+  });
+
+  it("reports a hint for every name the vault knows", () => {
+    // A key the deployment can hold but cannot describe is a section that
+    // silently says less than its neighbours.
+    for (const name of SECRET_NAMES) expect(api, name).toContain(`${name}: `);
+  });
+
+  it("renders the same line for every section", () => {
+    const line = evaluateConsole().keyLine("4d2a\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022f67c");
+    expect(line).toContain("Saved");
+    expect(line).toContain("4d2a");
+    expect(line).toContain("f67c");
+    expect(evaluateConsole().keyLine("")).toContain("Paste it again");
   });
 });
 

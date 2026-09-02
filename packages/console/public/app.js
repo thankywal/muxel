@@ -3735,6 +3735,7 @@ async function viewSettings() {
           <div style="display:flex;gap:8px">
             <input id="tok" type="password" placeholder="github_pat_… or ghp_…" autocomplete="off" style="flex:1">
             <button class="btn btn-primary btn-sm" id="saveTok">Save</button></div>
+          ${data.githubToken ? keyLine(data.keyHint?.github_token ?? "") : ""}
           <small>Make a fine grained token on GitHub with <b>Contents: read and write</b> on your Muxel
             repository only. It is checked against GitHub before it is stored.</small>
         </div>
@@ -3761,6 +3762,7 @@ async function viewSettings() {
           <div style="display:flex;gap:8px">
             <input id="cfTok" type="password" placeholder="Cloudflare API token" autocomplete="off" style="flex:1">
             <button class="btn btn-primary btn-sm" id="saveCf">Save</button></div>
+          ${data.cloudflare ? keyLine(data.keyHint?.cloudflare_token ?? "") : ""}
           <small>On
             <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">
               Cloudflare → My Profile → API Tokens</a>, create a custom token with
@@ -3999,6 +4001,24 @@ const versionBlock = (v, repo) => `
  * and the panel says in plain words what leaves your account when it is set.
  * Two hand written copies of that is two places for the promise to drift.
  */
+/**
+ * Which key is stored, written the way a card number is on a receipt.
+ *
+ * One renderer for every credential section, because "a token is set" does not
+ * tell an owner whether the right one is set, and four hand-written versions
+ * of that line is four places for the promise around it to drift.
+ *
+ * Never the key. The mask is computed by the deployment when the key is saved
+ * and stored beside it; nothing here, and nothing on the way here, opens the
+ * envelope. A key stored before the deployment kept that record has no mask to
+ * show, and says so rather than leaving a gap that reads as "no key".
+ */
+function keyLine(hint) {
+  return `<div class="key-hint">Saved <code>${h(hint || "\u2022".repeat(10))}</code>${
+    hint ? "" : " — saved before this deployment kept a record of which key. Paste it again to see it here."
+  }</div>`;
+}
+
 function outsidePanel(panel) {
   return `
     ${
@@ -4012,17 +4032,7 @@ function outsidePanel(panel) {
         <input id="key-${panel.id}" type="password" placeholder="${h(panel.placeholder)}" autocomplete="off"
           style="flex:1">
         <button class="btn btn-primary btn-sm" id="save-${panel.id}">Save</button></div>
-      ${
-        // Which key, under the field it was typed into. An owner who holds
-        // several needs to know the right one landed, and "this is on" does
-        // not tell them that. A deployment that saved a key before hints
-        // existed has none to show and says so rather than pretending.
-        panel.on
-          ? `<div class="key-hint">Saved <code>${h(panel.hint || "\u2022".repeat(10))}</code>${
-              panel.hint ? "" : " — saved before this deployment kept a record of which key. Paste it again to see it here."
-            }</div>`
-          : ""
-      }
+      ${panel.on ? keyLine(panel.hint) : ""}
       <small><b>What leaves your account:</b> ${h(panel.leaves)} Nothing reaches us — this page is talking
         to your own deployment. ${panel.where}</small>
     </div>`;

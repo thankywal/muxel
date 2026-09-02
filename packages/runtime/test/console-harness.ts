@@ -37,6 +37,8 @@ export function evaluateConsole(): {
   /** The owner's little pixel face, drawn from their name. */
   pixelAvatar: (seed: string) => string;
   /** The field that collects one key to a service outside this deployment. */
+  /** The one line that says which key is stored, used by every section. */
+  keyLine: (hint: string) => string;
   outsidePanel: (panel: {
     on: boolean;
     id: string;
@@ -105,6 +107,7 @@ export function evaluateConsole(): {
        versionBlock,
        pixelAvatar,
        outsidePanel,
+       keyLine,
      });`,
     context,
   );
