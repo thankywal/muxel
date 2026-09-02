@@ -87,10 +87,51 @@ describe("the first paint", () => {
     expect(inline.length).toBeLessThan(24_000);
   });
 
+  // The guarantee this has always made is that boot comes down on both paths.
+  // What changed is where: taking it down inside showConsole put the console's
+  // own frame on screen with a second loading mark inside it while the first
+  // view was still being fetched, which is two loading screens for one page
+  // load. So the assertion is about the guarantee now, not about the line that
+  // used to keep it.
   it("takes the boot screen down whichever screen wins", () => {
-    const show = app.slice(app.indexOf("function showConsole"), app.indexOf("function disconnect"));
-    expect(show).toContain('$("boot")');
-    expect(show).toContain("hidden = true");
+    const show = app.slice(app.indexOf("function showConsole"), app.indexOf("function booted"));
+    // The sign-in screen has nothing to fetch, so it ends boot as it appears.
+    expect(show).toMatch(/\} else \{[\s\S]{0,80}booted\(\)/);
+    const render = app.slice(app.indexOf("async function render()"), app.indexOf("async function apiReady"));
+    // The console ends it once a view is drawn, whatever the view turned out
+    // to be — including a page saying the deployment could not be reached.
+    expect(render).toMatch(/\} finally \{[\s\S]{0,240}booted\(\)/);
+    expect(app).toMatch(/function booted\(\) \{[\s\S]{0,120}hidden = true/);
+  });
+
+  it("does not hand over to a second loading mark on the way in", () => {
+    // The bug, in one line: showConsole took boot down, then drew the rail and
+    // the header around an empty content area holding waitingMark(), and the
+    // owner watched a full screen mark become a small different one.
+    const show = app.slice(app.indexOf("function showConsole"), app.indexOf("function booted"));
+    // The `if (on)` branch alone. The `else` is the sign-in screen, which is
+    // supposed to end boot.
+    const onwards = show.slice(show.indexOf("if (on) {"), show.indexOf("} else {"));
+    expect(onwards).toContain("shell()");
+    expect(onwards).not.toContain("booted()");
+    expect(onwards).not.toContain('$("boot")');
+  });
+
+  it("waits for the view before it says the console has arrived", () => {
+    // Without the await, the boot screen comes down on the frame the draw was
+    // started, not the frame it finished, which is the same two screens again.
+    const render = app.slice(app.indexOf("async function render()"), app.indexOf("async function apiReady"));
+    expect(render).toMatch(/await \(draw \?\? viewOverview\)\(\)/);
+  });
+
+  it("gives the call the boot screen waits on a deadline", () => {
+    // A Worker that accepts the connection and never answers used to leave a
+    // small mark spinning inside a console you could still click out of. It
+    // would cover the whole screen now, with nothing to press.
+    const ready = app.slice(app.indexOf("async function apiReady"), app.indexOf("async function overview"));
+    expect(ready).toMatch(/api\("system", \{ quiet: true, signal: AbortSignal\.timeout\(\d+\) \}\)/);
+    // A timeout answers -1, which was landing in the "ready" branch.
+    expect(ready).toMatch(/status <= 0/);
   });
 
   it("is dark before the script runs, on a machine that is dark", () => {
