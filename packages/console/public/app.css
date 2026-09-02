@@ -621,3 +621,7 @@ footer a:hover { color: var(--ink); }
                              .g2, .g3 { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { display: none; }
                             .split { grid-template-columns: 1fr; } .searchbox { min-width: 0; } }
+
+/* A capability that is switched on, said once above the field that switched it. */
+.on-note { margin: 0 0 14px; }
+.on-note a { color: var(--muted); }

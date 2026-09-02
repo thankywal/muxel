@@ -130,14 +130,36 @@ describe("what the assistant is told Muxel is", () => {
   });
 
   it("denies only capabilities no tool actually provides", () => {
-    // The prompt says Muxel does not browse the web, send email or take
-    // payments. If a tool for one of those ever arrives, the prompt becomes a
-    // lie the model repeats to the owner, and this is where that is caught.
-    const denied = { browse: /^(browse|fetch_page|web_)/, email: /mail/, payment: /(pay|charge|invoice)/ };
-    expect(loop).toMatch(/does not browse the web/);
+    // The prompt tells the owner what Muxel cannot do. If a tool for one of
+    // those ever arrives, the prompt becomes a lie the model repeats, and this
+    // is where that is caught. Web search used to be on this list and is not
+    // any more: the product changed, so the line changed. The law did not.
+    const denied = { email: /mail/, payment: /(pay|charge|invoice)/ };
+    expect(loop).toMatch(/does not send email/);
+    expect(loop).toMatch(/does not take payments/);
     for (const [what, pattern] of Object.entries(denied)) {
       const offending = TOOLS.filter((tool) => pattern.test(tool.name)).map((tool) => tool.name);
       expect(offending, what).toEqual([]);
     }
+  });
+
+  it("no longer claims it cannot browse, now that it can", () => {
+    // The other half of the same law, and the half that would have gone
+    // unnoticed: a denial left behind after the capability arrives is a model
+    // telling the owner no to something it is holding a tool for.
+    expect(TOOLS.some((tool) => tool.name === "web_search")).toBe(true);
+    expect(loop).not.toMatch(/does not browse the web/);
+  });
+
+  it("says a capability is off when it is off, and on when it is on", () => {
+    // One vault entry, two readers: this prompt and the tool itself. They were
+    // allowed to disagree exactly once — the prompt is built from the same
+    // answer the tool will get, so it cannot offer a search that then refuses.
+    expect(loop).toMatch(/capability\.webSearch/);
+    expect(loop).toMatch(/capability\.documentData/);
+    // Built per turn from a read, not from a constant that a deployment with
+    // no key would still be told was true.
+    expect(loop).toMatch(/webSearchConfigured\(env\)/);
+    expect(loop).toMatch(/documentDataConfigured\(env\)/);
   });
 });

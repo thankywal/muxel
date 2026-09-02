@@ -330,6 +330,8 @@ const NEEDS = {
   advanced: 1,
   inbox: 2,
   assistant: 13,
+  /** Not a page: the two panels in Settings for keys to services outside. */
+  outside: 14,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -3769,6 +3771,48 @@ async function viewSettings() {
       </div>
     </div>
 
+    ${state.apiRevision < NEEDS.outside ? "" : `
+    <div class="card" style="max-width:700px;margin-top:16px">
+      <div class="card-head"><h2>Web search</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">
+          Your assistant answers from your own material, and that is the point of it. This is the one
+          exception, and it is only ever <b>yours</b>: with a SerpApi key it can look up what something
+          sells for elsewhere and who sells it, who else is on the map near you, and what a page says.
+          Your customers' agents never use it — they answer from your material or hand over to you.</p>
+        ${outsidePanel({
+          on: data.outside?.webSearch === true,
+          id: "serp",
+          placeholder: "SerpApi key",
+          leaves: "Only the words you search for, from your Worker to SerpApi.",
+          where: `Your key is on <a href="https://serpapi.com/manage-api-key" target="_blank"
+                  rel="noopener">serpapi.com → Your Account → API Key</a>. It is checked against
+                  SerpApi before it is stored, and this deployment can never show it back to you.`,
+        })}
+      </div>
+    </div>
+
+    <div class="card" style="max-width:700px;margin-top:16px">
+      <div class="card-head"><h2>Document data</h2></div>
+      <div class="pad">
+        <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px">
+          A price list you upload is read as prose today, and a model that reads prose is just as fluent
+          when it is wrong. With a Nutrient DWS key your assistant can read the original file as rows
+          instead, each with a confidence — so it can tell you which three of forty to check, instead of
+          handing you forty that all look equally certain. Nothing it reads is saved: every row is still
+          a card you tap Yes on.</p>
+        ${outsidePanel({
+          on: data.outside?.documentData === true,
+          id: "nut",
+          placeholder: "Nutrient DWS key",
+          leaves: "The file itself, from your Worker to Nutrient, when you ask for a document to be read.",
+          where: `Make an account at <a href="https://dashboard.nutrient.io" target="_blank"
+                  rel="noopener">dashboard.nutrient.io</a> — every account starts with free credits — and
+                  copy the API key. It is checked before it is stored, and never shown back to you.`,
+        })}
+      </div>
+    </div>`}
+
     <div class="card" style="max-width:700px;margin-top:16px">
       <div class="card-head"><h2>Console bot</h2></div>
       <div class="pad">
@@ -3802,6 +3846,37 @@ async function viewSettings() {
       toast(`The console is now @${out.username}.`);
     }
   };
+
+  // Drawn only on a deployment whose API has the routes behind them. A button
+  // that 404s is worse than no button: it reads as the deployment being broken
+  // rather than as a version that has not arrived yet.
+  for (const [id, name] of state.apiRevision < NEEDS.outside
+    ? []
+    : [["serp", "serpapi_key"], ["nut", "nutrient_key"]]) {
+    $(`save-${id}`).onclick = async () => {
+      const value = $(`key-${id}`).value.trim();
+      if (!value) return;
+      $(`save-${id}`).disabled = true;
+      const { ok: saved, data: out } = await api(`secrets/${name}`, { method: "PUT", body: { token: value } });
+      $(`save-${id}`).disabled = false;
+      // Two different noes. The service refusing the key is something the owner
+      // can fix by pasting a different one; anything else is not, and telling
+      // them to check the key they just checked would send them the wrong way.
+      if (!saved) return toast(out?.detail ? `Not saved: ${out.detail}.` : "That key was not saved.");
+      toast("Saved. Your assistant can use it from the next message.");
+      // The assistant's own prompt reads the same vault, so what it will say it
+      // can do has just changed too.
+      state.health = null;
+      viewSettings();
+    };
+    if ($(`del-${id}`))
+      $(`del-${id}`).onclick = async (e) => {
+        e.preventDefault();
+        await api(`secrets/${name}`, { method: "DELETE" });
+        state.health = null;
+        viewSettings();
+      };
+  }
 
   $("saveCf").onclick = async () => {
     const value = $("cfTok").value.trim();
@@ -3914,6 +3989,32 @@ const versionBlock = (v, repo) => `
   }`;
 
 /** Repaints that line from a reading the update just took. */
+/**
+ * The field for one key to a service outside this deployment.
+ *
+ * One renderer for both, because they are the same shape and the same promise:
+ * the key is yours, it is checked before it is kept, it is never shown back,
+ * and the panel says in plain words what leaves your account when it is set.
+ * Two hand written copies of that is two places for the promise to drift.
+ */
+function outsidePanel(panel) {
+  return `
+    ${
+      panel.on
+        ? `<p class="on-note">This is on. <a href="#" id="del-${panel.id}">Turn it off and forget the key</a></p>`
+        : ""
+    }
+    <div class="field" style="margin:0">
+      <label>${panel.on ? "Replace the key" : "Add a key"}</label>
+      <div style="display:flex;gap:8px">
+        <input id="key-${panel.id}" type="password" placeholder="${h(panel.placeholder)}" autocomplete="off"
+          style="flex:1">
+        <button class="btn btn-primary btn-sm" id="save-${panel.id}">Save</button></div>
+      <small><b>What leaves your account:</b> ${h(panel.leaves)} Nothing reaches us — this page is talking
+        to your own deployment. ${panel.where}</small>
+    </div>`;
+}
+
 function paintVersion(version, repo) {
   const box = $("versionNow");
   if (box === null || version === undefined) return;
@@ -4238,9 +4339,13 @@ function drawScreen(data) {
  */
 function viewNeedsUpdate(view, needs) {
   const label = (TITLES[view] ?? ["This page"])[0];
+  // Pages only. NEEDS is the one table of what needs which revision, and not
+  // every entry in it is somewhere the owner can go: naming a Settings panel
+  // in a list of pages that still work would send them looking for it in the
+  // rail.
   const working = Object.entries(NEEDS)
-    .filter(([id, level]) => level <= state.apiRevision && id !== view)
-    .map(([id]) => (TITLES[id] ?? [id])[0]);
+    .filter(([id, level]) => level <= state.apiRevision && id !== view && TITLES[id] !== undefined)
+    .map(([id]) => TITLES[id][0]);
   $("view").innerHTML = `
     <div class="card" style="padding:24px;max-width:720px;margin-bottom:16px">
       <h2 style="margin:0 0 8px;font-size:17px">${h(label)} needs your deployment updated</h2>
