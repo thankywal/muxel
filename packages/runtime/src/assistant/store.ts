@@ -327,11 +327,24 @@ function toApproval(row: {
   };
 }
 
+/**
+ * Records a change the owner has to decide, before the answer proposing it
+ * exists.
+ *
+ * Raised with no message, because at this moment there is no message it belongs
+ * to: the loop is still working and the turn's answer is written at the end.
+ * `attachApprovals` files it against that answer — the message the owner reads,
+ * and the message the card is drawn under.
+ *
+ * It used to be filed against the owner's own question, the only id that
+ * existed at this point. The console draws cards on answers, so every card was
+ * discarded, and the owner was told 25 changes were waiting with nothing on
+ * screen to tap.
+ */
 export async function askApproval(
   env: Env,
   input: {
     userId: number;
-    messageId: string;
     tool: string;
     args: Record<string, unknown>;
     summary: string;
@@ -339,15 +352,16 @@ export async function askApproval(
 ): Promise<Approval> {
   const id = generateId();
   const stamp = now();
+  const messageId = "";
   await env.DB.prepare(
     `INSERT INTO operator_approval (id, user_id, message_id, tool, args, summary, state, result, created_at)
      VALUES (?, ?, ?, ?, ?, ?, 'waiting', '', ?)`,
   )
-    .bind(id, input.userId, input.messageId, input.tool, JSON.stringify(input.args), input.summary, stamp)
+    .bind(id, input.userId, messageId, input.tool, JSON.stringify(input.args), input.summary, stamp)
     .run();
   return {
     id,
-    messageId: input.messageId,
+    messageId,
     tool: input.tool,
     args: input.args,
     summary: input.summary,
@@ -359,11 +373,33 @@ export async function askApproval(
 
 export async function listApprovals(env: Env, userId: number, limit = 40): Promise<Approval[]> {
   const result = await env.DB.prepare(
-    "SELECT * FROM operator_approval WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+    // Only the ones filed against an answer. A change raised by a turn that
+    // then failed before it could say anything is one the owner was never
+    // shown, and counting it promises a card that was never drawn.
+    "SELECT * FROM operator_approval WHERE user_id = ? AND message_id <> '' ORDER BY created_at DESC LIMIT ?",
   )
     .bind(userId, limit)
     .all<Parameters<typeof toApproval>[0]>();
   return result.results.map(toApproval).reverse();
+}
+
+/**
+ * Files this turn's changes against the answer that proposed them.
+ *
+ * Done in the same breath as writing that answer, because an approval with no
+ * message is one the owner has not been shown and therefore cannot decide.
+ */
+export async function attachApprovals(
+  env: Env,
+  approvalIds: readonly string[],
+  messageId: string,
+): Promise<void> {
+  if (approvalIds.length === 0) return;
+  await env.DB.batch(
+    approvalIds.map((id) =>
+      env.DB.prepare("UPDATE operator_approval SET message_id = ? WHERE id = ?").bind(messageId, id),
+    ),
+  );
 }
 
 /**

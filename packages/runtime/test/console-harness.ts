@@ -24,6 +24,12 @@ export function evaluateConsole(): {
   md: (text: string) => string;
   /** The cost line, given one answer's usage and the day's allowance. */
   costLine: (usage: unknown, allowance: unknown) => string;
+  /** One turn, exactly as the thread draws it. */
+  turnHtml: (
+    message: { id: string; role: string; content: string; createdAt: string },
+    steps: unknown[],
+    cards: unknown[],
+  ) => string;
 } {
   const noop = (): unknown => undefined;
   const element = new Proxy(
@@ -79,6 +85,7 @@ export function evaluateConsole(): {
        }),
        md,
        costLine: (usage, allowance) => { state.assistant = { allowance }; return costLine(usage); },
+       turnHtml: (message, steps, cards) => turnHtml(message, steps, cards, undefined, {}),
      });`,
     context,
   );

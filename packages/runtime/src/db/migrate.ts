@@ -646,6 +646,35 @@ const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    // Moves every change waiting for the owner onto the answer that proposed it.
+    //
+    // They were filed against the owner's own question, which was the only id
+    // that existed when the loop raised them. The console draws cards under
+    // answers, so every card was thrown away and an owner was told "25 changes
+    // waiting for you" with nothing on screen to tap.
+    //
+    // The answer is the first assistant message in the same chat after the
+    // question, which is exactly the turn the owner read. An UPDATE with a
+    // WHERE that already matches nothing is safe to run twice, which is the
+    // rule this file keeps.
+    version: 19,
+    statements: [
+      `UPDATE operator_approval
+          SET message_id = COALESCE(
+            (SELECT a.id
+               FROM operator_message q
+               JOIN operator_message a
+                 ON a.chat_id = q.chat_id
+                AND a.role = 'assistant'
+                AND a.created_at >= q.created_at
+              WHERE q.id = operator_approval.message_id
+              ORDER BY a.created_at
+              LIMIT 1),
+            '')
+        WHERE message_id IN (SELECT id FROM operator_message WHERE role = 'user')`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */

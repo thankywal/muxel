@@ -17,6 +17,7 @@ import {
   addOperatorMessage,
   approvalsByMessage,
   askApproval,
+  attachApprovals,
   chatTranscript,
   recordPrompt,
   recordSteps,
@@ -263,7 +264,6 @@ export async function ask(
       if (tool.writes) {
         const approval = await askApproval(env, {
           userId,
-          messageId,
           tool: tool.name,
           args: call.args,
           summary: tool.summarise?.(call.args) ?? tool.name,
@@ -367,8 +367,17 @@ export async function ask(
   });
   // Kept, so reopening the chat tomorrow still shows what it looked at. Not
   // fatal if it fails: the answer is the thing the owner asked for.
+  // Filed against the answer, not swallowed on failure: an approval with no
+  // message is one the owner can be told about and cannot reach.
+  await attachApprovals(env, approvals.map((approval) => approval.id), answerId);
   await recordSteps(env, answerId, took).catch(() => undefined);
   await recordUsageFor(env, answerId, spent).catch(() => undefined);
   if (prompt !== null) await recordPrompt(env, answerId, { ...prompt }).catch(() => undefined);
-  return { text, approvals, steps: took, usage: spent, prompt };
+  return {
+    text,
+    approvals: approvals.map((approval) => ({ ...approval, messageId: answerId })),
+    steps: took,
+    usage: spent,
+    prompt,
+  };
 }
