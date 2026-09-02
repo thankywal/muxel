@@ -55,8 +55,12 @@ describe("the first paint", () => {
     // line in the top corner is what a broken view looks like.
     expect(css).toMatch(/\.boot-mark \{[\s\S]*?width: min\(168px/);
     expect(css).toMatch(/\.loading-mark \{[\s\S]*?place-content: center/);
-    expect(css).toMatch(/\.loading-mark \{[\s\S]*?min-height: 52vh/);
-    expect(css).toMatch(/\.loading-mark img \{[\s\S]*?width: min\(120px/);
+    // The waiting state inside a drawn page is centred but modest: the whole
+    // screen belongs to boot, where there is genuinely nothing else, and a view
+    // fetching a short list should not look like a page that has emptied
+    // itself.
+    expect(css).toMatch(/\.loading-mark \{[\s\S]*?min-height: 220px/);
+    expect(css).toMatch(/\.loading-mark img \{[\s\S]*?width: 64px/);
     // A dialog is small on purpose and must not be given a half-screen mark.
     expect(css).toContain(".modal .loading-mark");
   });
@@ -65,10 +69,22 @@ describe("the first paint", () => {
     // Not a spinner. A spinner says work is happening; at this point the only
     // work is a script parsing, and the honest state is "we do not know yet
     // whose console this is".
-    const boot = html.slice(html.indexOf('<div id="boot"'), html.indexOf("</div>", html.indexOf('<div id="boot"')));
-    expect(boot).toContain("/assets/logo.png");
     expect(css).toContain("@keyframes boot-shimmer");
     expect(css).toContain("@keyframes boot-breathe");
+  });
+
+  it("owes the network nothing to draw itself", () => {
+    // It appeared with no mark at all, and once with the top third of one:
+    // /assets/logo.png is 188KB and the loading screen was waiting on it. A
+    // loading screen that needs a loading screen is not one.
+    expect(css).toMatch(/--mark: url\("data:image\/png;base64,/);
+    expect(css).toMatch(/\.boot-mark \{[\s\S]*?background: var\(--mark\)/);
+    const boot = html.slice(html.indexOf('<div id="boot"'), html.indexOf("</div>", html.indexOf('<div id="boot"')) + 6);
+    expect(boot, "the boot screen must not fetch anything").not.toContain("src=");
+    // Small enough to belong in a stylesheet the page already blocks on.
+    const inline = css.match(/--mark: url\("data:image\/png;base64,([^"]+)"\)/)?.[1] ?? "";
+    expect(inline.length).toBeGreaterThan(2000);
+    expect(inline.length).toBeLessThan(24_000);
   });
 
   it("takes the boot screen down whichever screen wins", () => {
