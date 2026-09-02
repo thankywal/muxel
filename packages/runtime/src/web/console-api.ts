@@ -82,7 +82,7 @@ import { resolveMasterKey } from "../secrets.js";
 import { ORIGIN_KEY } from "../setup.js";
 import { TelegramClient, type MediaKind } from "../telegram/api.js";
 import { escapeHtml } from "../telegram/format.js";
-import { clearSecret, hasSecret, putSecret } from "./secrets-vault.js";
+import { clearSecret, getSecret, hasSecret, putSecret } from "./secrets-vault.js";
 import { runSelfUpdate, sourceRepoFor, SOURCE_REPO_KEY } from "./self-update.js";
 import { isRepoSlug } from "../repo.js";
 import { versionStatus } from "../updates.js";
@@ -175,8 +175,10 @@ async function businessCard(env: Env, businessId: string) {
  *  11  the answer streamed as it is worked out, and the Cloudflare token
  *      collected in the console instead of at deploy time
  *  12  the assistant asks the owner questions and creates a business itself
+ *  13  changes read per conversation, and whether the owner's repository is
+ *      public
  */
-export const API_REVISION = 12;
+export const API_REVISION = 13;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -1569,6 +1571,44 @@ export async function handleConsoleApi(
   // Telling the deployment where its own source lives, for a build that could
   // not work it out. Validated as a slug before it is stored, because it ends
   // up inside a URL that is then written to.
+  /**
+   * Whether the owner's own copy is public, read from GitHub.
+   *
+   * Its own route rather than a field on /system, which every page load asks
+   * for: this is one call to GitHub and it belongs to the one tab that shows it.
+   *
+   * Read with the token already stored. A fine grained token can always read
+   * the metadata of a repository it can see, so this needs no permission beyond
+   * the one the update already has — which is the whole point. Making the
+   * repository private is a thing the owner does on GitHub, because doing it
+   * from here would mean this deployment held a token that could also delete
+   * their repository.
+   */
+  if (method === "GET" && segments[0] === "source-repo") {
+    const repo = await sourceRepoFor(env);
+    const token = await getSecret(env, "github_token");
+    if (repo === null || token === null) {
+      return json({ repo, private: null, url: repo === null ? "" : `https://github.com/${repo}` });
+    }
+    let isPrivate: boolean | null = null;
+    try {
+      const response = await fetch(`https://api.github.com/repos/${repo}`, {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "user-agent": "muxel",
+          accept: "application/vnd.github+json",
+        },
+      });
+      if (response.ok) {
+        isPrivate = ((await response.json()) as { private?: boolean }).private === true;
+      }
+    } catch {
+      // Null is "we could not ask", which the console says rather than
+      // guessing that a repository is safe.
+    }
+    return json({ repo, private: isPrivate, url: `https://github.com/${repo}/settings` });
+  }
+
   if (method === "PUT" && segments[0] === "source-repo") {
     const body = (await request.json().catch(() => ({}))) as { repo?: string };
     const slug = String(body.repo ?? "").trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "");

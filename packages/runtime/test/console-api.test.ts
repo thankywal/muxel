@@ -81,7 +81,7 @@ vi.mock("../src/human-reply.js", () => ({
 }));
 vi.mock("../src/web/secrets-vault.js", () => ({
   clearSecret: vi.fn(async () => undefined),
-  getSecret: vi.fn(async () => null),
+  getSecret: vi.fn(async () => "gh-token"),
   hasSecret: vi.fn(async () => false),
   putSecret: vi.fn(async () => undefined),
 }));
@@ -253,6 +253,7 @@ const BROWSER_CALLS: [string, string, unknown?][] = [
   ["DELETE", "/messages/m1"],
   ["DELETE", "/secrets/github_token"],
   ["POST", "/update"],
+  ["GET", "/source-repo"],
   ["PUT", "/source-repo", { repo: "a/b" }],
   ["PUT", "/secrets/cloudflare_token", { token: "cf-token" }],
   ["DELETE", "/secrets/cloudflare_token"],

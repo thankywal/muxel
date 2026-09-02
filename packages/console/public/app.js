@@ -329,7 +329,7 @@ const NEEDS = {
   settings: 1,
   advanced: 1,
   inbox: 2,
-  assistant: 12,
+  assistant: 13,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -3633,6 +3633,16 @@ async function viewSettings() {
           }
           <div id="updateOut" style="margin-top:14px"></div>
         </div>
+      </div>
+
+      <!--
+        Whether the owner's own copy is public. Read from GitHub with the token
+        already stored, and changed on GitHub, because a button here that could
+        flip it would need a token that could also delete the repository.
+      -->
+      <div class="card" style="max-width:700px;margin-top:16px">
+        <div class="card-head"><h2>Your repository</h2></div>
+        <div class="pad" id="repoPrivacy"><p class="loading" style="padding:0">Asking GitHub…</p></div>
       </div>`;
     $("saveRepo").onclick = async () => {
       const value = $("srcRepo").value.trim();
@@ -3646,6 +3656,7 @@ async function viewSettings() {
       }
     };
     $("doUpdate").onclick = () => runUpdate(v.running);
+    drawRepoPrivacy();
     return;
   }
 
@@ -3777,6 +3788,52 @@ async function viewSettings() {
       await api("secrets/github_token", { method: "DELETE" });
       viewSettings();
     };
+}
+
+/**
+ * Whether the owner's own copy of the code is public, and what that means.
+ *
+ * Making it private is one click, on GitHub. It is not a button here because
+ * changing a repository's visibility needs Administration rights, and a
+ * deployment holding a token with those could also delete the repository — a
+ * heavy thing to store in order to flip one bit. The console reads the state
+ * with the token it already has and says what is true.
+ */
+async function drawRepoPrivacy() {
+  const box = $("repoPrivacy");
+  if (box === null) return;
+  const { ok, data } = await api("source-repo");
+  if (!ok || !data.repo) {
+    box.innerHTML = '<p style="margin:0;color:var(--muted);font-size:13.5px">This deployment does not know which repository it was built from, so there is nothing to check.</p>';
+    return;
+  }
+  const shared = `<p style="margin:10px 0 0;color:var(--muted);font-size:13px">
+      Nothing secret is in it either way. Your bot tokens and keys are Cloudflare secrets, and your
+      customers are in your own D1 — none of that is in the repository. What is in it is the code,
+      your worker's name and the ids of your D1 and KV. Updates work exactly the same when it is
+      private, because they use the token you already gave this console.</p>`;
+  if (data.private === true) {
+    box.innerHTML = `<p style="margin:0;color:var(--green)"><b>${h(data.repo)} is private.</b></p>${shared}`;
+    return;
+  }
+  if (data.private === null) {
+    box.innerHTML = `<p style="margin:0;color:var(--muted);font-size:13.5px">
+        GitHub did not say whether <b>${h(data.repo)}</b> is public or private. Add a token under
+        Security, or check it on GitHub.</p>`;
+    return;
+  }
+  box.innerHTML = `
+    <p style="margin:0 0 6px"><b>${h(data.repo)} is public.</b></p>
+    <p style="margin:0;color:var(--muted);font-size:13.5px">Anyone can see it. Making it private takes
+      one click on GitHub and changes nothing here.</p>
+    ${shared}
+    <a class="btn btn-primary btn-sm" style="margin-top:14px" target="_blank" rel="noopener"
+       href="${h(data.url)}">Make it private on GitHub</a>
+    <button class="btn btn-ghost btn-sm" style="margin-top:14px" id="repoRecheck">I have done it</button>`;
+  $("repoRecheck").onclick = () => {
+    box.innerHTML = '<p class="loading" style="padding:0">Asking GitHub…</p>';
+    drawRepoPrivacy();
+  };
 }
 
 /**
