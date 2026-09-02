@@ -1649,13 +1649,49 @@ function bindTurnActions() {
 }
 
 /**
+ * Paints the change cards again from the record, without rebuilding the thread.
+ *
+ * A full redraw would do it, but it also scrolls the thread and takes the
+ * cursor back, which is the wrong thing to do five times in a row while a run
+ * is going. Every surface touched here reads the same list: the rows, the
+ * header's count, and the bar above the composer. None of them is told what
+ * happened — they are re-read off state.assistant.approvals, so a row is green
+ * exactly when the deployment says it is.
+ */
+function paintChanges() {
+  const approvals = state.assistant?.approvals ?? [];
+  $("view")
+    .querySelectorAll(".turn.ai[data-msg]")
+    .forEach((turn) => {
+      const card = turn.querySelector(".changes");
+      if (!card) return;
+      const mine = approvals.filter((a) => a.messageId === turn.dataset.msg);
+      if (mine.length > 0) card.outerHTML = approvalCard(mine);
+    });
+
+  const left = approvals.filter((a) => a.state === "waiting").length;
+  const bar = $("toWaiting");
+  if (bar && left === 0) bar.remove();
+  else if (bar) {
+    bar.innerHTML = `${icon("bell", 14)}${left} change${left === 1 ? "" : "s"}
+                 waiting for you — tap Yes on the card`;
+  }
+  bindTurnActions();
+}
+
+/**
  * Says yes to every change still waiting in this conversation.
  *
  * Asked first, and told how many. One tap running twenty five changes is the
  * point of the button, and also the reason a mis-tap would be expensive.
  *
- * It counts up as it goes, because twenty five writes take long enough that a
- * card sitting there disabled and silent reads as a button that did nothing.
+ * The card fills in as it goes. Each row turns green the round it lands, and
+ * the button counts what is left, because twenty five writes take long enough
+ * that a card sitting there silent until the last one reads as a button that
+ * did nothing — and a five second stare at an unchanged card is the same bug
+ * at a smaller size. The counter alone was not enough: it is one line of small
+ * text, and the rows are the thing being looked at.
+ *
  * And it reports what happened: every change that could not be made is counted
  * and the first reason is said out loud, rather than the whole run ending in
  * "Done." whatever came back.
@@ -1670,16 +1706,19 @@ async function approveAll() {
   );
   if (!choice) return;
 
-  const button = $("allYes");
-  $("view").querySelectorAll("[data-approve]").forEach((b) => (b.disabled = true));
   let last;
   let made = 0;
   const refused = [];
   for (const [index, approval] of waiting.entries()) {
+    // Re-read every time, because the card is painted again between rounds.
+    // Nothing in it is tappable while the run is going: a row about to be run
+    // still has its Yes, and a second tap on it would be a second write.
+    const button = $("allYes");
     if (button) {
       button.disabled = true;
       button.textContent = `${index + 1} of ${waiting.length}…`;
     }
+    $("view").querySelectorAll("[data-approve]").forEach((b) => (b.disabled = true));
     const { ok, data } = await api(`assistant/approvals/${approval.id}`, {
       method: "POST",
       body: { yes: true },
@@ -1694,6 +1733,13 @@ async function approveAll() {
     last = data;
     if (data.ok === false) refused.push(data.message || approval.summary);
     else made += 1;
+    // Green the moment it is green. The rows are a view of the record, so the
+    // record arriving is the whole update — and the run reads as a list
+    // filling in rather than as a card that sat still and then jumped.
+    if (data.approvals) {
+      state.assistant = { ...state.assistant, approvals: data.approvals };
+      paintChanges();
+    }
   }
 
   if (last) state.assistant = { ...state.assistant, approvals: last.approvals };
