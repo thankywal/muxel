@@ -133,8 +133,10 @@ nav { padding: 0 12px 6px; flex: none; }
             padding: 12px 14px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .who-card:hover { background: var(--surface-2); }
 .who-card .grow { flex: 1; min-width: 0; }
-.who-card .av { width: 32px; height: 32px; border-radius: 50%; background: var(--brand);
-                color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+/* The picture fills the circle, so the tile behind the pixels is the circle. */
+.who-card .av { width: 32px; height: 32px; border-radius: 50%; overflow: hidden;
+                background: var(--surface-2); display: block; flex: none; }
+.who-card .av svg { display: block; }
 .who-card b { display: block; font-size: 13px; font-weight: 620; overflow: hidden;
               text-overflow: ellipsis; white-space: nowrap; }
 .who-card small { color: var(--muted); font-size: 11.5px; }

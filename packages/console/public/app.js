@@ -663,7 +663,62 @@ async function whoAmI() {
   const label = data.account || data.subdomain || subdomainOf(worker) || data.label || "Operator";
   if ($("whoName")) $("whoName").textContent = label;
   if ($("whoRole")) $("whoRole").textContent = data.role ?? "signed in";
-  if ($("avatar")) $("avatar").textContent = label.trim().charAt(0).toUpperCase() || "·";
+  if ($("avatar")) $("avatar").innerHTML = pixelAvatar(label);
+}
+
+/**
+ * A little pixel face, the same one every time for the same owner.
+ *
+ * Drawn here rather than fetched. Every avatar service works by being sent who
+ * the person is — a name, or a hash of their email — and this console is the
+ * one place that knows the owner's name at all. Sending it somewhere to get a
+ * picture back would put a third party in a path that currently has nobody in
+ * it, for decoration.
+ *
+ * "Random per user" means different between owners, not different between page
+ * loads: the drawing is a function of the name, so it is the same on every
+ * device and after every reload, and two owners with different names get
+ * different faces.
+ *
+ * Eight rows of eight, mirrored down the middle, which is what makes a grid of
+ * noise read as a face.
+ */
+function pixelAvatar(seed) {
+  const hash = fnv1a(String(seed || "?"));
+  // One hue for the tile and the pixels, both mid range, so the same drawing
+  // works on the light and the dark theme without knowing which it is on.
+  const hue = hash % 360;
+  const tile = `hsl(${hue} 55% 44%)`;
+  const ink = `hsl(${hue} 75% 90%)`;
+
+  const cells = [];
+  let bits = hash;
+  for (let y = 0; y < 8; y += 1) {
+    for (let x = 0; x < 4; x += 1) {
+      // A fresh mix per cell, so neighbouring pixels do not fall into stripes.
+      bits = (bits ^ (y * 31 + x * 7 + 1)) >>> 0;
+      bits = Math.imul(bits, 16_777_619) >>> 0;
+      if ((bits >>> 13) % 100 < 46) {
+        cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
+        cells.push(`<rect x="${7 - x}" y="${y}" width="1" height="1"/>`);
+      }
+    }
+  }
+  return `<svg viewBox="0 0 8 8" width="100%" height="100%" shape-rendering="crispEdges"
+    role="img" aria-label="Your picture">
+      <rect width="8" height="8" fill="${tile}"/>
+      <g fill="${ink}">${cells.join("")}</g>
+    </svg>`;
+}
+
+/** FNV-1a, so the same name gives the same number in every browser. */
+function fnv1a(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16_777_619) >>> 0;
+  }
+  return hash;
 }
 
 /**

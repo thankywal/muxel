@@ -34,6 +34,8 @@ export function evaluateConsole(): {
   approvalCard: (approvals: unknown[]) => string;
   /** What version the deployment is on, as the settings panel prints it. */
   versionBlock: (version: unknown, repo: string) => string;
+  /** The owner's little pixel face, drawn from their name. */
+  pixelAvatar: (seed: string) => string;
 } {
   const noop = (): unknown => undefined;
   const element = new Proxy(
@@ -92,6 +94,7 @@ export function evaluateConsole(): {
        turnHtml: (message, steps, cards) => turnHtml(message, steps, cards, undefined, {}),
        approvalCard,
        versionBlock,
+       pixelAvatar,
      });`,
     context,
   );
