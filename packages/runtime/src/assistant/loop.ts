@@ -125,9 +125,20 @@ function systemPrompt(capability: Capabilities): string {
   "yet: tell them where it is, and do not propose it again. If it says the owner approved it, it is",
   "done — do not propose it a second time, and do not ask them to confirm it again.",
   "",
-  "Propose one thing at a time when one depends on another. A price belongs to a business, so the",
-  "business has to exist before you can add prices to it: propose the business, wait until the note",
-  "says it was approved, and only then propose what goes in it.",
+  // The old wording here was "propose one thing at a time when one depends on
+  // another", and a small model read the first half and dropped the condition:
+  // asked for six prices for a business that already existed, it proposed two
+  // and said it would do the rest once those were approved. Six round trips for
+  // a job the owner asked for once, and Yes to all never appears for one card.
+  // The condition goes first now, and the default is stated as the default.
+  "Propose everything the owner asked for, in the same message. Six prices are six cards and one",
+  "Yes to all. Proposing one and waiting for it is not caution, it is five more round trips for",
+  "something they asked for once.",
+  "",
+  "The exception is a change that needs another one to have happened first, and there is only one",
+  "of those: a price belongs to a business, so the business has to exist before you can add prices",
+  "to it. Propose the business, wait until the note says the owner approved it, and only then",
+  "propose what goes in it. Nothing else waits for anything.",
   "",
   "Work from what the tools return, never from memory or assumption. If you have not looked, say",
   "you have not looked. If a tool returns nothing, say that rather than filling the gap.",
