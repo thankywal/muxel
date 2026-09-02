@@ -66,17 +66,45 @@ fi
 
 git remote remove upstream 2>/dev/null || true
 git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+
+SENTINELS="VERSION wrangler.jsonc packages/runtime/src/index.ts"
+
+# Whether every sentinel is in the tree we just fetched.
+have_sentinels() {
+  local tree
+  tree=$(git ls-tree -r --name-only FETCH_HEAD 2>/dev/null) || return 1
+  local name
+  for name in $SENTINELS; do
+    printf '%s\n' "$tree" | grep -qx "$name" || return 1
+  done
+  return 0
+}
+
+# The gate before anything destructive: if this does not look like Muxel, stop
+# before a single file has been removed. A truncated or foreign tree committed
+# here would deploy as an empty site everywhere at once.
+#
+# But a missing file has two causes and only one of them is upstream's. A
+# shallow fetch has twice arrived here short — the transfer reports success and
+# the tree comes back incomplete — and the gate then announced that upstream
+# was missing its own entry point. Both times upstream was fine, and both times
+# somebody went looking for a break that was not there.
+#
+# So the shallow fetch is treated as a guess. If it does not carry what it
+# should, the full history is fetched, which cannot be partial in this way, and
+# only a tree that is still missing something is upstream's problem.
 git fetch --depth=1 upstream "${sha:-main}"
 
-# The gate before anything destructive: if this does not look like Muxel,
-# stop before a single file has been removed. A truncated or foreign tree
-# committed here would deploy as an empty site everywhere at once.
-for sentinel in VERSION wrangler.jsonc packages/runtime/src/index.ts; do
-  if ! git ls-tree -r --name-only FETCH_HEAD | grep -qx "$sentinel"; then
-    echo "Upstream tree is missing ${sentinel}. Refusing to continue." >&2
-    exit 1
-  fi
-done
+if ! have_sentinels; then
+  echo "Shallow fetch came back incomplete. Fetching in full before deciding."
+  git fetch --no-tags upstream "${sha:-main}"
+fi
+
+if ! have_sentinels; then
+  echo "Upstream ${sha:-main} really is missing one of: ${SENTINELS}." >&2
+  echo "Refusing to continue. Nothing has been changed." >&2
+  exit 1
+fi
 
 # wrangler.jsonc holds the identifiers of the resources in this account, and
 # .github/ holds the operator's stub. Both are excluded from the removal and

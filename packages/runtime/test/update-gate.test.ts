@@ -60,6 +60,41 @@ describe("what the script makes of upstream's checks", () => {
   });
 });
 
+describe("a missing file has two causes and only one is upstream's", () => {
+  // The gate has twice announced that upstream was missing its own entry
+  // point. Both times upstream was fine: a shallow fetch had arrived short,
+  // reporting success while delivering an incomplete tree. Both times somebody
+  // went looking for a break that was not there.
+  it("checks the sentinels through one function, not inline", () => {
+    // Inline, the check could only be run once, which is what made the first
+    // answer final.
+    expect(script).toContain("have_sentinels()");
+    expect(script).toContain('SENTINELS="VERSION wrangler.jsonc packages/runtime/src/index.ts"');
+  });
+
+  it("treats a short shallow fetch as a guess, and asks again in full", () => {
+    const gate = script.slice(script.indexOf("git fetch --depth=1 upstream"));
+    expect(gate).toMatch(/if ! have_sentinels; then[\s\S]*git fetch --no-tags upstream/);
+    // The full fetch has to come before the refusal, or the retry is dead code.
+    expect(gate.indexOf("git fetch --no-tags")).toBeLessThan(gate.indexOf("Refusing to continue"));
+  });
+
+  it("only blames upstream once a full fetch still comes back short", () => {
+    expect(script).toMatch(/Upstream \$\{sha:-main\} really is missing/);
+    expect(script).toContain("Nothing has been changed.");
+    // The old wording blamed upstream on the first look.
+    expect(script).not.toContain("Upstream tree is missing ${sentinel}");
+  });
+
+  it("still refuses rather than pressing on", () => {
+    // The gate exists because a truncated tree committed here would deploy as
+    // an empty site everywhere at once. Retrying must not become continuing.
+    const tail = script.slice(script.indexOf("really is missing"));
+    expect(tail).toContain("exit 1");
+    expect(tail.indexOf("exit 1")).toBeLessThan(tail.indexOf("git ls-files"));
+  });
+});
+
 describe("what it says about it", () => {
   it("only applies on a pass", () => {
     expect(script).toContain('if [ "$state" != "success" ]');
