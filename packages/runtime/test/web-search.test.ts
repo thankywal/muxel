@@ -75,13 +75,36 @@ describe("the three engines", () => {
     expect(JSON.stringify(answer)).not.toContain("serp-key");
   });
 
-  it("passes a location on, and leaves it out when there is none", async () => {
+  it("tells the maps engine what kind of search it is", async () => {
+    // Without type=search the maps engine refuses the query outright, and the
+    // owner is told the web returned nothing when it was never asked.
     const fetchMock = replied({ local_results: [] });
     vi.stubGlobal("fetch", fetchMock);
-    await webSearch(env, { query: "coffee", kind: "local", location: "Bangkok" });
-    expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("location")).toBe("Bangkok");
-    await webSearch(env, { query: "coffee", kind: "local" });
-    expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.has("location")).toBe(false);
+    await webSearch(env, { query: "cafes", kind: "local" });
+    expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("type")).toBe("search");
+    await webSearch(env, { query: "chemex", kind: "shopping" });
+    expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.has("type")).toBe(false);
+  });
+
+  it("puts a place name where each engine actually reads one", async () => {
+    // The maps engine's own location parameter takes GPS coordinates, and its
+    // documentation says to put the city in the query instead. Sending a place
+    // name there would be silently ignored, which reads as a search that found
+    // the wrong town rather than as a parameter we got wrong.
+    const fetchMock = replied({ local_results: [] });
+    vi.stubGlobal("fetch", fetchMock);
+    await webSearch(env, { query: "cafes", kind: "local", location: "Bangkok" });
+    const maps = new URL(String(fetchMock.mock.calls[0][0])).searchParams;
+    expect(maps.get("q")).toBe("cafes Bangkok");
+    expect(maps.has("location")).toBe(false);
+
+    await webSearch(env, { query: "chemex", kind: "shopping", location: "Bangkok" });
+    const shopping = new URL(String(fetchMock.mock.calls[1][0])).searchParams;
+    expect(shopping.get("q")).toBe("chemex");
+    expect(shopping.get("location")).toBe("Bangkok");
+
+    await webSearch(env, { query: "chemex", kind: "shopping" });
+    expect(new URL(String(fetchMock.mock.calls[2][0])).searchParams.has("location")).toBe(false);
   });
 });
 

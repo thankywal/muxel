@@ -104,15 +104,27 @@ export async function webSearch(
     );
   }
 
+  const location = input.location?.trim() ?? "";
   const url = new URL(ENDPOINT);
   url.searchParams.set("engine", SEARCH_KINDS[input.kind]);
-  url.searchParams.set("q", query);
   url.searchParams.set("num", String(MAX_RESULTS));
   url.searchParams.set("api_key", key);
-  // The maps engine answers about a place, so it needs one. Where the owner has
-  // not said, SerpApi's own default applies rather than a guess of ours.
-  const location = input.location?.trim() ?? "";
-  if (location.length > 0) url.searchParams.set("location", location);
+
+  if (input.kind === "local") {
+    // The maps engine refuses a query without being told what kind of search
+    // it is, and its own location parameter takes GPS coordinates rather than
+    // a place name. Its documentation says to put the city in the query, which
+    // is also how a person searches a map, so that is what a place name does
+    // here. Asking an owner for latitude and longitude would be absurd.
+    url.searchParams.set("type", "search");
+    url.searchParams.set("q", location.length > 0 ? `${query} ${location}` : query);
+  } else {
+    url.searchParams.set("q", query);
+    // On the web and shopping engines a location is the search origin, which
+    // is a real parameter. Left off, SerpApi's own default applies rather than
+    // a guess of ours.
+    if (location.length > 0) url.searchParams.set("location", location);
+  }
 
   let response: Response;
   try {
@@ -151,10 +163,10 @@ function rowsOf(body: Record<string, unknown>, kind: SearchKind): SearchResult[]
   if (kind === "shopping") {
     return list("shopping_results").slice(0, MAX_RESULTS).map((row) => ({
       title: text(row.title),
-      link: text(row.product_link) || text(row.link),
+      link: text(row.product_link),
       snippet: text(row.snippet) || text(row.delivery),
       price: text(row.price),
-      source: text(row.source) || text(row.store),
+      source: text(row.source),
     }));
   }
 
