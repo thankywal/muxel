@@ -35,7 +35,8 @@ vi.mock("../src/assistant/store.js", () => ({
   stepsFor: vi.fn(async () => ({})),
   promptsFor: vi.fn(async () => ({})),
   usageFor: vi.fn(async () => ({})),
-  listApprovals: vi.fn(async () => []),
+  listChatApprovals: vi.fn(async () => []),
+  chatOfApproval: vi.fn(async () => "k1"),
   titleFrom: (t: string) => t,
 }));
 vi.mock("../src/cloudflare/allowance.js", () => ({

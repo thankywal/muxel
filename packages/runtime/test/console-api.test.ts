@@ -144,7 +144,8 @@ vi.mock("../src/assistant/store.js", () => ({
   usageFor: vi.fn(async () => ({
     om1: { model: "m1", inputTokens: 1200, outputTokens: 180 },
   })),
-  listApprovals: vi.fn(async () => []),
+  listChatApprovals: vi.fn(async () => []),
+  chatOfApproval: vi.fn(async () => "k1"),
   titleFrom: (text: string) => text.slice(0, 52),
 }));
 vi.mock("../src/assistant/loop.js", () => ({

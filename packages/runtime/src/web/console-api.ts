@@ -99,7 +99,8 @@ import {
   createChat,
   deleteChat,
   getChat,
-  listApprovals,
+  chatOfApproval,
+  listChatApprovals,
   listChats,
   setChatModel,
   titleFrom,
@@ -529,7 +530,7 @@ export async function handleConsoleApi(
               perDay: allowance.perDay,
               problem: allowance.problem,
             },
-            approvals: await listApprovals(env, userId, 60),
+            approvals: await listChatApprovals(env, userId, chat.id),
           });
         } catch (error) {
           // Sent down the same channel. A stream that just stops leaves the
@@ -581,7 +582,7 @@ export async function handleConsoleApi(
         wanted === null ? (chats[0] ?? null) : await getChat(env, userId, wanted);
       const [messages, approvals, steps, spent, allowance] = await Promise.all([
         chat === null ? Promise.resolve([]) : chatTranscript(env, chat.id, 60),
-        listApprovals(env, userId, 60),
+        chat === null ? Promise.resolve([]) : listChatApprovals(env, userId, chat.id),
         chat === null ? Promise.resolve({}) : stepsFor(env, chat.id),
         chat === null ? Promise.resolve({}) : usageFor(env, chat.id),
         allowanceNow(env),
@@ -657,7 +658,7 @@ export async function handleConsoleApi(
         prompts: await promptsFor(env, chat.id),
         usage: priced(await usageFor(env, chat.id), allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
-        approvals: await listApprovals(env, userId, 60),
+        approvals: await listChatApprovals(env, userId, chat.id),
       });
     }
 
@@ -687,15 +688,22 @@ export async function handleConsoleApi(
         prompts: chat === null ? {} : await promptsFor(env, chat.id),
         usage: chat === null ? {} : priced(await usageFor(env, chat.id), allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
-        approvals: await listApprovals(env, userId, 60),
+        approvals: chat === null ? [] : await listChatApprovals(env, userId, chat.id),
       });
     }
 
     // POST /assistant/approvals/:id  { yes: boolean }
     if (method === "POST" && segments[1] === "approvals" && segments[2] !== undefined) {
       const body = (await request.json().catch(() => ({}))) as { yes?: boolean };
+      // Which conversation it belongs to is looked up rather than taken from
+      // the caller: the answer carries that chat's changes back, and a chat id
+      // supplied by the browser would be a way to read another one's.
+      const chatId = await chatOfApproval(env, userId, segments[2]);
       const outcome = await decide(env, userId, segments[2], body.yes === true);
-      return json({ ...outcome, approvals: await listApprovals(env, userId, 60) });
+      return json({
+        ...outcome,
+        approvals: chatId === null ? [] : await listChatApprovals(env, userId, chatId),
+      });
     }
   }
 

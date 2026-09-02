@@ -371,16 +371,54 @@ export async function askApproval(
   };
 }
 
-export async function listApprovals(env: Env, userId: number, limit = 40): Promise<Approval[]> {
+/**
+ * Every change proposed in one conversation.
+ *
+ * Scoped to the chat, not to the owner. The per-owner list this replaces was
+ * the only way to read these, so a card drawn in one conversation counted
+ * changes proposed in another: "24 changes waiting for you" followed the owner
+ * into every chat, and Yes to all would have run changes from a conversation
+ * that was not even on screen.
+ *
+ * There is deliberately no per-owner version left. A second way to read these
+ * is a second way to leak them across the wall they belong behind.
+ *
+ * Only the ones filed against an answer, too. A change raised by a turn that
+ * then failed before it could say anything is one the owner was never shown,
+ * and counting it promises a card that was never drawn.
+ */
+export async function listChatApprovals(
+  env: Env,
+  userId: number,
+  chatId: string,
+  limit = 60,
+): Promise<Approval[]> {
   const result = await env.DB.prepare(
-    // Only the ones filed against an answer. A change raised by a turn that
-    // then failed before it could say anything is one the owner was never
-    // shown, and counting it promises a card that was never drawn.
-    "SELECT * FROM operator_approval WHERE user_id = ? AND message_id <> '' ORDER BY created_at DESC LIMIT ?",
+    `SELECT a.* FROM operator_approval a
+       JOIN operator_message m ON m.id = a.message_id
+      WHERE a.user_id = ? AND m.chat_id = ? AND a.message_id <> ''
+      ORDER BY a.created_at DESC
+      LIMIT ?`,
   )
-    .bind(userId, limit)
+    .bind(userId, chatId, limit)
     .all<Parameters<typeof toApproval>[0]>();
   return result.results.map(toApproval).reverse();
+}
+
+/** Which conversation a change was proposed in, for a route that has only its id. */
+export async function chatOfApproval(
+  env: Env,
+  userId: number,
+  approvalId: string,
+): Promise<string | null> {
+  const row = await env.DB.prepare(
+    `SELECT m.chat_id FROM operator_approval a
+       JOIN operator_message m ON m.id = a.message_id
+      WHERE a.id = ? AND a.user_id = ?`,
+  )
+    .bind(approvalId, userId)
+    .first<{ chat_id: string }>();
+  return row?.chat_id ?? null;
 }
 
 /**
