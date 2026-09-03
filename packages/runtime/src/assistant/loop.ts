@@ -236,6 +236,16 @@ export async function ask(
     chatId: string;
     question: string;
     model: string;
+    /**
+     * Who is asking.
+     *
+     * "owner" is somebody typing, and what they typed goes into the transcript
+     * as theirs. "console" is this deployment starting a turn on its own,
+     * which it does after the owner answers a card: there the question is an
+     * instruction nobody said out loud, so it is given to the model and not
+     * written down as words the owner used.
+     */
+    asked?: "owner" | "console";
     /** Called as the loop works, when someone is watching. */
     onEvent?: (event: LoopEvent) => void;
   },
@@ -252,7 +262,10 @@ export async function ask(
   ]);
   const system = systemPrompt({ webSearch, documentData });
   const ctx: ToolContext = { env, userId };
-  const messageId = await addOperatorMessage(env, { chatId, userId, role: "user", content: question });
+  const messageId =
+    input.asked === "console"
+      ? ""
+      : await addOperatorMessage(env, { chatId, userId, role: "user", content: question });
 
   // This chat only. One flat transcript carried yesterday's argument about
   // delivery into today's question about refunds.

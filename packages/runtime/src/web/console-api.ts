@@ -193,8 +193,12 @@ async function businessCard(env: Env, businessId: string) {
  *      there. Additive in the same way: a console reading this from an older
  *      deployment gets an empty origin and offers nothing rather than a link
  *      to nowhere.
+ *  18  a turn the owner started by tapping a card rather than by typing, asked
+ *      for with `after: "approvals"`. A deployment that predates it reads that
+ *      as an empty message and refuses, so the console does not ask for one
+ *      until the deployment can answer it.
  */
-export const API_REVISION = 17;
+export const API_REVISION = 18;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -516,6 +520,7 @@ export async function handleConsoleApi(
       userId: number,
       chat: { id: string; model: string },
       question: string,
+      asked: "owner" | "console" = "owner",
     ): Response => {
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
@@ -533,6 +538,7 @@ export async function handleConsoleApi(
             chatId: chat.id,
             question,
             model: chat.model,
+            asked,
             onEvent: send,
           });
           const allowance = await allowanceNow(env);
@@ -631,8 +637,24 @@ export async function handleConsoleApi(
         text?: string;
         chatId?: string;
         model?: string;
+        /** Set when the owner answered a card rather than typed something. */
+        after?: string;
       };
-      const text = String(body.text ?? "").trim();
+      // A turn the owner started by tapping, not by typing.
+      //
+      // Answering a card used to be the end of it: the rows went green and the
+      // conversation said nothing more, so an owner who had tapped Yes on six
+      // prices had to go and look at the price list to find out what they now
+      // had. The instruction is composed here rather than typed, and it is
+      // deliberately about the record: the model is told to look, not to
+      // describe the cards it can already see.
+      const tapped = body.after === "approvals";
+      const text = tapped
+        ? "The owner has just answered the changes on the card above. Do not describe the card. "
+          + "Look at what is actually there now: call get_business for each business those changes "
+          + "were to, read what it returns, and tell the owner in one short paragraph what they now "
+          + "have and what, if anything, did not go through. If something failed, say what and why."
+        : String(body.text ?? "").trim();
       if (text.length === 0) return json({ error: "empty" }, 400);
 
       // A message with no chat starts one, titled with what was just typed.
@@ -641,6 +663,9 @@ export async function handleConsoleApi(
         typeof body.chatId === "string" && body.chatId.length > 0
           ? await getChat(env, userId, body.chatId)
           : null;
+      // A tap belongs to the conversation the card is in. There is nothing to
+      // start a new one from and nothing to title it with.
+      if (tapped && chat === null) return json({ error: "no_chat" }, 400);
       if (chat === null) {
         chat = await createChat(
           env,
@@ -659,7 +684,7 @@ export async function handleConsoleApi(
       // answer in one piece, which is what the API did before and what a script
       // calling it still wants.
       if ((request.headers.get("accept") ?? "").includes("text/event-stream")) {
-        return streamed(env, userId, chat, text.slice(0, 4000));
+        return streamed(env, userId, chat, text.slice(0, 4000), tapped ? "console" : "owner");
       }
 
       const reply = await ask(env, {
@@ -667,6 +692,7 @@ export async function handleConsoleApi(
         chatId: chat.id,
         question: text.slice(0, 4000),
         model: chat.model,
+        asked: tapped ? "console" : "owner",
       });
       const allowance = await allowanceNow(env);
       return json({
