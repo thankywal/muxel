@@ -409,6 +409,12 @@ export function widgetScript(input: {
     event.preventDefault();
     var text = input.value.trim();
     if (!text) { return; }
+    // One turn at a time. The button is disabled while a send is out, but
+    // Enter submits the form regardless of the button, and a second Enter —
+    // easy to press twice from an input method that uses it to commit — sent
+    // the same question twice, to be stored and answered twice. What was typed
+    // stays in the box for when the reply has arrived.
+    if (sending) { return; }
     input.value = "";
     bubbleFor(text, "u");
     send.disabled = true;
