@@ -52,10 +52,19 @@
 .demo .ai-av { width: 22px; height: 22px; border-radius: 6px; }
 .demo .ai-head b { font-size: 13.5px; font-weight: 650; }
 .demo .ai-head .when { margin-left: auto; font-size: 11.5px; color: var(--d-muted); }
-.demo .work-label { font-size: 12px; color: var(--d-muted); }
-.demo .work-label::after { content: "…"; animation: d-ellipsis 1.4s steps(4, end) infinite; }
-@keyframes d-ellipsis { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; }
-                        75%, 100% { content: "…"; } }
+/* The console's own waiting line, drawn the same way. See app.css. */
+.demo .work-label { font-size: 14.5px; line-height: 1.7; color: var(--d-muted); }
+.demo .work-label::after { content: " ···"; letter-spacing: .5px; }
+.demo .ai-body.thinking { display: flex; align-items: center; min-height: 26px; }
+.demo .ai-body.thinking .work-label {
+  padding-bottom: .12em;
+  background: linear-gradient(100deg, var(--d-muted) 0 42%, var(--d-ink) 50%, var(--d-muted) 58% 100%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  animation: d-reading 1.9s linear infinite;
+}
+@keyframes d-reading { from { background-position: 140% 0; } to { background-position: -40% 0; } }
 .demo .ai-body { font-size: 14.5px; line-height: 1.7; color: var(--d-ink); white-space: pre-wrap; }
 .demo .ai-body b { font-weight: 650; }
 .demo .caret { display: inline-block; width: 2px; height: 1.05em; background: var(--d-brand);

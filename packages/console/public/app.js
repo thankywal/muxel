@@ -2200,9 +2200,8 @@ async function sendToAssistant(event) {
      }${text.length === 0 ? "" : `<div class="ubub">${md(text)}</div>`}</div>
      <div class="turn ai" id="asThinking">
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
-         <b>${h(modelLabel())}</b>
-         <span class="work-label">Thinking</span></div>
-       <div class="ai-body thinking"><span></span><span></span><span></span></div>
+         <b>${h(modelLabel())}</b></div>
+       <div class="ai-body thinking"><span class="work-label">Thinking</span></div>
        <div class="steps"></div>
      </div>`,
   );
@@ -2461,9 +2460,8 @@ async function reportOnTaps() {
     "beforeend",
     `<div class="turn ai" id="asThinking">
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
-         <b>${h(modelLabel())}</b>
-         <span class="work-label">Checking what changed</span></div>
-       <div class="ai-body thinking"><span></span><span></span><span></span></div>
+         <b>${h(modelLabel())}</b></div>
+       <div class="ai-body thinking"><span class="work-label">Checking what changed</span></div>
        <div class="steps"></div>
      </div>`,
   );
