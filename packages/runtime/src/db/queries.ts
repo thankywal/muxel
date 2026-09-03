@@ -1197,6 +1197,14 @@ export async function getHandover(env: Env, conversationId: string): Promise<Han
  * An existing flag is left alone rather than reopened, so a customer asking
  * three questions the documents do not cover produces one item of work and does
  * not drag a chat a person is already answering back into the queue.
+ *
+ * It writes the event itself rather than leaving that to its two callers. A
+ * customer waiting is the single most useful thing on the dashboard, and a
+ * channel added later would otherwise arrive without it.
+ *
+ * @returns Whether this call is what opened it. The row is returned rather
+ *   than read back: the upsert cannot say which branch it took, and an extra
+ *   SELECT on every handover to find out would be a read for the common case.
  */
 export async function openHandover(
   env: Env,
@@ -1206,12 +1214,13 @@ export async function openHandover(
     customerId: string | null;
     reason: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   const stamp = now();
-  await env.DB.prepare(
+  const row = await env.DB.prepare(
     `INSERT INTO handover (conversation_id, business_id, customer_id, state, reason, opened_at, updated_at)
      VALUES (?, ?, ?, 'waiting', ?, ?, ?)
-     ON CONFLICT (conversation_id) DO UPDATE SET updated_at = excluded.updated_at`,
+     ON CONFLICT (conversation_id) DO UPDATE SET updated_at = excluded.updated_at
+     RETURNING opened_at`,
   )
     .bind(
       input.conversationId,
@@ -1221,7 +1230,16 @@ export async function openHandover(
       stamp,
       stamp,
     )
-    .run();
+    .first<{ opened_at: string }>();
+  const opened = row?.opened_at === stamp;
+  if (opened) {
+    await recordEvent(env, {
+      businessId: input.businessId,
+      kind: "waiting_for_a_person",
+      detail: input.reason.slice(0, 200),
+    }).catch(() => undefined);
+  }
+  return opened;
 }
 
 /** Puts a person in charge of a conversation, silencing the assistant there. */

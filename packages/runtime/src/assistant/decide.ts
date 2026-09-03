@@ -8,10 +8,33 @@
  * fact in the database rather than something the console has to avoid.
  */
 
+import { recordEvent } from "../db/queries.js";
 import type { Env } from "../env.js";
 import type { After } from "../products.js";
-import { chatOfApproval, getApproval, settleApproval } from "./store.js";
+import { businessIdIn } from "./target.js";
+import { chatOfApproval, getApproval, settleApproval, type Approval } from "./store.js";
 import { findTool, type ToolContext } from "./tools.js";
+
+/**
+ * The owner's own answer, written to the deployment's log.
+ *
+ * A tap is the one thing on this product that changes anything, so it is the
+ * one thing the activity panel should be full of. The card's own summary is
+ * used, because it is the sentence the owner read before they tapped.
+ */
+async function note(
+  env: Env,
+  approval: Approval,
+  kind: string,
+  extra = "",
+): Promise<void> {
+  const businessId = businessIdIn(approval.args as Record<string, unknown>);
+  await recordEvent(env, {
+    ...(businessId.length > 0 ? { businessId } : {}),
+    kind,
+    detail: `${approval.summary || approval.tool}${extra === "" ? "" : ` — ${extra}`}`,
+  });
+}
 
 export type Decision =
   | { ok: true; state: "approved" | "declined"; message: string }
@@ -32,6 +55,7 @@ export async function decide(
 
   if (!yes) {
     await settleApproval(env, userId, approvalId, "declined", "");
+    await note(env, approval, "change_declined").catch(() => undefined);
     return { ok: true, state: "declined", message: "Left as it was." };
   }
 
@@ -56,6 +80,7 @@ export async function decide(
     await env.DB.prepare("UPDATE operator_approval SET result = ? WHERE id = ?")
       .bind("Done.", approvalId)
       .run();
+    await note(env, approval, "change_made").catch(() => undefined);
     return { ok: true, state: "approved", message: "Done." };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "unknown error";
@@ -66,6 +91,7 @@ export async function decide(
     )
       .bind(detail.slice(0, 2000), approvalId)
       .run();
+    await note(env, approval, "change_failed", detail).catch(() => undefined);
     return { ok: false, message: detail };
   }
 }
