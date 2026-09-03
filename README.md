@@ -10,6 +10,16 @@ of ours.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+<p align="center">
+  <img src="docs/media/serpapi-loop.webp" width="820"
+       alt="The owner asks what other cafes charge for a Chemex; a card proposes adding it at 44.00; one tap, and the shop's own website quotes 44.00 to a customer.">
+</p>
+
+<p align="center"><em>The owner asks what other cafés charge. Three SerpApi engines answer,
+with the seller named. One card, one tap — and seconds later the shop's own website is
+selling the thing it did not sell before. Nothing between those two surfaces but the price
+list the tap wrote.</em></p>
+
 New here? Read [Before you start](#before-you-start) first. It is three things
 and about ten minutes: two free accounts, and a key you make up. No Telegram
 account is needed to run any of it.
@@ -21,6 +31,20 @@ single sendable message, in five languages, in
 There is no Muxel server, no Muxel database and no Muxel account. Your
 documents, your conversations and your credentials never leave infrastructure
 you control.
+
+## What it looks like
+
+| | |
+| --- | --- |
+| <img src="docs/media/assistant.webp" alt="The console's chat answering a question, with the tools it used as pills under the answer"> | <img src="docs/media/confidence.webp" alt="Six extracted prices, two flagged as low confidence, each row turning green as its write lands"> |
+| **Your own agent, over your own business.** It reads every business, price list, rule and conversation, and proposes changes it cannot make. Every write is a card you tap Yes on, and the tools it used are listed under what it said. | **A confidence is what makes a human in the loop worth having.** Nutrient DWS reads the original file and marks what it is unsure of, so forty equally certain-looking rows become the two worth your attention. |
+| <img src="docs/media/your-website.webp" alt="A coffee shop's own website with the Muxel chat bubble open, quoting a price"> | <img src="docs/media/telegram.webp" alt="A customer asking a Muxel Telegram bot whether the shop delivers"> |
+| **On the website you already have.** One `<script>` tag, in a shadow root, taking your colours. It answers what your documents cover and hands over the one it will not guess at. | **And on Telegram.** The same agent, the same knowledge, a different door — optional, and addable at any time. |
+| <img src="docs/media/your-keys.webp" alt="The console's settings screen showing which key is stored, masked, never the key itself"> | |
+| **Every key stays yours.** GitHub, Cloudflare, SerpApi, Nutrient — each sealed in your own KV with your deployment's own master key, and shown back as its first and last four so you know which key it is. | |
+
+Every screen above is the product running, not a mock-up. The console is served from this
+repository and drawn by its own CSS; the widget is on an ordinary website that is not ours.
 
 ## What it does
 
