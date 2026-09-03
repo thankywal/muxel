@@ -156,6 +156,165 @@ export async function addOperatorMessage(
   return id;
 }
 
+/**
+ * A file the owner sent, as the text that was read out of it.
+ *
+ * The bytes are gone by the time this exists. A price list is a price list
+ * whether it arrived as a PDF, a spreadsheet or a photograph of a blackboard,
+ * and the thing every reader of this wants is the same in all three cases.
+ */
+export interface OperatorAttachment {
+  id: string;
+  filename: string;
+  mime: string;
+  /** The size of the file that arrived, which the text no longer tells anyone. */
+  bytes: number;
+  /** How much text came out of it. The text itself is read with a tool. */
+  chars: number;
+}
+
+/** Keeps what was read out of one file, before the turn that mentions it. */
+export async function saveAttachment(
+  env: Env,
+  input: { userId: number; chatId: string; filename: string; mime: string; bytes: number; text: string },
+): Promise<OperatorAttachment> {
+  const id = generateId();
+  await env.DB.prepare(
+    `INSERT INTO operator_attachment (id, user_id, chat_id, filename, mime, bytes, text, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(id, input.userId, input.chatId, input.filename, input.mime, input.bytes, input.text, now())
+    .run();
+  return {
+    id,
+    filename: input.filename,
+    mime: input.mime,
+    bytes: input.bytes,
+    chars: input.text.length,
+  };
+}
+
+/** One file's text, for the owner who sent it and nobody else. */
+export async function getAttachment(
+  env: Env,
+  userId: number,
+  id: string,
+): Promise<(OperatorAttachment & { text: string }) | null> {
+  const row = await env.DB.prepare(
+    "SELECT id, filename, mime, bytes, text FROM operator_attachment WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, userId)
+    .first<{ id: string; filename: string; mime: string; bytes: number; text: string }>();
+  return row === null
+    ? null
+    : { id: row.id, filename: row.filename, mime: row.mime, bytes: row.bytes, chars: row.text.length, text: row.text };
+}
+
+/** The files named, for the owner who sent them. Missing ones are simply absent. */
+export async function attachmentsByIds(
+  env: Env,
+  userId: number,
+  ids: readonly string[],
+): Promise<OperatorAttachment[]> {
+  if (ids.length === 0) return [];
+  const result = await env.DB.prepare(
+    `SELECT id, filename, mime, bytes, LENGTH(text) AS chars
+       FROM operator_attachment
+      WHERE user_id = ? AND id IN (${ids.map(() => "?").join(", ")})
+      ORDER BY created_at`,
+  )
+    .bind(userId, ...ids)
+    .all<{ id: string; filename: string; mime: string; bytes: number; chars: number }>();
+  return result.results;
+}
+
+/**
+ * One file the owner sent, found by the name they saw.
+ *
+ * By name, because a name is what the owner and the model both have. An id
+ * would have to be shown to the model, which means it can be shown to the
+ * owner, and an owner reading "add att_9f3c to Shwe Coffee Shop" learns
+ * nothing. The newest wins when a name has been used twice, which is what "the
+ * one I just sent" means.
+ */
+export async function attachmentByName(
+  env: Env,
+  userId: number,
+  chatId: string,
+  filename: string,
+): Promise<(OperatorAttachment & { text: string }) | null> {
+  const row = await env.DB.prepare(
+    `SELECT id, filename, mime, bytes, text
+       FROM operator_attachment
+      WHERE user_id = ? AND chat_id = ? AND filename = ?
+      ORDER BY created_at DESC LIMIT 1`,
+  )
+    .bind(userId, chatId, filename)
+    .first<{ id: string; filename: string; mime: string; bytes: number; text: string }>();
+  return row === null
+    ? null
+    : { id: row.id, filename: row.filename, mime: row.mime, bytes: row.bytes, chars: row.text.length, text: row.text };
+}
+
+/** Every filename the owner has sent in one chat, newest last. */
+export async function attachmentNames(env: Env, userId: number, chatId: string): Promise<string[]> {
+  const result = await env.DB.prepare(
+    "SELECT DISTINCT filename FROM operator_attachment WHERE user_id = ? AND chat_id = ? ORDER BY created_at",
+  )
+    .bind(userId, chatId)
+    .all<{ filename: string }>();
+  return result.results.map((row) => row.filename);
+}
+
+/**
+ * Binds the files to the turn they were sent with.
+ *
+ * A file exists from the moment it is uploaded and the message it belongs to
+ * does not exist until the owner presses send, so this is the second half of
+ * the write. The chat is set here too: a file can be attached before the chat
+ * exists, when the owner's first act in a new conversation is to send one.
+ */
+export async function attachToMessage(
+  env: Env,
+  userId: number,
+  ids: readonly string[],
+  messageId: string,
+  chatId: string,
+): Promise<void> {
+  if (ids.length === 0) return;
+  await env.DB.batch(
+    ids.map((id) =>
+      env.DB
+        .prepare(
+          "UPDATE operator_attachment SET message_id = ?, chat_id = ? WHERE id = ? AND user_id = ? AND message_id = ''",
+        )
+        .bind(messageId, chatId, id, userId),
+    ),
+  );
+}
+
+/** Every file in one chat, keyed by the message it was sent with. */
+export async function attachmentsFor(
+  env: Env,
+  chatId: string,
+): Promise<Record<string, OperatorAttachment[]>> {
+  const result = await env.DB.prepare(
+    `SELECT id, message_id, filename, mime, bytes, LENGTH(text) AS chars
+       FROM operator_attachment
+      WHERE chat_id = ? AND message_id != ''
+      ORDER BY created_at`,
+  )
+    .bind(chatId)
+    .all<{ id: string; message_id: string; filename: string; mime: string; bytes: number; chars: number }>();
+  const byMessage: Record<string, OperatorAttachment[]> = {};
+  for (const row of result.results) {
+    const list = byMessage[row.message_id] ?? [];
+    list.push({ id: row.id, filename: row.filename, mime: row.mime, bytes: row.bytes, chars: row.chars });
+    byMessage[row.message_id] = list;
+  }
+  return byMessage;
+}
+
 export interface OperatorStep {
   tool: string;
   ok: boolean;

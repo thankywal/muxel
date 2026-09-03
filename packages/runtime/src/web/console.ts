@@ -80,7 +80,12 @@ export const CORS = {
   // property that matters here, which is that the page the owner opens talks
   // to their Worker with nothing in between.
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, authorization, accept, x-filename, x-caption",
+  // Every header the console sends on an admin call has to be named here or
+  // the browser's preflight refuses the request before the Worker sees it.
+  // The failure is silent from the console's side, so a test walks the
+  // console's own source against this line rather than trusting the list.
+  "access-control-allow-headers":
+    "content-type, authorization, accept, x-filename, x-caption, x-chat-id",
   "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
   "access-control-max-age": "86400",
 } as const;
