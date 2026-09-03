@@ -34,6 +34,12 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # The console is kept out of the workspace on purpose, so a Cloudflare
+      # build never installs its server; its tests still render the guide
+      # with the console's own dependency, installed the way deploy.sh does.
+      - name: Install the console's own dependencies
+        run: npm --prefix packages/console install --omit=dev --no-package-lock
+
       - name: Build
         run: pnpm build
 
