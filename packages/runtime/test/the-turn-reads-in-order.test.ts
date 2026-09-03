@@ -69,27 +69,39 @@ describe("what the answer was built from", () => {
   });
 
   it("is drawn again from the list while it streams, not appended to", () => {
-    // A pill carries a count, and a count cannot be appended to.
+    // A pill carries a count, and a count cannot be appended to. So the turn
+    // holds the list and the row is rendered from it every time.
     const handler = app.slice(app.indexOf('if (event.type === "step")'), app.indexOf("scrollThread();", app.indexOf('if (event.type === "step")')));
-    expect(handler).toMatch(/turn\.__steps = \[\.\.\.\(turn\.__steps \?\? \[\]\), \{ tool: event\.tool, ok: event\.ok \}\]/);
-    expect(handler).toMatch(/innerHTML = stepPills\(turn\.__steps\)/);
+    expect(handler).toMatch(/turn\.__steps = held/);
+    expect(handler).toMatch(/innerHTML = stepPills\(held\)/);
+    expect(handler).not.toMatch(/insertAdjacentHTML|innerHTML \+=/);
     expect(app).not.toContain("stepLine(");
   });
 });
 
 describe("what the model said on its way to the tools", () => {
-  it("is kept from the first round that also called something", () => {
-    expect(loop).toMatch(/if \(text\.length > 0 && turn\.toolCalls\.length > 0 && lead\.length === 0\) lead = text;/);
+  it("is kept from every round that said something, not only the first", () => {
+    // It used to be one string, set once and never again, so a turn that read
+    // a file, said the list was cut off and read the rest lost that sentence.
+    expect(loop).toMatch(/const words: string\[\] = \[\];/);
+    expect(loop).toMatch(/words\.push\(text\);/);
+    expect(loop).not.toContain("lead = text");
   });
 
   it("is put before the final answer, not instead of it", () => {
-    expect(loop).toMatch(/const said = lead\.length > 0 && lead !== text \? `\$\{lead\}\\n\\n\$\{text\}` : text;/);
-    expect(loop).toMatch(/return \{\n    text: said,/);
+    // In the order it was said, and the same text is what the transcript keeps.
+    expect(loop).toMatch(/text = words\.join\("\\n\\n"\);/);
+    expect(loop.indexOf('text = words.join')).toBeLessThan(loop.indexOf("addOperatorMessage(env, {\n    chatId"));
+    expect(loop).toMatch(/return \{\n    text,/);
   });
 
-  it("is dropped when the answer is the same words", () => {
-    // A model that says its plan and then repeats it as the summary would
-    // otherwise be printed twice.
-    expect(loop).toContain("lead !== text");
+  it("is not printed twice when the model repeats itself", () => {
+    // A round told it called nothing is invited to say the same thing again.
+    expect(loop).toContain("!words.includes(text)");
+  });
+
+  it("is sent the moment it is said, not held until the turn ends", () => {
+    const block = loop.slice(loop.indexOf("if (text.length > 0 && !words.includes(text))"));
+    expect(block.slice(0, 140)).toContain('say({ type: "text", text })');
   });
 });

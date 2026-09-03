@@ -263,7 +263,9 @@ async function handleSend(
   let answer;
   try {
     answer = await withDeadline(
-      answerQuestion(env, { business, conversationId, customerId, question }),
+      // A visitor is a browser tab. Nobody can reply to a closed one, so the
+      // handover here asks for a name and a way to reach them.
+      answerQuestion(env, { business, conversationId, customerId, question, canReachThem: false }),
       ANSWER_DEADLINE_MS,
     );
   } catch (error) {

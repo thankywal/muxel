@@ -17,6 +17,7 @@ import type { Business, ChatTurn, CustomerFact } from "@muxel/core";
 import { generate } from "./ai/gateway.js";
 import {
   getAgentSetting,
+  getHandover,
   getProfile,
   listRules,
   recentTurns,
@@ -40,7 +41,12 @@ const NO_ANSWER_NOTE = [
   "Greetings, thanks and small talk do not need reference material. Answer those normally.",
 ].join(" ");
 
-/** Told to the customer when their question is passed to a person. */
+/**
+ * Told to the customer when their question is passed to a person.
+ *
+ * Said where they can be reached again: on Telegram the person answers in the
+ * same thread, so the customer has nothing to do but wait.
+ */
 const HANDOVER_REPLY: Record<string, string> = {
   en: "I do not have that information to hand. Someone from our team will reply here shortly.",
   th: "ฉันยังไม่มีข้อมูลนี้ ทีมงานของเราจะตอบกลับที่นี่ในไม่ช้า",
@@ -48,8 +54,50 @@ const HANDOVER_REPLY: Record<string, string> = {
   my: "ဒီအချက်အလက်ကို ကျွန်တော် မသိရသေးပါ။ ကျွန်တော်တို့ အဖွဲ့သားတစ်ယောက် မကြာမီ ဒီမှာ ပြန်ဖြေပေးပါမယ်။",
 };
 
-export function handoverReply(locale: string): string {
-  return HANDOVER_REPLY[locale] ?? HANDOVER_REPLY.en ?? "";
+/**
+ * Said where they cannot.
+ *
+ * A visitor on a website is a browser tab. Close it and there is nobody to
+ * reply to: the answer a person writes an hour later lands in a conversation
+ * that nobody is looking at. "Someone will reply here shortly" is then a
+ * promise the shop cannot keep, and the customer is gone.
+ *
+ * So on that channel the handover asks for the two things that make the
+ * promise keepable — who they are, and where to reach them — and says why it
+ * is asking.
+ */
+const HANDOVER_ASK: Record<string, string> = {
+  en:
+    "I do not have that information to hand, so I am passing it to someone on the team. "
+    + "So they can get back to you: what is your name, and the best way to reach you — "
+    + "phone, LINE or email?",
+  th:
+    "เรื่องนี้ฉันยังไม่มีข้อมูล ขอส่งต่อให้ทีมงาน "
+    + "เพื่อให้ติดต่อกลับได้ รบกวนแจ้งชื่อและช่องทางที่สะดวก เช่น เบอร์โทร LINE หรืออีเมล",
+  zh:
+    "这个问题我这里没有资料，我把它转给团队的同事。"
+    + "为了方便回复你，可以留下你的称呼和联系方式吗——电话、LINE 或电子邮件都可以。",
+  my:
+    "ဒီအချက်အလက်ကို ကျွန်တော် မသိရသေးလို့ အဖွဲ့သားတစ်ယောက်ကို လွှဲပေးလိုက်ပါမယ်။ "
+    + "ပြန်ဆက်သွယ်နိုင်ဖို့ နာမည်နဲ့ အဆင်ပြေတဲ့ ဆက်သွယ်နည်း — ဖုန်း၊ LINE ဒါမှမဟုတ် အီးမေးလ် — ပြောပြပေးပါ။",
+};
+
+/**
+ * @param canReachThem Whether a person can answer this customer later without
+ *   them still being here. True on a channel with an address — Telegram — and
+ *   false for a website visitor, who is a tab that can be closed.
+ * @param alreadyAsked Whether this conversation is already waiting for a
+ *   person. Read off the handover record rather than the words, so a customer
+ *   whose second question also needs a person is not asked twice for the same
+ *   phone number.
+ */
+export function handoverReply(
+  locale: string,
+  canReachThem = true,
+  alreadyAsked = false,
+): string {
+  const table = canReachThem || alreadyAsked ? HANDOVER_REPLY : HANDOVER_ASK;
+  return table[locale] ?? table.en ?? "";
 }
 
 /**
@@ -230,6 +278,13 @@ export async function answerQuestion(
     conversationId: string;
     customerId: string | null;
     question: string;
+    /**
+     * Whether a person can answer this customer later without them being here.
+     *
+     * A property of the channel, not of the customer: Telegram has an address,
+     * a website visitor has a tab. It decides what the handover says.
+     */
+    canReachThem?: boolean;
   },
 ): Promise<Answer> {
   // Whether it may remember at all is read before it recalls, not after, so
@@ -272,8 +327,15 @@ export async function answerQuestion(
 
   // The customer hears a promise that a person is coming, never the marker.
   const remainder = stripSentinel(result.text);
+  // Read on the escalation path only, and read rather than remembered: the row
+  // exists from the first handover in this conversation, so the second question
+  // that needs a person does not ask for their phone number again.
+  const waiting = (await getHandover(env, input.conversationId).catch(() => null)) !== null;
   return {
-    text: remainder.length > 0 ? remainder : handoverReply(input.business.locale),
+    text:
+      remainder.length > 0
+        ? remainder
+        : handoverReply(input.business.locale, input.canReachThem !== false, waiting),
     escalated: true,
     history,
     facts,
