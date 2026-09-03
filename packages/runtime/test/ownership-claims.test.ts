@@ -134,6 +134,12 @@ describe("the ownership claims", () => {
     // And it says what R2 would be for, and why it is not on.
     expect(page).toContain("R2 is the one piece nothing binds by default");
     expect(page).toContain("asks for a payment method");
+    // The demonstration on the same screen said it too, in the product's own
+    // voice, and was missed the first time because it is a string in a script
+    // rather than words in the page.
+    const demo = readFileSync(new URL("../../console/public/demo.js", import.meta.url), "utf8");
+    expect(demo).not.toContain("the files are your R2");
+    expect(demo).toContain("nothing here does by default");
   });
 
   it("do not claim a machine is never needed, only that none stays on", () => {

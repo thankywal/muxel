@@ -32,7 +32,8 @@ const SCRIPT = [
     q: "Where do my customers' messages end up?",
     steps: ["Looked at where the data lives"],
     a: "In your Cloudflare account, and nowhere else.\n\n"
-      + "The database is your D1, the files are your R2, the search index is your Vectorize. We "
+      + "The database is your D1 and the search index is your Vectorize. R2 keeps the original of "
+      + "a file if you bind a bucket, and nothing here does by default. We "
       + "have no copy to lose, sell, hand over or leak, because the messages never travel to us "
       + "in the first place.",
   },
@@ -107,11 +108,11 @@ async function itSaid(turn) {
   thread.insertAdjacentHTML(
     "beforeend",
     `<div class="turn ai">
-       <div class="steps"></div>
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${esc(MODEL)}</b>
          <span class="when">just now</span></div>
        <div class="ai-body"></div>
+       <div class="steps"></div>
        <div class="waiting"><span class="work-label">Thinking</span></div>
      </div>`,
   );
@@ -122,7 +123,11 @@ async function itSaid(turn) {
 
   await wait(500);
   for (const step of turn.steps) {
-    steps.insertAdjacentHTML("beforeend", `<div class="step">${CHECK}${esc(step)}</div>`);
+    // A pill, under the answer, the way the console draws it. It used to be a
+    // list of rows above the model's name, which is the shape the console had
+    // before it counted them — and a page whose whole argument is that it is
+    // the product cannot be a version behind it.
+    steps.insertAdjacentHTML("beforeend", `<span class="step">${CHECK}${esc(step)}</span>`);
     keepUp();
     await wait(420);
   }

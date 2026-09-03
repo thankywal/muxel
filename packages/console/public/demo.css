@@ -70,9 +70,13 @@
 .demo .caret { display: inline-block; width: 2px; height: 1.05em; background: var(--d-brand);
   vertical-align: -2px; animation: d-caret 1s steps(2, end) infinite; }
 @keyframes d-caret { 50% { opacity: 0; } }
-.demo .steps { margin-bottom: 10px; }
-.demo .step { display: flex; align-items: center; gap: 7px; font-size: 12.5px;
-  color: var(--d-muted); padding: 2px 0; }
+/* The console's own pills, under the answer. See app.css: the same tool ten
+   times is one thing that happened ten times, so it is a pill and not a row. */
+.demo .steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.demo .steps:empty { display: none; }
+.demo .step { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+  color: var(--d-muted); background: var(--d-surface-2, #f1f3f7); border: 1px solid var(--d-line);
+  border-radius: 999px; padding: 3px 10px 3px 8px; }
 .demo .step svg { color: #10b981; flex: none; }
 
 /* The console's own blank chat, to the pixel: same greeting, same chips. */
@@ -90,6 +94,8 @@
 .demo .composer-text { color: var(--d-muted); font-size: 14.5px; line-height: 1.6;
   min-height: 23px; user-select: none; }
 .demo .composer-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.demo .clip { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--d-line);
+  background: none; color: var(--d-muted); display: grid; place-items: center; flex: none; }
 .demo .composer-row .grow { flex: 1; }
 .demo .composer-model { font-size: 12px; color: var(--d-muted); border: 1px solid var(--d-line);
   border-radius: 999px; padding: 3px 10px; }
