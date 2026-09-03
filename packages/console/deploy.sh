@@ -7,10 +7,17 @@ set -euo pipefail
 TARGET="${1:-/opt/muxel-console}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-mkdir -p "$TARGET/public/assets"
-cp "$HERE/server.mjs" "$HERE/package.json" "$TARGET/"
+ROOT="$(cd "$HERE/../.." && pwd)"
+
+mkdir -p "$TARGET/public/assets" "$TARGET/public/docs/media" "$TARGET/guide"
+cp "$HERE/server.mjs" "$HERE/guide.mjs" "$HERE/package.json" "$TARGET/"
 cp "$HERE/public/"*.html "$HERE/public/"*.css "$HERE/public/"*.js "$HERE/public/"*.json "$TARGET/public/"
 cp "$HERE/public/assets/"* "$TARGET/public/assets/"
+# The guide is the README, so the README travels with the console: all five
+# languages, the two documents it links to, and the images all of them show.
+cp "$ROOT"/README.md "$ROOT"/README.*.md "$TARGET/guide/"
+cp "$ROOT/docs/DEPLOY-RECOVERY.md" "$ROOT/docs/TELEGRAM-SETUP.md" "$TARGET/guide/"
+cp "$ROOT/docs/media/"* "$TARGET/public/docs/media/"
 
 cd "$TARGET"
 npm install --omit=dev --silent

@@ -444,7 +444,7 @@ function shell() {
         <span>Muxel runs in your own Cloudflare account.</span>
         <span class="grow"></span>
         <a href="https://github.com/thankywal/muxel" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://muxel.site" target="_blank" rel="noopener">Docs</a>
+        <a href="/docs" target="_blank" rel="noopener">Docs</a>
       </footer>`
       }
     </main>
