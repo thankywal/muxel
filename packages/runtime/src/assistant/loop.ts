@@ -120,10 +120,12 @@ function systemPrompt(capability: Capabilities): string {
   "Never ask them to reply \"yes\". Typing yes does nothing — the button on the card is the only",
   "thing that runs a change. Say \"tap Yes below\" or nothing at all; the card speaks for itself.",
   "",
-  "Every message you sent before is followed by a note in square brackets saying what became of",
-  "what it proposed. Read it. If something is still waiting, the owner has not tapped the button",
-  "yet: tell them where it is, and do not propose it again. If it says the owner approved it, it is",
-  "done — do not propose it a second time, and do not ask them to confirm it again.",
+  "After a message of yours that proposed something, there is a note in square brackets saying what",
+  "became of it. It is this deployment's bookkeeping, not the owner's words and not yours: read it,",
+  "never repeat it, and never write anything in that shape yourself. If something is still waiting,",
+  "the owner has not tapped the button yet: tell them where it is, and do not propose it again. If",
+  "it says the owner approved it, it is done — do not propose it a second time, and do not ask them",
+  "to confirm it again.",
   "",
   // The old wording here was "propose one thing at a time when one depends on
   // another", and a small model read the first half and dropped the condition:
@@ -206,7 +208,7 @@ export function outcomeNote(approvals: readonly Approval[]): string {
     if (approval.state === "failed") return `${what} — approved but it failed: ${approval.result}`;
     return `${what} — still waiting for the owner to tap Yes on the card`;
   });
-  return `\n\n[What you proposed in this message: ${said.join("; ")}]`;
+  return `\n\n[Not from the owner. What became of what you proposed in the message above: ${said.join("; ")}]`;
 }
 
 export interface AssistantReply {
@@ -258,12 +260,27 @@ export async function ask(
   // the model could not tell an approved change from one it had never made, so
   // an owner who replied "yes" got the same proposal a second time.
   const decided = await approvalsByMessage(env, chatId);
+  // The note is a turn of its own, not a postscript inside the model's message.
+  //
+  // Concatenated, it read as something the assistant had written, and a small
+  // model did the obvious thing: it copied the format. An owner was shown
+  // "[What you proposed in this message: Price: Cappuccino at 5.00 -> Shwe
+  // Coffee Shop - the owner approved this and it is done]" as part of the
+  // answer, which is this deployment's bookkeeping printed in the reply.
+  //
+  // It comes from the owner's side now, because that is whose news it is: they
+  // are the one who tapped, or did not.
   const history = (await chatTranscript(env, chatId, 20))
     .filter((message) => message.id !== messageId)
-    .map((message) => ({
-      role: message.role,
-      content: message.content + outcomeNote(decided[message.id] ?? []),
-    }));
+    .flatMap((message) => {
+      const note = outcomeNote(decided[message.id] ?? []);
+      return note === ""
+        ? [{ role: message.role, content: message.content }]
+        : [
+            { role: message.role, content: message.content },
+            { role: "user" as const, content: note.trim() },
+          ];
+    });
 
   const steps: ChatMessage[] = [];
   const took: { tool: string; ok: boolean }[] = [];
@@ -348,6 +365,8 @@ export async function ask(
 
     steps.push({ role: "assistant", content: turn.text, tool_calls: (turn.raw as { tool_calls?: unknown })?.tool_calls });
 
+    // Whether this round did nothing but put changes in front of the owner.
+    let proposedOnly = true;
     for (const call of turn.toolCalls) {
       const tool = findTool(call.name);
       if (tool === undefined) {
@@ -360,6 +379,7 @@ export async function ask(
         });
         took.push({ tool: call.name, ok: false });
         say({ type: "step", tool: call.name, ok: false });
+        proposedOnly = false;
         continue;
       }
 
@@ -382,9 +402,32 @@ export async function ask(
                 + `and propose what goes in it in your next message, once it exists.`
               : "";
         if (refused !== "") {
+          proposedOnly = false;
           steps.push({ role: "tool", tool_call_id: call.id, content: refused });
           took.push({ tool: tool.name, ok: false });
           say({ type: "step", tool: tool.name, ok: false });
+          continue;
+        }
+        // The same change is not proposed twice in one turn.
+        //
+        // Asked for six prices, the owner got twelve cards, each item on two
+        // identical rows; asked for one, two. The model was proposing them,
+        // reading "Not done" as a failure, and proposing them again. The
+        // wording is fixed below, and this is the part that does not depend on
+        // the model reading it: the turn already holds what it has proposed,
+        // and an identical tool with identical arguments is the same change.
+        const same = approvals.find(
+          (held) => held.tool === tool.name && JSON.stringify(held.args) === JSON.stringify(call.args),
+        );
+        if (same !== undefined) {
+          steps.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content:
+              `Already proposed in this message, as "${same.summary}". There is one card for it and `
+              + "the owner has not answered yet. Do not propose it again; say what is on the cards.",
+          });
+          took.push({ tool: tool.name, ok: true });
           continue;
         }
         const approval = await askApproval(env, {
@@ -399,12 +442,19 @@ export async function ask(
         // The model is told plainly that nothing has happened. Telling it the
         // change was made would have it report a success to the owner that has
         // not occurred, which is the failure this whole design is against.
+        //
+        // It used to open with "Not done.", which a small model read as a
+        // failure and answered by calling the same tool again. Nothing has
+        // happened either way; what changed is that the sentence now says what
+        // did happen first, and that trying again is the wrong move.
         steps.push({
           role: "tool",
           tool_call_id: call.id,
           content:
-            "Not done. This change needs the owner's approval and is now waiting for it. "
-            + "Tell them what you are proposing and why, and do not say it has been made.",
+            "Proposed. It is on a card in front of the owner now, waiting for them to tap Yes, and "
+            + "it has not been made yet. This call succeeded and calling it again would only make a "
+            + "second card for the same thing. Tell them what you are proposing and why, and do not "
+            + "say it has been made.",
         });
         took.push({ tool: tool.name, ok: true });
         say({ type: "step", tool: tool.name, ok: true });
@@ -452,6 +502,9 @@ export async function ask(
 
       try {
         const result = await tool.run(ctx, call.args);
+        // A read hands back something the model has not seen yet, so the turn
+        // cannot end on this round however much it has already said.
+        proposedOnly = false;
         steps.push({
           role: "tool",
           tool_call_id: call.id,
@@ -467,9 +520,23 @@ export async function ask(
         });
         took.push({ tool: tool.name, ok: false });
         say({ type: "step", tool: tool.name, ok: false });
+        proposedOnly = false;
       }
     }
     if (prompt !== null) break;
+
+    // A round that did nothing but put changes in front of the owner, and said
+    // what it was putting there, has finished the turn.
+    //
+    // A write returns nothing to reason about: it becomes a card and waits for
+    // a person. So the round after it had no result to read, and what a small
+    // model did with the empty round was propose everything a second time. Six
+    // prices came back as twelve cards. It also doubled the tokens: a turn is
+    // five thousand of prefill a round, and the second round bought nothing.
+    //
+    // Only when it said something. A round that proposed silently still needs
+    // one more, because the owner has to be told what the cards are.
+    if (proposedOnly && turn.toolCalls.length > 0 && text.length > 0) break;
   }
 
   if (text.length === 0) {
