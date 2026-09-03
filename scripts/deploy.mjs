@@ -3,10 +3,11 @@
  * Deploy, then finish setup.
  *
  * The Worker cannot discover its own public address until a request arrives, so
- * registering the Telegram webhook needs someone to open the deployed URL once.
- * Expecting a shop owner to notice that step and act on it does not work: the
- * deploy reports success, nothing appears broken, and the bot simply never
- * answers.
+ * finishing setup needs someone to open the deployed URL once: applying the
+ * schema, installing the owner, and registering the Telegram webhook if there
+ * is a bot to register. Expecting a shop owner to notice that step and act on
+ * it does not work: the deploy reports success, nothing appears broken, and the
+ * console simply never lets them in.
  *
  * This script closes the gap by making the first request itself. Cloudflare
  * Workers Builds runs it as the deploy command, so a one click deploy finishes
@@ -55,9 +56,7 @@ if (code !== 0) {
 
 const url = combined.match(/https:\/\/[^\s]+\.workers\.dev/)?.[0];
 if (url === undefined) {
-  console.log(
-    "\nDeployed. Open your Worker address once to finish setup and register the Telegram webhook.",
-  );
+  console.log("\nDeployed. Open your Worker address once to finish setup.");
   process.exit(0);
 }
 
@@ -89,6 +88,26 @@ console.log(
 );
 
 /**
+ * Asks the deployment what it is still waiting for.
+ *
+ * The setup page turns this into a sentence for a person; /health publishes the
+ * list itself, as JSON, names only and never values, so it is safe in a build
+ * log. A record that cannot be read is not an empty one — an edge that has not
+ * started serving answers with a page of its own — so that answers null and is
+ * read as "not known" rather than "nothing missing".
+ */
+async function missingSettings(target) {
+  try {
+    const response = await fetch(`${target}/health`, { signal: AbortSignal.timeout(30_000) });
+    const record = await response.json();
+    const missing = record?.missing;
+    return Array.isArray(missing) ? missing.filter((name) => typeof name === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Attempts setup, reporting whether it is worth trying again.
  *
  * A first deploy finishes before its address is serving and moments after the
@@ -105,12 +124,16 @@ async function attemptSetup(target) {
 
   const body = await response.text();
   if (response.ok) {
+    // The bot's username is a field of the page rather than a phrase in it, and
+    // a deployment need not have one: a console key is a finished deployment,
+    // and its owner is told where that key is typed rather than sent looking
+    // for a bot nobody asked them for.
     const bot = body.match(/<dd>@([A-Za-z0-9_]+)<\/dd>/)?.[1];
     return {
       done: true,
       note:
         bot === undefined
-          ? "Setup complete."
+          ? "Setup complete. Open app.muxel.site, paste this address, and enter your console key."
           : `Setup complete. Open @${bot} in Telegram and send /start.`,
     };
   }
@@ -128,11 +151,27 @@ async function attemptSetup(target) {
     return { done: false, note: "the address is not serving yet", unreachable: true };
   }
 
-  // The page explains what is wrong in prose; surface just that line.
+  // The page explains what is wrong in prose; surface just that line. It is
+  // carried to the operator and decides nothing.
   const note = body.match(/<p>([^<]{10,300})<\/p>/)?.[1] ?? `the Worker answered ${response.status}`;
-  // A missing setting will not fix itself, so there is no point waiting.
-  const permanent = /missing|OWNER_TELEGRAM_ID|dimensions/i.test(note);
-  return { done: permanent, note, failed: true };
+
+  // A missing setting will not fix itself, so there is no point waiting. Which
+  // one this is comes from the deployment's own record, never from that
+  // sentence. Looking for the words "missing" or "OWNER_TELEGRAM_ID" in the
+  // page was guessing at wording this script does not own, and it was already
+  // wrong: a console key that is too short is named in a sentence with none of
+  // those words in it, so a fault that could be reported at once was retried
+  // for three minutes first.
+  const missing = await missingSettings(target);
+  if (missing !== null && missing.length > 0) {
+    return { done: true, failed: true, missing, note };
+  }
+
+  // The record says every setting is there, so what went wrong is either a
+  // value only somebody else can judge — a bot token Telegram has to accept —
+  // or a resource still settling seconds after it was created. Nothing here
+  // can tell those apart, and one of them passes on its own, so this waits.
+  return { done: false, note, failed: true };
 }
 
 // Roughly three minutes in total. A new address usually starts serving inside
@@ -174,6 +213,11 @@ if (outcome.unreachable === true && recorded) {
 // reason is worth more than a green one that lies. Both were learned the hard
 // way, in that order.
 console.error(`\nSetup did not finish: ${outcome.note}`);
-console.error(`The Worker is deployed but not connected to Telegram yet.`);
+if (outcome.missing !== undefined && outcome.missing.length > 0) {
+  // Names the deployment gave, printed as it gave them, so the build log says
+  // exactly what to add and this script keeps no second opinion about it.
+  console.error(`Add ${outcome.missing.join(" and ")} under Settings, Variables and Secrets.`);
+}
+console.error(`The Worker is deployed but has not finished setting itself up.`);
 console.error(`Open ${url}/setup in a browser to finish it and see the full message.`);
 process.exit(1);

@@ -1,19 +1,24 @@
 # Muxel secrets.
 #
 # The deploy flow reads this file to work out what to ask for, so it lists only
-# what setup cannot proceed without. Copy it to .dev.vars for local development.
-# Never commit real values: .dev.vars is ignored by git for that reason.
+# what a deployment cannot start without. Copy it to .dev.vars for local
+# development. Never commit real values: .dev.vars is ignored by git for that
+# reason.
 #
-# Models from other providers need CF_ACCOUNT_ID and AI_GATEWAY_TOKEN as well.
-# Those are deliberately not listed here, because the default model does not
-# need them and an empty box with no explanation is worse than no box. Add them
-# from Settings, Variables and Secrets if you switch a business to GPT or
-# Claude.
+# One box, on purpose. Everything else this deployment can be given — a console
+# bot in Telegram, a key for a model from another provider, live web search,
+# reading a document as data — is added afterwards, from the Worker's own
+# Settings, Variables and Secrets. A form of empty boxes at the very first step
+# reads as work to do before anything happens, and it is not.
 
-# Token of the Telegram bot that serves your private console.
-# Create it with @BotFather, then paste the whole token here.
-ADMIN_BOT_TOKEN=
-
-# Your numeric Telegram account id, digits only.
-# Send /start to @userinfobot in Telegram to find it.
-OWNER_TELEGRAM_ID=
+# The key that signs you into the web console at app.muxel.site.
+#
+# Make one up, at least 16 characters, and keep it where you keep passwords.
+# Your deployment answers on a public address, so this key is the whole lock on
+# it. Forgetting it costs nothing: change CONSOLE_KEY in the Worker's settings
+# and the new one works, which also ends every session the old one opened.
+#
+# If you would rather drive the console from Telegram instead, or as well, add
+# ADMIN_BOT_TOKEN and OWNER_TELEGRAM_ID in Settings afterwards; the setup page
+# says how. Either door on its own is enough.
+CONSOLE_KEY=

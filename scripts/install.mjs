@@ -21,7 +21,8 @@
  * running it twice is the same as running it once.
  *
  * Required: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
- * Optional: ADMIN_BOT_TOKEN, OWNER_TELEGRAM_ID to finish setup in one pass.
+ * Optional: CONSOLE_KEY, or ADMIN_BOT_TOKEN and OWNER_TELEGRAM_ID, to finish
+ * setup in one pass. Either is a whole deployment on its own.
  */
 
 import { spawnSync } from "node:child_process";
@@ -202,16 +203,26 @@ function cleanup() {
 // Secrets go on before the deploy so the Worker's first run already has them
 // and setup finishes without a second pass. Putting a secret on a Worker that
 // does not exist yet creates it, which is why this order works at all.
+//
+// There are two doors and either one on its own is a finished deployment. The
+// console key is one string the operator makes up, needing no other account and
+// no bot, so it is offered first and alone. The Telegram pair still works and
+// goes on only when both halves are present, because half of it configures
+// nothing and leaves a deployment holding a bot it cannot name an owner for.
+const consoleKey = process.env.CONSOLE_KEY;
 const adminBotToken = process.env.ADMIN_BOT_TOKEN;
 const ownerTelegramId = process.env.OWNER_TELEGRAM_ID;
+
+const offered = [];
+if (consoleKey) {
+  offered.push(["CONSOLE_KEY", consoleKey]);
+}
 if (adminBotToken && ownerTelegramId) {
-  for (const [key, value] of [
-    ["ADMIN_BOT_TOKEN", adminBotToken],
-    ["OWNER_TELEGRAM_ID", ownerTelegramId],
-  ]) {
-    const put = wrangler(["secret", "put", key, "--config", configPath], { input: `${value}\n` });
-    console.log(`  ${put.code === 0 ? "set" : "could not set"} ${key}`);
-  }
+  offered.push(["ADMIN_BOT_TOKEN", adminBotToken], ["OWNER_TELEGRAM_ID", ownerTelegramId]);
+}
+for (const [key, value] of offered) {
+  const put = wrangler(["secret", "put", key, "--config", configPath], { input: `${value}\n` });
+  console.log(`  ${put.code === 0 ? "set" : "could not set"} ${key}`);
 }
 
 console.log("install: deploying");
@@ -257,6 +268,25 @@ async function until(path, predicate, deadlineMs = 180_000) {
   }
 }
 
+/**
+ * What the deployment says it is still waiting for.
+ *
+ * /health publishes the list as JSON, names only and never values. Repeating
+ * the deployment's own answer is the point: this script used to keep its own
+ * idea of which settings mattered, and told operators to add a Telegram bot
+ * long after a console key had become the one thing a new deployment asks for.
+ * A second copy of a rule is a copy that goes stale.
+ */
+function missingSettings(body) {
+  try {
+    const record = JSON.parse(body);
+    const missing = record?.missing;
+    return Array.isArray(missing) ? missing.filter((name) => typeof name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 console.log(`install: waiting for ${url} to answer`);
 const health = await until("/health", (r) => r.status === 200 || r.status === 503);
 
@@ -264,11 +294,38 @@ console.log("");
 if (health.status === 200) {
   await get("/setup");
   console.log(`Muxel is running at ${url}`);
-  console.log("Open your console bot in Telegram and send /start.");
+  if (consoleKey) {
+    console.log(`Open app.muxel.site, paste ${url}, and enter your console key.`);
+  }
+  if (adminBotToken && ownerTelegramId) {
+    console.log("Open your console bot in Telegram and send /start.");
+  }
+  if (offered.length === 0) {
+    // Nothing was handed to this run, so the deployment was already configured
+    // and only it knows which door it has. Its own page says.
+    console.log(`Open ${url}/setup to see how to get in.`);
+  }
 } else if (health.status === 503) {
-  console.log(`Muxel is deployed at ${url} and is waiting for its two settings.`);
-  console.log("Add ADMIN_BOT_TOKEN and OWNER_TELEGRAM_ID as secrets, or rerun this");
-  console.log("script with both set in the environment.");
+  const missing = missingSettings(health.body);
+  console.log(
+    missing.length > 0
+      ? `Muxel is deployed at ${url} and is waiting for ${missing.join(" and ")}.`
+      : `Muxel is deployed at ${url} but setup has not finished.`,
+  );
+  console.log(
+    [
+      "",
+      "CONSOLE_KEY is a string you make up, at least 16 characters, and it is the",
+      "whole of what a deployment needs: it signs you into the console at",
+      "app.muxel.site. Add it in the dashboard under Settings, Variables and",
+      "Secrets, or rerun this script with CONSOLE_KEY set in the environment.",
+      "",
+      "A Telegram console works instead, or as well, and can be added at any time:",
+      "set ADMIN_BOT_TOKEN and OWNER_TELEGRAM_ID the same way.",
+      "",
+      `Open ${url}/setup for the deployment's own words on it.`,
+    ].join("\n"),
+  );
 } else {
   console.log(`Muxel is deployed at ${url} but the address is not serving yet.`);
   console.log("New addresses can take a few minutes. The Worker finishes its own");

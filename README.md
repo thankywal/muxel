@@ -10,8 +10,9 @@ of ours.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
-New here? Read [Before you start](#before-you-start) first. It is four free
-accounts and about ten minutes, and the deploy form asks for two of them.
+New here? Read [Before you start](#before-you-start) first. It is three things
+and about ten minutes: two free accounts, and a key you make up. No Telegram
+account is needed to run any of it.
 
 Helping someone else set this up over chat? The same steps are written as a
 single sendable message, in five languages, in
@@ -23,8 +24,9 @@ you control.
 
 ## What it does
 
-* A console bot you drive entirely with buttons, so no dashboard and no
-  configuration files after setup.
+* A console you drive with buttons: in a browser at
+  [app.muxel.site](https://app.muxel.site), and in a Telegram bot as well if
+  you want one. No dashboard and no configuration files after setup either way.
 * A customer bot per business that answers from your uploaded price lists,
   policies and product information.
 * Retrieval grounded replies, so the assistant quotes what your documents say
@@ -50,7 +52,7 @@ you control.
 
 ## Before you start
 
-Four things, all free, about ten minutes. None of them asks for a payment card,
+Three things, all free, about ten minutes. None of them asks for a payment card,
 and you do not have to write any code at any point.
 
 ### 1. A Cloudflare account
@@ -72,28 +74,25 @@ assistant whenever you update it. Sign up at
 You will not need to write anything there. After setup you can close it and
 forget about it, apart from the one setting described further down.
 
-### 3. Two Telegram bots
+### 3. A console key you make up
 
-Open [@BotFather](https://t.me/BotFather) in Telegram and send `/newbot`. Do it
-twice, because the two bots have different jobs and must never be the same one.
+This is the password to your own console, and you invent it rather than being
+given one. Any phrase you can type again, **at least 16 characters**. You
+paste it into one box on the deploy form, `CONSOLE_KEY`, and type it once more
+the first time you open the console.
 
-| Bot          | Who writes to it | Name it something like |
-| ------------ | ---------------- | ---------------------- |
-| Console bot  | only you         | My Muxel Console       |
-| Business bot | your customers   | your shop's name       |
+Choose a real one. Your deployment answers on a public `workers.dev` address,
+and anybody who finds it can try a key against it, so this key is the whole of
+the lock. Nothing here can recover it for you either: it is your Worker's own
+secret, and nobody, us included, can read it back out. Keep it where you keep
+your other passwords.
 
-Your customers see the business bot's name, so give that one the name of the
-shop. BotFather answers each `/newbot` with a long token that looks like
-`8012345678:AAH...`. Keep both somewhere you can copy from.
+If you would rather not invent one, deploy with the box empty and open the
+address Cloudflare gives you. That page offers a random key and tells you where
+to paste it.
 
-You only need the console bot token to deploy. The business bot token is asked
-for later, inside the console.
-
-### 4. Your Telegram account id
-
-Send `/start` to [@userinfobot](https://t.me/userinfobot). It replies with a
-number, which is how the console tells you apart from anyone else who finds your
-bot. Nobody else can drive it.
+That is everything. Telegram is a door you can add whenever you like, and
+[Telegram, if you want it](#telegram-if-you-want-it) says what it buys.
 
 ## Deploy from the browser
 
@@ -118,7 +117,8 @@ repository incompletely, which produces a deploy that reports success and
 serves nothing. [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md) covers it.
 
 On the form, accept the suggested names for the KV namespace and the D1
-database, then fill in four fields.
+database, then fill in three boxes: two for the Vectorize index, and your
+console key.
 
 **The Vectorize index asks for two values that cannot be filled in for you.**
 They are fixed when the index is created and the Worker configuration has no
@@ -135,22 +135,35 @@ space and changes nothing, because padding with zeros leaves cosine similarity
 exactly as it was. A smaller one shortens embeddings to fit and makes search
 less accurate, which is worth correcting but will not stop anything working.
 
-Then the two secrets:
+Then the one secret this needs:
 
-| Setting             | Value                                      |
-| ------------------- | ------------------------------------------ |
-| `ADMIN_BOT_TOKEN`   | Console bot token from BotFather           |
-| `OWNER_TELEGRAM_ID` | Your number from @userinfobot, digits only |
+| Setting       | Value                                          |
+| ------------- | ---------------------------------------------- |
+| `CONSOLE_KEY` | The key you thought of, at least 16 characters |
 
-Everything else provisions itself, including the Telegram webhook: the deploy
-step makes the first request to the Worker so it can learn its own address.
+That is the whole of the form. There is no box on it for a Telegram bot, on
+purpose: everything this deployment can be given beyond the key is added
+afterwards, in the Cloudflare dashboard under **Settings**, then **Variables
+and Secrets**, and the setup page your own Worker serves names each setting and
+says what it is for. A row of empty boxes at the very first step reads as work
+to do before anything can happen, and there is none.
 
-When the build finishes, open your console bot and send `/start`. That bot is
-your private control panel. Add a business there and it will ask for the bot
-your customers write to.
+Everything else provisions itself: the deploy step makes the first request to
+the Worker so it can learn its own address, which is also what connects a
+Telegram bot's webhook on the day you add one.
 
-If the bot stays silent, open the Worker address Cloudflare showed you. That
-page runs setup again and says what is wrong.
+When the build finishes, Cloudflare shows you your Worker's address. Open
+[app.muxel.site](https://app.muxel.site), paste that address in, and enter your
+console key. That console is your private control panel. Add a business there
+and it will ask what the business is called.
+
+That page is served from our domain and holds nothing of yours. It has to ask
+for your address because it genuinely does not know it, and the key you type is
+checked by your own Worker rather than by us.
+
+If the key is refused, open the Worker address Cloudflare showed you. That page
+runs setup again and says what is wrong. A key under 16 characters is the
+usual answer, and it names that as the reason rather than only refusing you.
 
 **If that address answers `Hello world`, the deploy did not finish.** Cloudflare
 copies this repository into your GitHub account before building it, and that
@@ -199,6 +212,62 @@ one, not your copy.
 
 </details>
 
+## Telegram, if you want it
+
+Nothing above needed Telegram, and a deployment with none of it is finished
+rather than half built. What Telegram adds is two separate things, and you can
+take either one on its own or neither.
+
+* **A console in your pocket.** The same control panel as the browser one, as a
+  bot you drive with buttons, and the place an alert reaches you the moment a
+  customer asks something the assistant will not answer.
+* **A channel your customers already have.** A bot per business that answers
+  from your documents, for shops whose customers are on Telegram rather than on
+  a website. The website widget is the other way to be reached, and it needs no
+  Telegram at all.
+
+Both can be added at any point. Nothing you set up before them is lost, and
+neither one redeploys anything.
+
+### The console bot
+
+Open [@BotFather](https://t.me/BotFather) in Telegram and send `/newbot`. It
+answers with a long token that looks like `8012345678:AAH...`.
+
+Then send `/start` to [@userinfobot](https://t.me/userinfobot). It replies with
+a number, which is how the console tells you apart from anyone else who finds
+your bot. Nobody else can drive it.
+
+Both go into your Worker, in the Cloudflare dashboard under **Settings**, then
+**Variables and Secrets**:
+
+| Setting             | Value                                      |
+| ------------------- | ------------------------------------------ |
+| `ADMIN_BOT_TOKEN`   | Console bot token from BotFather           |
+| `OWNER_TELEGRAM_ID` | Your number from @userinfobot, digits only |
+
+They work as a pair, and one without the other does nothing. Add them, then
+open your Worker's address once so it can connect the webhook, then send
+`/start` to the bot.
+
+There is nowhere earlier to do this. The deploy form asks for the console key
+and nothing else, so a console bot is always added to a deployment that already
+runs — which is why nothing above had to wait for one. Your own setup page, at
+the Worker address Cloudflare gave you, names these two settings as well and
+says the same thing.
+
+### The business bot
+
+This is the one your customers write to, so give it the name of the shop. Send
+`/newbot` to BotFather again — a second bot, never the console one, whose token
+the console refuses on purpose — and add it from the console, to the business
+it serves.
+
+| Bot          | Who writes to it | Name it something like |
+| ------------ | ---------------- | ---------------------- |
+| Console bot  | only you         | My Muxel Console       |
+| Business bot | your customers   | your shop's name       |
+
 ## Staying up to date
 
 Updates are **not** automatic, and it is worth being clear about why.
@@ -210,8 +279,10 @@ create workflow files. Any update workflow shipped in this repository therefore
 never arrives in yours.
 
 What does happen on its own: your deployment checks this repository for a newer
-version and **messages you in the console bot** when there is one, once per
-version. You will not have to remember to look.
+version and says so where you already are. The web console shows a **Deployment
+is behind** badge, and Settings, Deployment says which version you are on and
+which is current. A console bot, if you added one, messages you there as well,
+once per version. You will not have to remember to look.
 
 ### Applying an update
 
@@ -243,9 +314,9 @@ Three clicks, once, on your Worker's setup page. Open the page and find
    link.
 3. **Run it once** with **Run workflow**.
 
-From then on updates arrive daily on their own, and the update notice in your
-console carries a **Run the update now** button for the days you do not want
-to wait.
+From then on updates arrive daily on their own, and there is a button for the
+days you do not want to wait: **Update now** on the web console's Deployment
+screen, and **Run the update now** on the notice a console bot sends.
 
 The pasted file is a stub that never changes. The logic it runs lives in
 `scripts/update.sh`, which travels with every update like any other code, so a
@@ -278,8 +349,18 @@ node packages/cli/dist/index.js init \
 ```
 
 `init` provisions the resources, uploads the secrets, deploys and calls the
-setup endpoint for you. Businesses are added afterwards from the console, each
-with its own bot.
+setup endpoint for you. Businesses are added afterwards from the console.
+
+**This path still asks for the two Telegram values.** The command line tool
+predates the console key and has no flag for one, so a terminal install builds
+the Telegram door. To have the key door too, add the secret yourself once the
+deploy is up:
+
+```bash
+npx wrangler secret put CONSOLE_KEY
+```
+
+The browser path above asks for neither Telegram value.
 
 ## Choosing a model
 
@@ -305,24 +386,29 @@ and effectively free.
 
 ## Two kinds of bot
 
-The distinction matters, and the console is built around it.
+Neither is compulsory, and the distinction between them matters to the console,
+which refuses to confuse the two.
 
 | | Console bot | Business bot |
 | --- | --- | --- |
 | Who writes to it | you, alone | your customers |
 | What it reaches | every business | exactly one |
-| Where it comes from | `ADMIN_BOT_TOKEN` at deploy | created per business in the console |
+| Where it comes from | `ADMIN_BOT_TOKEN`, in the Worker's settings | added per business in the console |
 | Belongs to a business | never | yes, the one it serves |
 
-A business exists because a bot serves it, so the two are created together.
-Add business asks for a bot token rather than a name, and the bot's own name
-becomes the business name. There is no step where a business sits waiting for a
-bot, and no way to attach the console bot to a business: the console refuses its
-own token.
+In the web console a business is created from its name, and a bot is attached
+to it afterwards or never. In the console bot it is the other way round: Add
+business asks for a token rather than a name, because there a business exists
+by being served, and the bot's own name becomes the business name.
+
+What no console will do is attach the console bot to a business. It refuses its
+own token, so the control panel cannot quietly become a customer's chat.
 
 ## The console
 
-Everything after setup happens in the console bot, in buttons.
+Everything after setup happens in the console, in buttons: at
+[app.muxel.site](https://app.muxel.site) in a browser, and in the console bot
+if you added one.
 
 | Screen | What it holds |
 | --- | --- |
@@ -445,10 +531,12 @@ replies arrive in their open chat rather than in Telegram.
 
 ## Telling a bot how to behave
 
-Send `/instruction` in the console. It opens the business you were last working
-on, or asks which one if there is no obvious answer. The console publishes its
-commands to Telegram, so they appear under the menu button rather than having
-to be remembered.
+In the web console, open a business and choose **Instructions**. In a console
+bot, send `/instruction`: it opens the business you were last working on, or
+asks which one if there is no obvious answer.
+
+A console bot publishes its commands to Telegram, so they appear under the menu
+button rather than having to be remembered.
 
 | Command        | Goes to                        |
 | -------------- | ------------------------------ |
@@ -514,15 +602,22 @@ where semantic search is worth its cost.
 The customer screen shows what is remembered, and offers both forgetting the
 facts and deleting the person outright.
 
-## Changing the console bot
+## Getting back in
 
-From the console, open Bots and choose Replace console bot, then send the new
-token. The old bot is detached first so the two never answer at once, and the
-new one confirms in the same chat.
+Both doors are secrets on your own Worker, so both are recoverable from the
+Cloudflare dashboard, under Settings, Variables and Secrets. Neither is
+recoverable from us: we hold no copy of either one.
 
-If you have lost access to the console entirely, change the `ADMIN_BOT_TOKEN`
-secret in the Cloudflare dashboard and visit `/setup` again. That path rewrites
-the stored credentials as well as the webhook.
+* **Forgotten your console key?** Set `CONSOLE_KEY` to a new one and sign in
+  with that. There is nothing to reset and no email to wait for.
+* **Lost the console bot?** Change `ADMIN_BOT_TOKEN`, then visit `/setup` on
+  your Worker's address. That path rewrites the stored credentials as well as
+  the webhook.
+
+To swap the console bot while you can still reach the console, open Bots and
+choose Replace console bot, then send the new token. The old bot is detached
+first so the two never answer at once, and the new one confirms in the same
+chat.
 
 ## Running costs
 
@@ -625,6 +720,11 @@ that upload onwards, not retrospectively.
 * Bot tokens are sealed with AES-GCM before they reach the database, so a
   database export on its own yields no usable credential.
 * A bot token pasted into the console is deleted from the chat immediately.
+* The console key is compared in constant time, never stored anywhere but in
+  your Worker's own settings, and shorter than 16 characters is refused
+  rather than accepted as a weak lock. Signing in mints a session token of
+  which only the hash is kept, so a copy of your KV is not a set of working
+  logins.
 * Webhooks are authenticated against a per bot secret using a constant time
   comparison. An unknown path and a bad secret return the same 404, so the
   deployment cannot be probed for valid endpoints.
@@ -678,7 +778,8 @@ generic 1. See `muxel help` for the table.
 
 ## Status
 
-Version 0.1 targets Cloudflare and Telegram. The callback codec, the
+Version 0.1 targets Cloudflare, with a console in the browser and, for anyone
+who wants one, in Telegram as well. The callback codec, the
 segmentation, the credential sealing, the memory extraction parser and the
 retrieval pipeline are covered by tests, and the pipeline has been run end to
 end against a live account. The console has not yet been exercised against a

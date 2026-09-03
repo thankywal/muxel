@@ -7,16 +7,17 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
-第一次使用?请先阅读[开始之前](#开始之前)。一共是四个免费账号、大约十分钟,
-其中有两个会在 deploy 表单里用到。
+第一次使用?请先阅读[开始之前](#开始之前)。一共是三样东西、大约十分钟:两个
+免费账号,再加一个你自己想的密钥。全程都不需要 Telegram 账号。
 
 Muxel 没有自己的服务器,没有自己的数据库,也没有账号系统。你的文档、你的对话
 和你的凭据,永远不会离开由你掌控的基础设施。
 
 ## 它能做什么
 
-* 一个完全用按钮操作的 console bot,设置完成之后不需要后台面板,也不需要改
-  配置文件。
+* 一个完全用按钮操作的 console:在浏览器里打开
+  [app.muxel.site](https://app.muxel.site),想要的话再加一个 Telegram bot 也
+  可以。两种方式都一样,设置完成之后不需要后台面板,也不需要改配置文件。
 * 每家店铺配一个面向客户的 bot,它会根据你上传的价目表、店铺规定和商品信息
   来回答问题。
 * 回复都以检索到的资料为依据,所以助手会引用你的文档里写的内容,而不是自己
@@ -30,7 +31,7 @@ Muxel 没有自己的服务器,没有自己的数据库,也没有账号系统。
 
 ## 开始之前
 
-四件事,全都免费,大约十分钟。它们都不会要求你填银行卡,而且你自始至终都不需要
+三件事,全都免费,大约十分钟。它们都不会要求你填银行卡,而且你自始至终都不需要
 写任何代码。
 
 ### 1. 一个 Cloudflare 账户
@@ -50,27 +51,21 @@ Cloudflare 会以你自己的名义保存一份这份代码的副本,这样在�
 你不需要在那里写任何东西。设置完成后就可以关掉它、把它忘掉,只有下文提到的
 那一项设置需要留意。
 
-### 3. 两个 Telegram bot
+### 3. 一个你自己想的 console key
 
-在 Telegram 里打开 [@BotFather](https://t.me/BotFather),发送 `/newbot`。这
-一步要做两次,因为这两个 bot 的职责不同,绝对不能用同一个。
+这是你自己那个 console 的密码,由你来定,而不是由谁发给你。任何你能再打出来
+的字符串都行,**至少 16 个字符**。你会把它填进 deploy 表单上那个叫
+`CONSOLE_KEY` 的框里,第一次打开 console 时再输入一次。
 
-| Bot          | 谁会给它发消息 | 名字可以取成       |
-| ------------ | -------------- | ------------------ |
-| Console bot  | 只有你         | My Muxel Console   |
-| Business bot | 你的客户       | 你店铺的名字       |
+请认真取一个。你的部署会有一个公开的 `workers.dev` 地址,任何人找到它都可以
+拿密钥来试,所以这把密钥就是全部的锁。这里也没有人能替你找回:它是你自己
+Worker 的 secret,包括我们在内,谁都读不出来。请把它存在你放其他密码的地方。
 
-你的客户看到的是 business bot 的名字,所以那一个要取成店铺的名字。每次
-`/newbot`,BotFather 都会回复一串很长的 token,样子像 `8012345678:AAH...`。
-把两个 token 都存在一个方便复制的地方。
+如果你不想自己想一个,就把这个框留空先 deploy,然后打开 Cloudflare 给你的
+地址。那个页面会给你一个随机密钥,并告诉你该把它填到哪里。
 
-deploy 的时候只需要 console bot 的 token。business bot 的 token 之后会在
-console 里问你。
-
-### 4. 你的 Telegram 账号 id
-
-给 [@userinfobot](https://t.me/userinfobot) 发送 `/start`。它会回复一个数字,
-console 就是靠这个数字,把你和其他找到你 bot 的人区分开。别人无法操作它。
+要准备的就这些。Telegram 是随时可以加的另一道门,下面 **Telegram,如果你想要**
+那一节说明它能带来什么。
 
 ## 在浏览器里 deploy
 
@@ -93,7 +88,8 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
 就是 deploy 显示成功,但什么都跑不起来。处理方法见
 [docs/DEPLOY-RECOVERY.md](docs/DEPLOY-RECOVERY.md)。
 
-在表单里,KV 命名空间和 D1 数据库直接用它建议的名字就好,然后填写四个字段。
+在表单里,KV 命名空间和 D1 数据库直接用它建议的名字就好,然后填三个框:两个
+给 Vectorize 索引,再加上你的 console key。
 
 **Vectorize 索引会问你两个无法替你预先填好的值。** 这两个值在索引创建时就
 固定下来,而 Worker 配置里没有对应的字段,所以这两个框是空的:
@@ -108,21 +104,32 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
 改变余弦相似度。数字填小了,嵌入向量会被截短以适应索引,搜索会变得不那么准确,
 这值得改正,但不会让任何功能停摆。
 
-接下来是两个 secret:
+接下来只有这一个 secret:
 
-| 设置项              | 值                                         |
-| ------------------- | ------------------------------------------ |
-| `ADMIN_BOT_TOKEN`   | BotFather 给你的 console bot token         |
-| `OWNER_TELEGRAM_ID` | @userinfobot 给你的数字,只填数字          |
+| 设置项        | 值                                |
+| ------------- | --------------------------------- |
+| `CONSOLE_KEY` | 你想好的那个密钥,至少 16 个字符   |
 
-其余的一切都会自动配置好,包括 Telegram webhook:deploy 这一步会向 Worker
-发出第一个请求,让它知道自己的地址。
+表单到这里就全部结束了。上面没有给 Telegram bot 留任何一个框,这是有意为之:
+除了这个密钥,这个部署以后还能拿到的东西,都是之后在 Cloudflare 控制台的
+**Settings**、再到 **Variables and Secrets** 里加的,而你自己的 Worker 给出的
+设置页面,会说出每一项设置的名字,以及它是做什么用的。第一步就摆出一排空框,
+看上去像是有什么活得先干完才轮得到别的,其实一件也没有。
 
-构建完成后,打开你的 console bot 并发送 `/start`。这个 bot 就是你的私人控制
-面板。在里面添加一家店铺,它会问你客户要联系的那个 bot。
+其余的一切都会自动配置好:deploy 这一步会向 Worker 发出第一个请求,让它知道
+自己的地址,而你哪天加了 Telegram bot,连接 webhook 的也正是这件事。
 
-如果 bot 一直没有反应,就打开 Cloudflare 显示给你的那个 Worker 地址。那个页面
-会重新执行一次设置,并告诉你问题出在哪里。
+构建完成后,Cloudflare 会给你 Worker 的地址。打开
+[app.muxel.site](https://app.muxel.site),把地址粘贴进去,再输入你的 console
+key。这个 console 就是你的私人控制面板。在里面添加一家店铺,它会问你店铺叫
+什么名字。
+
+那个页面由我们的域名提供,但它不保存你的任何东西。它必须问你要地址,因为它
+确实不知道;你输入的密钥也是由你自己的 Worker 来验证,不是由我们。
+
+如果密钥被拒绝,就打开 Cloudflare 显示给你的那个 Worker 地址。那个页面会重新
+执行一次设置,并告诉你问题出在哪里。最常见的原因是密钥不到 16 个字符,它会把
+这一点直接说出来,而不是只把你挡在外面。
 
 **如果那个地址回答的是 `Hello world`,说明这次 deploy 并没有完成。**Cloudflare
 在构建之前会把这个仓库复制到你的 GitHub 账户,而这一步偶尔会失败,面板却仍然
@@ -158,6 +165,55 @@ secret,并且 `.dev.vars` 是被忽略的。
 
 </details>
 
+## Telegram,如果你想要
+
+上面这些都不需要 Telegram,没有 Telegram 的部署也是完整的,不是只做了一半。
+Telegram 带来的是两件互相独立的事,你可以只要其中一件,也可以两件都不要。
+
+* **一个装在口袋里的 console。**和浏览器里那个是同一个控制面板,只是变成了
+  用按钮操作的 bot;客户问到助手不该回答的问题时,提醒也会送到这里。
+* **一个客户本来就在用的渠道。**每家店铺配一个 bot,按你的文档回答问题,适合
+  客户就在 Telegram 上的店。如果你的客户在网站上,console 还能为你的网站生成
+  一个对话气泡,那条路完全用不到 Telegram。
+
+两件事什么时候加都可以。在此之前设置好的东西不会丢,加它们也不需要重新
+deploy。
+
+### console bot
+
+在 Telegram 里打开 [@BotFather](https://t.me/BotFather),发送 `/newbot`。它会
+回复一串很长的 token,样子像 `8012345678:AAH...`。
+
+然后给 [@userinfobot](https://t.me/userinfobot) 发送 `/start`。它会回复一个
+数字,console 就是靠这个数字,把你和其他找到你 bot 的人区分开。别人无法操作它。
+
+这两个值都填进你的 Worker,位置在 Cloudflare 控制台的 **Settings**、
+**Variables and Secrets**:
+
+| 设置项              | 值                                 |
+| ------------------- | ---------------------------------- |
+| `ADMIN_BOT_TOKEN`   | BotFather 给你的 console bot token |
+| `OWNER_TELEGRAM_ID` | @userinfobot 给你的数字,只填数字  |
+
+这两个是一对,只填一个不起任何作用。填好之后打开一次你的 Worker 地址,让它
+连上 webhook,再给 bot 发送 `/start`。
+
+没有比这更早的地方可以做这件事。deploy 表单只问 console key 这一项,所以
+console bot 永远是加到一个已经在跑的部署上的。上面那些步骤不必等 Telegram,
+也正是因为这样。Cloudflare 给你的那个 Worker 地址上的设置页面,同样会点出这
+两项设置的名字,说的也是同一件事。
+
+### business bot
+
+这一个是客户会联系的,所以要取店铺的名字。再给 BotFather 发一次 `/newbot`,建
+第二个 bot,绝对不要用 console bot 那一个,它的 token console 本来就会拒绝。然后
+在 console 里把它加到对应的店铺上。
+
+| Bot          | 谁会给它发消息 | 名字可以取成       |
+| ------------ | -------------- | ------------------ |
+| Console bot  | 只有你         | My Muxel Console   |
+| Business bot | 你的客户       | 你店铺的名字       |
+
 ## 保持更新
 
 更新**不是**自动的,这一点值得把原因说清楚。
@@ -167,8 +223,10 @@ deploy 按钮创建的是一份独立的副本,而不是 GitHub fork,所以没�
 目录**,因为导入过程无法创建 workflow 文件。因此本仓库里附带的任何更新
 workflow,都不会出现在你的副本里。
 
-会自动发生的事情是:你的部署会检查本仓库有没有新版本,有的话就会**在 console
-bot 里给你发消息**,每个版本只提醒一次。你不用记着去看。
+会自动发生的事情是:你的部署会检查本仓库有没有新版本,有的话就会在你已经在用
+的地方告诉你。网页 console 会显示一个**部署已落后**的标记,Settings、Deployment
+里会写明你在哪个版本、最新的是哪个。如果你加过 console bot,它也会在那边给你
+发消息,每个版本只提醒一次。你不用记着去看。
 
 ### 应用一次更新
 
@@ -231,23 +289,27 @@ Gemma 4 是默认模型。按一次检索回复实测,每一千次回答大约�
 
 ## 两种 bot
 
-区分这两者很重要,console 就是围绕这个区分来设计的。
+两个都不是必须的,但区分这两者很重要,console 就是围绕这个区分来设计的,它也
+不允许把两者混在一起。
 
 | | Console bot | Business bot |
 | --- | --- | --- |
 | 谁会给它发消息 | 只有你 | 你的客户 |
 | 它能管到什么 | 所有店铺 | 恰好一家 |
-| 它从哪里来 | deploy 时填的 `ADMIN_BOT_TOKEN` | 在 console 里为每家店铺分别创建 |
+| 它从哪里来 | `ADMIN_BOT_TOKEN`,在 Worker 的设置里 | 在 console 里为每家店铺分别添加 |
 | 是否属于某家店铺 | 从不 | 是,属于它服务的那一家 |
 
-一家店铺之所以存在,是因为有一个 bot 在服务它,所以两者是一起创建的。添加店铺
-时问的是 bot token 而不是名字,bot 自己的名字就会成为店铺的名字。不存在店铺
-建好了却等着配 bot 的中间状态,也没有办法把 console bot 挂到某家店铺上,因为
-console 会拒绝它自己的 token。
+在网页 console 里,店铺是用名字建起来的,bot 之后再挂上去,不挂也行。在
+console bot 里则正好相反:添加店铺时问的是 token 而不是名字,因为在那里,一家
+店铺是因为有 bot 在服务它才存在的,bot 自己的名字也就成了店铺的名字。
+
+有一件事哪个 console 都不会做:把 console bot 挂到某家店铺上。它会拒绝自己的
+token,免得那个控制面板悄悄变成客户的聊天窗口。
 
 ## console 里有什么
 
-设置完成之后,所有操作都在 console bot 里通过按钮完成。
+设置完成之后,所有操作都在 console 里通过按钮完成:在浏览器里打开
+[app.muxel.site](https://app.muxel.site),加过 console bot 的话在那里也一样。
 
 | 页面 | 里面有什么 |
 | --- | --- |
@@ -331,15 +393,20 @@ console 把它们分开管理,因为助手对两者的信任程度必须不同�
 客户页面会显示记住了哪些内容,并且既可以只清除这些信息,也可以把这个人整个
 删除。
 
-## 更换 console bot
+## 进不去的时候
 
-在 console 里打开 Bots,选择 Replace console bot,然后把新的 token 发过去。旧的
-bot 会先被解除关联,这样两个 bot 不会同时回复,新的 bot 会在同一段对话里向你
-确认。
+两道门都是你自己 Worker 上的 secret,所以都能在 Cloudflare 控制面板的
+Settings、Variables and Secrets 里恢复。我们这边一个都恢复不了:两个我们都没有
+留副本。
 
-如果你已经完全无法进入 console,就到 Cloudflare 控制面板里修改 `ADMIN_BOT_TOKEN`
-这个 secret,然后再访问一次 `/setup`。这条路径会重写保存的凭据,也会重写
-webhook。
+* **忘了 console key?**把 `CONSOLE_KEY` 改成一个新的,再用新的登录。没有什么
+  要重置,也不用等邮件。
+* **console bot 丢了?**改掉 `ADMIN_BOT_TOKEN`,然后访问一次你 Worker 地址上的
+  `/setup`。这条路径会重写保存的凭据,也会重写 webhook。
+
+如果你还进得去 console,想换掉 console bot,就打开 Bots,选择 Replace console
+bot,然后把新的 token 发过去。旧的 bot 会先被解除关联,这样两个 bot 不会同时
+回复,新的 bot 会在同一段对话里向你确认。
 
 ## 运行成本
 
@@ -393,6 +460,9 @@ Muxel 特意不使用 R2 存储桶。它的用途只是归档上传文件的原�
 * bot token 在进入数据库之前会用 AES-GCM 加密封存,所以单凭一份数据库导出,
   得不到任何可用的凭据。
 * 粘贴到 console 里的 bot token 会立刻从聊天记录中删除。
+* console key 用常数时间比对,除了你自己 Worker 的设置之外不存在任何地方,不足
+  16 个字符会被拒绝,而不是当成一把弱一点的锁收下。登录时会生成一个会话 token,
+  存下来的只有它的哈希,所以拿到一份你的 KV 也换不来能用的登录。
 * webhook 会用每个 bot 各自的 secret 做常数时间比对来验证身份。未知路径和错误
   的 secret 都返回同样的 404,所以没人能靠试探找出有效的接口地址。
 * 回复流程不向模型开放任何工具。检索到的文档都带有分隔符,并被明确标示为引用的
@@ -408,7 +478,8 @@ Muxel 特意不使用 R2 存储桶。它的用途只是归档上传文件的原�
 
 ## 项目状态
 
-0.1 版本面向 Cloudflare 和 Telegram。回调编解码、文本切分、凭据封存、记忆提取
+0.1 版本面向 Cloudflare,console 在浏览器里,想要的话也可以在 Telegram
+里。回调编解码、文本切分、凭据封存、记忆提取
 解析器和检索流程都有测试覆盖,整条流程也已经在一个真实账户上做过端到端运行。
 console 还没有在已部署的 bot 上实际检验过。
 

@@ -8,7 +8,7 @@
  * Bump this in the same commit as the change worth telling people about. The
  * root VERSION file must match, which a test enforces.
  */
-export const MUXEL_VERSION = "0.22.24";
+export const MUXEL_VERSION = "0.23.0";
 
 /** Where a deployment looks to find out whether it is behind. */
 export const UPSTREAM_VERSION_URL =
