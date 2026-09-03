@@ -189,8 +189,12 @@ async function businessCard(env: Env, businessId: string) {
  *      showing the wrong key or hiding the panel.
  *  16  the address a web agent answers on, so the console can offer to open
  *      it. Additive: without it the agents list simply has no link.
+ *  17  that address on a business's own page too, so it can be tried from
+ *      there. Additive in the same way: a console reading this from an older
+ *      deployment gets an empty origin and offers nothing rather than a link
+ *      to nowhere.
  */
-export const API_REVISION = 16;
+export const API_REVISION = 17;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -907,17 +911,21 @@ export async function handleConsoleApi(
     if (!(await canAccessBusiness(env, userId, businessId))) return json({ error: "no_access" }, 403);
 
     if (method === "GET" && segments.length === 2) {
-      const [card, products, documents, recentCustomers, profile] = await Promise.all([
+      const [card, products, documents, recentCustomers, profile, origin] = await Promise.all([
         businessCard(env, businessId),
         productsView(env, businessId),
         listDocuments(env, businessId),
         listCustomers(env, businessId, 50),
         getProfile(env, businessId),
+        // Where this deployment answers from. The console is served from
+        // somewhere else entirely and cannot work it out, and without it the
+        // page can say a business answers on the web and not offer to open it.
+        env.STATE.get(ORIGIN_KEY),
       ]);
       // Deliberately not `customers`. The card already carries that name for
       // the count, and spreading a list over it left the console drawing
       // "[object Object]" where a number belonged. One name, one meaning.
-      return json({ ...card, products, documents, recentCustomers, profile });
+      return json({ ...card, products, documents, recentCustomers, profile, origin: origin ?? "" });
     }
     if (method === "DELETE" && segments.length === 2) {
       await deleteBusiness(env, businessId);

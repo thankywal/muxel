@@ -837,19 +837,16 @@ footer a:hover { color: var(--ink); }
   #bell { display: none; }
 }
 
-/* Opening the chat a customer sees. It is one click from the list, because
-   the first thing anybody wants to do with an agent is talk to it. */
-.try-link {
+/* Opening what a customer sees, from the agents list and from a business's own
+   page. The first thing anybody wants to do with an agent is talk to it, so it
+   is one click from both, and a business on two channels offers both doors. */
+.try-on {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--ink-2);
-  font-size: 12.5px;
-  font-weight: 600;
   white-space: nowrap;
+  text-decoration: none;
 }
-.try-link:hover { border-color: var(--brand-line); background: var(--brand-soft); color: var(--brand-ink); }
+.try-on + .try-on { margin-left: 6px; }
+.try-on:hover { border-color: var(--brand-line); background: var(--brand-soft); color: var(--brand-ink); }
+.try-on svg { flex: none; }

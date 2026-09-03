@@ -626,6 +626,31 @@ function openModelMenu() {
 }
 
 /** One popup, wherever a small list of choices has to appear beside a button. */
+/**
+ * Closes a dialog when the backdrop behind it is clicked, and does nothing at
+ * all to a click inside it.
+ *
+ * This was written eight times as
+ *
+ *     closeOnBackdrop(bg, close);
+ *
+ * which reads as a guard and is a bug. An arrow with an expression body
+ * returns that expression, so every click that was not on the backdrop
+ * returned false, and an onclick handler that returns false is how a page
+ * cancels the event's default action. So the dialog cancelled every click
+ * inside itself: the Telegram radio in Create a business could not be chosen,
+ * by mouse or by keyboard, and neither could the checkbox under it or any link
+ * in any of the other seven.
+ *
+ * A statement body returns undefined, which cancels nothing. It lives here
+ * once because eight copies is eight places for it to come back.
+ */
+function closeOnBackdrop(bg, close) {
+  bg.onclick = (event) => {
+    if (event.target === bg) close();
+  };
+}
+
 function popMenu(at, items, chose) {
   document.querySelector(".pop-bg")?.remove();
   const bg = document.createElement("div");
@@ -646,7 +671,7 @@ function popMenu(at, items, chose) {
   bg.appendChild(box);
   document.body.appendChild(bg);
   const close = () => bg.remove();
-  bg.onclick = (event) => event.target === bg && close();
+  closeOnBackdrop(bg, close);
   box.querySelectorAll("[data-i]").forEach((b) => {
     b.onclick = () => {
       close();
@@ -864,6 +889,49 @@ const CHANNEL_ICON = {
   telegram: { icon: "telegram", bg: "var(--blue-soft)", fg: "var(--blue)" },
   web: { icon: "globe", bg: "var(--brand-soft)", fg: "var(--brand-ink)" },
 };
+/**
+ * Where a business can be tried, as its customers meet it.
+ *
+ * One place, because the answer is the same on the agents list and on a
+ * business's own page, and two copies of it would drift the day a third
+ * channel arrives.
+ *
+ * The web address is this deployment's own, which the console cannot work out:
+ * it is served from somewhere else and is told. Telegram is a deep link to the
+ * bot the owner attached, which opens the app and starts the conversation with
+ * that business's bot rather than a page about it.
+ *
+ * Nothing is offered for a channel that is off or a bot that was never
+ * attached. A button that goes nowhere is worse than no button.
+ */
+function tryOn(card, origin) {
+  const doors = [];
+  const at = String(origin ?? "").replace(/\/+$/, "");
+  if (at !== "" && card?.web?.enabled === true && card.web.key) {
+    doors.push({ kind: "web", label: "Try on the web", url: `${at}/w/${card.web.key}` });
+  }
+  if (card?.telegram?.enabled === true && card.telegram.username) {
+    doors.push({
+      kind: "telegram",
+      label: "Open in Telegram",
+      url: `https://t.me/${String(card.telegram.username).replace(/^@/, "")}`,
+    });
+  }
+  return doors;
+}
+
+/** The buttons for those doors, or nothing at all. */
+const tryOnButtons = (card, origin) =>
+  tryOn(card, origin)
+    .map(
+      (door) => `<a class="btn btn-ghost btn-sm try-on" href="${h(door.url)}" target="_blank"
+         rel="noopener" title="Opens what your customers see">${icon(
+           door.kind === "telegram" ? "telegram" : "external",
+           14,
+         )}${h(door.label)}</a>`,
+    )
+    .join("");
+
 const chanTag = (kind) =>
   `<span class="chan"><span class="ic" style="background:${CHANNEL_ICON[kind].bg};color:${CHANNEL_ICON[kind].fg}">
     ${icon(CHANNEL_ICON[kind].icon, 14)}</span>${kind === "telegram" ? "Telegram" : "Website"}</span>`;
@@ -2175,10 +2243,6 @@ async function viewAgents() {
   // Where a web agent answers, built from what the deployment reported about
   // itself. Empty on a deployment that predates the field, in which case the
   // column simply is not offered rather than pointing somewhere wrong.
-  const tryUrl = (agent) =>
-    data.origin && agent.web?.enabled && agent.web?.key
-      ? `${String(data.origin).replace(/\/+$/, "")}/w/${agent.web.key}`
-      : "";
   const shown = all.filter((a) => (state.filter === "all" ? true : state.filter === "live" ? a.live : !a.live));
 
   $("view").innerHTML = `
@@ -2211,10 +2275,9 @@ async function viewAgents() {
                   }</td>
                   <td style="color:var(--muted)">${h(ago(a.lastActivity))}</td>
                   <td>${
-                    tryUrl(a)
-                      ? `<a class="try-link" href="${h(tryUrl(a))}" target="_blank" rel="noopener"
-                            title="Opens the chat your customers see">${icon("external", 13)}Open</a>`
-                      : '<span style="color:var(--muted)">not on the web</span>'
+                    tryOn(a, data.origin).length > 0
+                      ? tryOnButtons(a, data.origin)
+                      : '<span style="color:var(--muted)">nowhere to try it yet</span>'
                   }</td></tr>`,
               )
               .join("")}</tbody></table>
@@ -2522,7 +2585,7 @@ function ruleDialog(rule) {
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
   bg.querySelector("#rContent").focus();
   bg.querySelector("#save").onclick = async () => {
     const content = bg.querySelector("#rContent").value.trim();
@@ -3019,7 +3082,7 @@ async function customerDrawer(customerId) {
   bg.innerHTML = `<div class="modal" style="max-width:560px">${waitingMark()}</div>`;
   document.body.appendChild(bg);
   const close = () => bg.remove();
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
 
   const { ok, data } = await api(`customers/${customerId}`);
   if (!ok) return close();
@@ -3185,6 +3248,7 @@ async function businessDetail(businessId) {
       <a href="#" id="back" style="color:var(--muted);font-size:13px">← All businesses</a>
       <b style="font-size:16px">${h(b.name)}</b>
       ${[b.telegram ? chanTag("telegram") : "", b.web ? chanTag("web") : ""].filter(Boolean).join(" ")}
+      ${tryOnButtons(b, b.origin)}
       <span style="flex:1"></span>
       <button class="btn btn-ghost btn-sm" id="openChats">Conversations</button>
     </div>
@@ -3428,7 +3492,7 @@ function noteDialog(businessId, note) {
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
   bg.querySelector("#nBody").focus();
   bg.querySelector("#save").onclick = async () => {
     const body = bg.querySelector("#nBody").value.trim();
@@ -4589,7 +4653,7 @@ function openPalette() {
   document.body.appendChild(bg);
   paletteEl = bg;
   const close = () => (bg.remove(), (paletteEl = null));
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
   const input = bg.querySelector("#pq");
   input.focus();
 
@@ -4737,6 +4801,13 @@ const readProfileInputs = (root) =>
  * assistant is not told about, and it says it does not know rather than
  * guessing.
  */
+/** Why a bot could not be attached, in the owner's terms. */
+const BOT_REFUSED = {
+  bot_rejected: "Telegram did not recognise that token, so it is not on Telegram yet. Copy it again from @BotFather.",
+  same_as_console: "That is this console's own bot. Make a second bot with /newbot for customers to write to, and attach that one.",
+  no_origin: "This deployment has not been opened in a browser yet, so it does not know its own address and could not register the webhook. Open it once and attach the bot again.",
+};
+
 function createBusinessDialog() {
   const bg = document.createElement("div");
   bg.className = "modal-bg";
@@ -4792,7 +4863,7 @@ function createBusinessDialog() {
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
   bg.querySelector("#bizName").focus();
 
   bg.querySelectorAll('input[name="chan"]').forEach((radio) => {
@@ -4843,7 +4914,13 @@ function createBusinessDialog() {
         method: "POST",
         body: { token: botToken, useBotName: bg.querySelector("#useBotName").checked },
       });
-      note += attached.ok ? " It is answering on Telegram." : " The bot token was refused, so it is not on Telegram yet.";
+      // Which of the three it was. "The token was refused" sent an owner back
+      // to BotFather when the deployment had simply never been opened, and a
+      // token pasted from the console bot is a mistake worth naming rather
+      // than a bad token.
+      note += attached.ok
+        ? " It is answering on Telegram."
+        : ` ${BOT_REFUSED[attached.data?.error] ?? "The bot token was refused, so it is not on Telegram yet."}`;
     } else {
       note += " It is answering on your website.";
     }
@@ -4899,7 +4976,7 @@ async function createAgentDialog(preselect) {
   bg.className = "modal-bg";
   document.body.appendChild(bg);
   const close = () => bg.remove();
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
 
   if (businesses.length === 0) {
     bg.innerHTML = `<div class="modal">
@@ -5036,7 +5113,7 @@ function productDialog(businessId, item) {
   document.body.appendChild(bg);
   const close = () => bg.remove();
   bg.querySelector("#cancel").onclick = close;
-  bg.onclick = (e) => e.target === bg && close();
+  closeOnBackdrop(bg, close);
   bg.querySelector("#pName").focus();
   bg.querySelector("#save").onclick = async () => {
     const name = bg.querySelector("#pName").value.trim();

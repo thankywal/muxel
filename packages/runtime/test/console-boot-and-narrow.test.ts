@@ -220,19 +220,44 @@ describe("the header on a narrow screen", () => {
 });
 
 describe("opening the agent a customer talks to", () => {
+  // These used to pin `const tryUrl`, the one expression in the agents list
+  // that built a web address. The same question is asked on a business's own
+  // page now, and of Telegram as well as the web, so it is one function and
+  // these are about what it guarantees rather than about where it lived.
+  const build = app.slice(app.indexOf("function tryOn("), app.indexOf("const tryOnButtons"));
+
   it("builds the address from what the deployment reported", () => {
     // The console is served from somewhere else entirely and cannot work out
-    // where a web agent answers; the deployment has to say.
+    // where a web agent answers; the deployment has to say, on the agents list
+    // and on the business page alike.
     const api = read("../src/web/console-api.ts");
     expect(api).toContain("key: channel.key");
-    expect(api).toMatch(/origin: origin \?\? ""/);
-    expect(app).toContain("const tryUrl");
-    expect(app).toContain("/w/${agent.web.key}");
+    expect((api.match(/origin: origin \?\? ""/g) ?? []).length).toBe(2);
+    expect(build).toContain("/w/${card.web.key}");
+    // And the bot the owner attached, opened in Telegram rather than described.
+    expect(build).toContain("https://t.me/${String(card.telegram.username)");
   });
 
   it("offers nothing rather than a wrong link when it cannot know", () => {
-    const build = app.slice(app.indexOf("const tryUrl"), app.indexOf("const tryUrl") + 340);
-    expect(build).toContain("data.origin && agent.web?.enabled && agent.web?.key");
-    expect(app).toContain("not on the web");
+    expect(build).toContain('at !== "" && card?.web?.enabled === true && card.web.key');
+    expect(build).toContain("card?.telegram?.enabled === true && card.telegram.username");
+    expect(app).toContain("nowhere to try it yet");
+  });
+
+  it("is asked once and answered the same way on both screens", () => {
+    // Two copies would drift the day a third channel arrives.
+    expect((app.match(/function tryOn\(/g) ?? []).length).toBe(1);
+    // Defined once, called from the two screens and nowhere else.
+    expect((app.match(/const tryOnButtons = /g) ?? []).length).toBe(1);
+    expect((app.match(/tryOnButtons\(/g) ?? []).length).toBe(2);
+    // On the business page it sits with the name and the channel tags.
+    // Sliced from the function to the tab strip, because the header this is
+    // about is drawn between them. Searching the whole file for the end marker
+    // found an earlier one and gave an empty string, and an assertion on an
+    // empty string is one that cannot fail for the right reason.
+    const from = app.indexOf("async function businessDetail");
+    const head = app.slice(from, app.indexOf('id="bizTab"', from));
+    expect(head).toContain("← All businesses");
+    expect(head).toContain("tryOnButtons(b, b.origin)");
   });
 });
