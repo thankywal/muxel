@@ -109,9 +109,9 @@ async function itSaid(turn) {
     `<div class="turn ai">
        <div class="steps"></div>
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
-         <b>${esc(MODEL)}</b><span class="work-label">Thinking</span>
+         <b>${esc(MODEL)}</b>
          <span class="when">just now</span></div>
-       <div class="ai-body"></div>
+       <div class="ai-body thinking"><span class="work-label">Thinking</span></div>
      </div>`,
   );
   const box = thread.lastElementChild;
@@ -128,6 +128,7 @@ async function itSaid(turn) {
   label.textContent = "Working";
   await wait(360);
   label.remove();
+  body.classList.remove("thinking");
 
   for (let cut = 0; cut <= turn.a.length; cut += 2) {
     body.innerHTML = `${esc(turn.a.slice(0, cut))}<span class="caret"></span>`;
