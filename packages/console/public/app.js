@@ -5628,9 +5628,10 @@ $("pairForm").addEventListener("submit", async (e) => {
     // which of the two the owner was reaching for, so the answer names both
     // ways in and blames neither.
     $("connectErr").textContent =
-      "That did not open this deployment. A console key is the CONSOLE_KEY set in the Worker's " +
-      "settings; a pairing code comes from your console bot in Telegram, if you have one, and is " +
-      "only good for a few minutes.";
+      "That did not open this deployment. Your console key is on your Worker's own page: open the " +
+      "address above in a new tab and it is printed there, until the first time somebody signs in. " +
+      "A pairing code comes from your console bot in Telegram, if you have one, and is only good " +
+      "for a few minutes.";
     $("connectErr").classList.add("on");
     return;
   }

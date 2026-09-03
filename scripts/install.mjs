@@ -315,10 +315,11 @@ if (health.status === 200) {
   console.log(
     [
       "",
-      "CONSOLE_KEY is a string you make up, at least 16 characters, and it is the",
-      "whole of what a deployment needs: it signs you into the console at",
-      "app.muxel.site. Add it in the dashboard under Settings, Variables and",
-      "Secrets, or rerun this script with CONSOLE_KEY set in the environment.",
+      "Open the address above in a browser. A deployment issues itself a console",
+      "key on its first run and that page prints it, until the first time somebody",
+      "signs in; take it to app.muxel.site along with the address. To choose your",
+      "own key instead, set CONSOLE_KEY in the dashboard under Settings, Variables",
+      "and Secrets, at least 16 characters.",
       "",
       "A Telegram console works instead, or as well, and can be added at any time:",
       "set ADMIN_BOT_TOKEN and OWNER_TELEGRAM_ID the same way.",

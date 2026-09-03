@@ -76,8 +76,8 @@ repository and drawn by its own CSS; the widget is on an ordinary website that i
 
 ## Before you start
 
-Three things, all free, about ten minutes. None of them asks for a payment card,
-and you do not have to write any code at any point.
+Two things, both free, about ten minutes. Neither asks for a payment card, and
+you do not have to write any code at any point.
 
 ### 1. A Cloudflare account
 
@@ -96,26 +96,11 @@ assistant whenever you update it. Sign up at
 [github.com/signup](https://github.com/signup).
 
 You will not need to write anything there. After setup you can close it and
-forget about it, apart from the one setting described further down.
+forget about it.
 
-### 3. A console key you make up
-
-This is the password to your own console, and you invent it rather than being
-given one. Any phrase you can type again, **at least 16 characters**. You
-paste it into one box on the deploy form, `CONSOLE_KEY`, and type it once more
-the first time you open the console.
-
-Choose a real one. Your deployment answers on a public `workers.dev` address,
-and anybody who finds it can try a key against it, so this key is the whole of
-the lock. Nothing here can recover it for you either: it is your Worker's own
-secret, and nobody, us included, can read it back out. Keep it where you keep
-your other passwords.
-
-If you would rather not invent one, deploy with the box empty and open the
-address Cloudflare gives you. That page offers a random key and tells you where
-to paste it.
-
-That is everything. Telegram is a door you can add whenever you like, and
+That is everything. There is nothing to invent, nothing to copy down and
+nothing to fill in: your deployment makes its own console key and shows it to
+you when it is running. Telegram is a door you can add whenever you like, and
 [Telegram, if you want it](#telegram-if-you-want-it) says what it buys.
 
 ## Deploy from the browser
@@ -159,35 +144,33 @@ space and changes nothing, because padding with zeros leaves cosine similarity
 exactly as it was. A smaller one shortens embeddings to fit and makes search
 less accurate, which is worth correcting but will not stop anything working.
 
-Then the one secret this needs:
+And that is the whole form. There is no box for a password, none for a Telegram
+bot, and none you have to think about: press **Create and deploy**.
 
-| Setting       | Value                                          |
-| ------------- | ---------------------------------------------- |
-| `CONSOLE_KEY` | The key you thought of, at least 16 characters |
-
-That is the whole of the form. There is no box on it for a Telegram bot, on
-purpose: everything this deployment can be given beyond the key is added
-afterwards, in the Cloudflare dashboard under **Settings**, then **Variables
-and Secrets**, and the setup page your own Worker serves names each setting and
-says what it is for. A row of empty boxes at the very first step reads as work
-to do before anything can happen, and there is none.
-
-Everything else provisions itself: the deploy step makes the first request to
+Everything else provisions itself. The deploy step makes the first request to
 the Worker so it can learn its own address, which is also what connects a
 Telegram bot's webhook on the day you add one.
 
-When the build finishes, Cloudflare shows you your Worker's address. Open
-[app.muxel.site](https://app.muxel.site), paste that address in, and enter your
-console key. That console is your private control panel. Add a business there
+When the build finishes, Cloudflare shows you your Worker's address. **Open it.**
+The page that answers is your deployment saying it is ready, and it hands you
+your console key — a long random string it made for itself, because a password
+invented by a machine that has just been created is a better password than one
+invented by a person who has not seen the thing yet.
+
+Copy that key and keep it where you keep your other passwords. Then open
+[app.muxel.site](https://app.muxel.site), paste your Worker's address in, and
+paste the key. That console is your private control panel. Add a business there
 and it will ask what the business is called.
 
 That page is served from our domain and holds nothing of yours. It has to ask
-for your address because it genuinely does not know it, and the key you type is
+for your address because it genuinely does not know it, and the key you paste is
 checked by your own Worker rather than by us.
 
-If the key is refused, open the Worker address Cloudflare showed you. That page
-runs setup again and says what is wrong. A key under 16 characters is the
-usual answer, and it names that as the reason rather than only refusing you.
+Your Worker's own page shows that key until the first time somebody signs in,
+and then stops: the address is public, and once the console has an owner,
+printing the key would be handing it to whoever opens the page next. If you lose
+it before you have signed in, reload the page. If you lose it afterwards,
+[The console](#the-console) says how to replace it.
 
 **If that address answers `Hello world`, the deploy did not finish.** Cloudflare
 copies this repository into your GitHub account before building it, and that
@@ -292,6 +275,19 @@ it serves.
 | Console bot  | only you         | My Muxel Console       |
 | Business bot | your customers   | your shop's name       |
 
+### If you lose your console key
+
+Add a secret named `CONSOLE_KEY` in the Cloudflare dashboard under
+**Settings**, then **Variables and Secrets**, at least 16 characters. A key you
+set there wins over the one your deployment issued itself, so it becomes your
+key from the next request onwards.
+
+Doing that also ends every session the old key opened. That is the point of it:
+it is how you take back a key that got away from you, and it is why the
+deployment stamps each session with the key that opened it rather than trusting
+that a signed-in browser stays yours forever.
+
+
 ## Staying up to date
 
 Updates are **not** automatic, and it is worth being clear about why.
@@ -375,16 +371,11 @@ node packages/cli/dist/index.js init \
 `init` provisions the resources, uploads the secrets, deploys and calls the
 setup endpoint for you. Businesses are added afterwards from the console.
 
-**This path still asks for the two Telegram values.** The command line tool
-predates the console key and has no flag for one, so a terminal install builds
-the Telegram door. To have the key door too, add the secret yourself once the
-deploy is up:
-
-```bash
-npx wrangler secret put CONSOLE_KEY
-```
-
-The browser path above asks for neither Telegram value.
+**This path asks for nothing either.** Run it with no flags and the deployment
+issues itself a console key exactly as the button does; open the address it
+prints at the end and the key is on that page. `--console-key` sets one of your
+own instead, and `--admin-bot-token` with `--owner-telegram-id` builds the
+Telegram door as well.
 
 ## Choosing a model
 

@@ -101,9 +101,12 @@ const post = (path: string, body: unknown): Request =>
   });
 
 describe("what a deployment is still asked for", () => {
-  it("names the console key when nothing at all is set", () => {
-    // The one box door, recommended to the person who has done nothing yet.
-    expect(missingConfiguration({} as never)).toEqual(["CONSOLE_KEY"]);
+  it("asks for nothing at all when nothing at all is set", () => {
+    // The whole of the change: a deployment given nothing is not missing
+    // anything, because it issues itself the key that opens it. The deploy
+    // form reads this list's reason for existing, and a name here becomes a
+    // required box in front of somebody who has nothing to put in it.
+    expect(missingConfiguration({} as never)).toEqual([]);
   });
 
   it("asks for nothing once there is a console key", () => {
@@ -130,8 +133,11 @@ describe("what a deployment is still asked for", () => {
     ]);
   });
 
-  it("does not count a key too short to be a lock", () => {
-    expect(missingConfiguration({ CONSOLE_KEY: "short" } as never)).toEqual(["CONSOLE_KEY"]);
+  it("does not call a key too short to be a lock a missing setting", () => {
+    // It is a setting that is being ignored, not one that is absent, and the
+    // deployment works either way. The page is where that is said; naming it
+    // here would stop a deployment nothing is wrong with.
+    expect(missingConfiguration({ CONSOLE_KEY: "short" } as never)).toEqual([]);
   });
 });
 
@@ -139,8 +145,10 @@ describe("a deployment with a key and no Telegram", () => {
   it("finishes setting up", async () => {
     const outcome = await setUp({ CONSOLE_KEY: KEY });
     expect(outcome.ok).toBe(true);
-    expect(outcome.consoleKey).toBe(true);
     expect(outcome.missing).toEqual([]);
+    // A key its owner chose is never echoed back at them. They know it, and
+    // the page it would be printed on is public.
+    expect(outcome.issuedKey).toBeUndefined();
   });
 
   it("installs the owner who arrives through the console", async () => {
@@ -168,56 +176,111 @@ describe("a deployment with a key and no Telegram", () => {
 });
 
 describe("a key too short to be a lock", () => {
-  it("is refused, and named", async () => {
+  it("stops nothing, because the deployment has its own key", async () => {
+    // It used to refuse to finish. That was a working deployment taken down
+    // over an optional setting somebody typed hopefully into a box.
     const outcome = await setUp({ CONSOLE_KEY: "hunter2" });
-    expect(outcome.ok).toBe(false);
-    expect(outcome.missing).toEqual(["CONSOLE_KEY"]);
-    expect(outcome.note).toContain(String(CONSOLE_KEY_MIN_LENGTH));
+    expect(outcome.ok).toBe(true);
+    expect(outcome.missing).toEqual([]);
+    expect(outcome.shortKey).toBe(true);
   });
 
-  it("says why the length is the whole of it", async () => {
+  it("is not the key that signs anybody in", async () => {
     const outcome = await setUp({ CONSOLE_KEY: "hunter2" });
-    expect(outcome.note).toContain("public");
-    expect(outcome.note).toContain("lock");
+    expect(outcome.issuedKey).not.toBe("hunter2");
+    expect((outcome.issuedKey ?? "").length).toBeGreaterThanOrEqual(CONSOLE_KEY_MIN_LENGTH);
   });
 
-  it("writes nothing while it is refused", async () => {
-    await setUp({ CONSOLE_KEY: "hunter2" });
-    expect(seen.operators).toEqual([]);
-    expect(seen.wrote).toEqual([]);
+  it("says on the page that it is set and not being used", async () => {
+    // The worst of both otherwise: the owner believes they chose their key.
+    const page = renderSetupPage(await setUp({ CONSOLE_KEY: "hunter2" }));
+    expect(page).toContain("CONSOLE_KEY");
+    expect(page).toContain(String(CONSOLE_KEY_MIN_LENGTH));
+    expect(page).toContain("not being used");
   });
 });
 
-describe("a deployment nobody can get into yet", () => {
-  it("offers a key long enough to be one", async () => {
+describe("a deployment nobody has been asked anything for", () => {
+  it("issues itself a key long enough to be one", async () => {
     const outcome = await setUp({});
-    expect(outcome.suggestedKey?.length ?? 0).toBeGreaterThanOrEqual(CONSOLE_KEY_MIN_LENGTH);
+    expect(outcome.ok).toBe(true);
+    expect((outcome.issuedKey ?? "").length).toBeGreaterThanOrEqual(CONSOLE_KEY_MIN_LENGTH);
   });
 
-  it("makes a different one every time, because it is made and not held", async () => {
+  it("keeps it, so a reload shows the same key", async () => {
+    // The opposite of what the suggestion used to do, and the reason this is
+    // now a key rather than a suggestion: it is the key that works, so the
+    // owner has to be able to close the page and come back to it.
+    const env = deployment({});
+    const first = await runSetup(env, "https://muxel.example.workers.dev");
+    const second = await runSetup(env, "https://muxel.example.workers.dev");
+    expect(first.issuedKey).toBe(second.issuedKey);
+  });
+
+  it("makes a different one for every deployment", async () => {
     const first = await setUp({});
     const second = await setUp({});
-    expect(first.suggestedKey).not.toBe(second.suggestedKey);
+    expect(first.issuedKey).not.toBe(second.issuedKey);
   });
 
-  it("puts it on the page as a suggestion, with the setting to paste it into", async () => {
+  it("signs somebody in with the key it printed", async () => {
+    // The end to end claim: nothing was configured, and the string on the page
+    // opens the console.
+    const env = deployment({});
+    const outcome = await runSetup(env, "https://muxel.example.workers.dev");
+    const response = await handleConsoleRequest(
+      env,
+      post("/claim", { key: outcome.issuedKey }),
+      "/claim",
+    );
+    expect(response?.status).toBe(200);
+  });
+
+  it("puts it on the page, where the owner is told to keep it", async () => {
     const outcome = await setUp({});
     const page = renderSetupPage(outcome);
-    expect(page).toContain(outcome.suggestedKey as string);
-    expect(page).toContain("CONSOLE_KEY");
-    expect(page).toContain("suggestion");
+    expect(page).toContain(outcome.issuedKey as string);
+    expect(page).toContain("app.muxel.site");
+    expect(page).toContain("passwords");
   });
 
-  it("names the Telegram door as the alternative", async () => {
+  it("stops printing it once somebody has signed in", async () => {
+    // The page is public. Until the first sign in nobody owns this deployment
+    // and its owner has no other way to learn the key; after it, printing the
+    // key would be handing it to the next person who opens the address.
+    const env = deployment({});
+    const outcome = await runSetup(env, "https://muxel.example.workers.dev");
+    await handleConsoleRequest(env, post("/claim", { key: outcome.issuedKey }), "/claim");
+    const after = await runSetup(env, "https://muxel.example.workers.dev");
+    expect(after.ok).toBe(true);
+    expect(after.issuedKey).toBeUndefined();
+    expect(renderSetupPage(after)).not.toContain(outcome.issuedKey as string);
+  });
+
+  it("still signs the owner in after it has stopped printing it", async () => {
+    const env = deployment({});
+    const outcome = await runSetup(env, "https://muxel.example.workers.dev");
+    await handleConsoleRequest(env, post("/claim", { key: outcome.issuedKey }), "/claim");
+    await runSetup(env, "https://muxel.example.workers.dev");
+    const again = await handleConsoleRequest(
+      env,
+      post("/claim", { key: outcome.issuedKey }),
+      "/claim",
+    );
+    expect(again?.status).toBe(200);
+  });
+
+  it("names the Telegram door as the other way in", async () => {
     const page = renderSetupPage(await setUp({}));
     expect(page).toContain("ADMIN_BOT_TOKEN");
     expect(page).toContain("OWNER_TELEGRAM_ID");
   });
 
   it("offers nothing to somebody halfway through the Telegram door", async () => {
-    // They are missing one value they already know about, not a way in.
+    // They are missing one value they already know about, not a way in, and
+    // setup has not run far enough to have made anything.
     const outcome = await setUp({ ADMIN_BOT_TOKEN: "123:abc" });
-    expect(outcome.suggestedKey).toBeUndefined();
+    expect(outcome.issuedKey).toBeUndefined();
     expect(renderSetupPage(outcome)).toContain("OWNER_TELEGRAM_ID");
   });
 });
@@ -277,7 +340,7 @@ describe("presenting the key at the console", () => {
   it("keeps only the hash, so a copy of KV is not a working token", async () => {
     const env = { STATE: kv(), CONSOLE_KEY: KEY };
     const body = (await (await claim(env, KEY))?.json()) as { token: string };
-    const keys = [...env.STATE.held.keys()];
+    const keys = [...env.STATE.held.keys()].filter((key) => key.startsWith("console:session:"));
     expect(keys).toHaveLength(1);
     expect(keys[0]).toMatch(/^console:session:[0-9a-f]{64}$/);
     expect(keys[0]).not.toContain(body.token);
@@ -286,7 +349,10 @@ describe("presenting the key at the console", () => {
   it("lasts the thirty days a paired session lasts", async () => {
     const env = { STATE: kv(), CONSOLE_KEY: KEY };
     await claim(env, KEY);
-    expect([...env.STATE.held.values()][0]?.ttl).toBe(60 * 60 * 24 * 30);
+    const session = [...env.STATE.held.entries()].find(([key]) =>
+      key.startsWith("console:session:"),
+    );
+    expect(session?.[1].ttl).toBe(60 * 60 * 24 * 30);
   });
 
   it("comes back as the owner who arrived through the console", async () => {
@@ -352,9 +418,12 @@ describe("the schedule, on a deployment with a key and no bot", () => {
     expect(seen.wrote).toEqual([]);
   });
 
-  it("skips a deployment with no door at all", async () => {
+  it("finishes the run for a deployment nobody configured either", async () => {
+    // There is no longer such a thing as a deployment with no door. One that
+    // was given nothing is the ordinary case, and the schedule owes it the
+    // same first run as any other.
     seen.owner = null;
-    expect(await scheduled({})).toBe("skipped");
-    expect(seen.wrote).toEqual([]);
+    expect(await scheduled({})).toBe("completed");
+    expect(seen.operators).toEqual([WEB_OWNER_ID]);
   });
 });

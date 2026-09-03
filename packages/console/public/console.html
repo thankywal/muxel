@@ -238,16 +238,21 @@
             Telegram is last because setup no longer waits for it. Two of the
             six steps used to be a trip to BotFather before anything worked at
             all, which asked a person to open an account on somebody else's
-            chat app to reach a console in their own browser. A console key is
-            a whole way in, so the first five steps are the whole of setup and
-            the sixth is a door to add if you want it.
+            chat app to reach a console in their own browser.
+
+            And nothing here asks anyone to invent a secret any more. That step
+            read as almost nothing and was still the one people stopped at: the
+            deploy form makes every secret it is told about a required field, so
+            somebody who had pressed a button was held there and asked for a
+            password to a thing that did not exist yet. The deployment makes its
+            own and shows it, which is both easier and a better password.
           -->
           <ol class="steps">
           <li><b>Create a Cloudflare account</b><p>The free plan is enough. Confirm the email it sends you.</p></li>
           <li><b>Create a GitHub account</b><p>You never write code there. It keeps the copy your deployment updates from.</p></li>
-          <li><b>Think of a console key</b><p>Any phrase, 16 characters or more. It is what signs you in to this console, so keep it to yourself.</p></li>
-          <li><b>Press deploy</b><p>On the form set <code>CONSOLE_KEY</code> to that phrase. Leave the rest alone.</p></li>
-          <li><b>Come back here</b><p>Cloudflare gives you a URL for your deployment. Paste it below, then your key, and the console opens.</p></li>
+          <li><b>Press deploy</b><p>The form asks you for nothing. Leave every box as it is and press <b>Create and deploy</b>.</p></li>
+          <li><b>Open your new address</b><p>Cloudflare gives you a URL. Open it: the page shows your console key, which your deployment made for itself.</p></li>
+          <li><b>Come back here</b><p>Paste that address below, then the key, and the console opens.</p></li>
           <li><b>Telegram, if you want it</b><p>Optional, and later is fine. <code>/newbot</code> to <code>@BotFather</code> gives you a bot your customers write to; a second one is this console in your pocket, with <code>ADMIN_BOT_TOKEN</code> set to its token and <code>OWNER_TELEGRAM_ID</code> to the number <code>@userinfobot</code> replies with.</p></li>
         </ol>
           <a class="btn btn-primary" target="_blank" rel="noopener" href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Get started · deploy to Cloudflare</a>
@@ -308,8 +313,9 @@
               pressed is a way to lose an afternoon to a key that looks correct.
             -->
             <div id="step2" hidden style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
-              <p>Your console key: the <code>CONSOLE_KEY</code> you set when you deployed. Or, if you set up a
-                 console bot, open it in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
+              <p>Your console key is printed on your deployment's own page — open the address above in a
+                 new tab. Or, if you set up a console bot, open it in Telegram, tap <b>Web console</b>,
+                 and type the code it shows.</p>
               <form class="row" id="pairForm">
                 <input id="pairCode" placeholder="Console key, or a pairing code" autocomplete="off" spellcheck="false">
                 <button class="btn btn-primary" type="submit" id="pairBtn">Open console</button>

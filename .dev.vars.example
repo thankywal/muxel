@@ -1,24 +1,30 @@
 # Muxel secrets.
 #
-# The deploy flow reads this file to work out what to ask for, so it lists only
-# what a deployment cannot start without. Copy it to .dev.vars for local
-# development. Never commit real values: .dev.vars is ignored by git for that
-# reason.
+# There are none. That is not an omission, it is the design: a deployment has
+# nothing to be given, so this file lists nothing and the deploy form asks you
+# for nothing. Press the button and your Worker is running.
 #
-# One box, on purpose. Everything else this deployment can be given — a console
-# bot in Telegram, a key for a model from another provider, live web search,
-# reading a document as data — is added afterwards, from the Worker's own
-# Settings, Variables and Secrets. A form of empty boxes at the very first step
-# reads as work to do before anything happens, and it is not.
-
-# The key that signs you into the web console at app.muxel.site.
+# The deploy flow reads this file to work out what to ask for, and it makes
+# every name it finds a required field. A single box here would stop someone
+# who has just pressed a deploy button and ask them to invent a password for a
+# thing that does not exist yet. Your deployment invents a far better one
+# itself, and shows it to you on its own front page the first time you open it.
 #
-# Make one up, at least 16 characters, and keep it where you keep passwords.
-# Your deployment answers on a public address, so this key is the whole lock on
-# it. Forgetting it costs nothing: change CONSOLE_KEY in the Worker's settings
-# and the new one works, which also ends every session the old one opened.
+# Everything Muxel can be given — a console bot in Telegram, a key for a model
+# from another provider, live web search, reading a document as data — is added
+# afterwards, from the Worker's own Settings, Variables and Secrets, by someone
+# who by then knows what it is for.
 #
-# If you would rather drive the console from Telegram instead, or as well, add
-# ADMIN_BOT_TOKEN and OWNER_TELEGRAM_ID in Settings afterwards; the setup page
-# says how. Either door on its own is enough.
-CONSOLE_KEY=
+# Copy this file to .dev.vars for local development. Never commit real values:
+# .dev.vars is ignored by git for that reason.
+#
+# The optional settings, for reference. None of them belong on the deploy form.
+#
+#   CONSOLE_KEY        Choose your own console key instead of the issued one,
+#                      at least 16 characters. Setting it also ends every
+#                      session the previous key opened, which is how you take
+#                      back a key that leaked.
+#   ADMIN_BOT_TOKEN    A Telegram bot to run the console from, and the account
+#   OWNER_TELEGRAM_ID  allowed to use it. Both, or neither.
+#   CF_API_TOKEN       Account Analytics: Read, so the console can show your
+#                      real Cloudflare usage rather than Muxel's own estimate.

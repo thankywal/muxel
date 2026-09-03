@@ -72,10 +72,14 @@ const STATUSES = [
  * the state renames it here and a change to the shape of that line fails
  * loudly instead of quietly matching nothing.
  */
-const UNCONFIGURED = (root("packages/runtime/src/index.ts")
+const HEALTH_STATUS_LINE = (root("packages/runtime/src/index.ts")
   .split("\n")
-  .find((line) => /^\s*status:.*missing/.test(line)) ?? "")
-  .match(/missing\.length > 0 \?\s*"([a-z_]+)"/)?.[1];
+  .find((line) => /^\s*status:.*missing/.test(line)) ?? "");
+
+const UNCONFIGURED = HEALTH_STATUS_LINE.match(/missing\.length > 0 \?\s*"([a-z_]+)"/)?.[1];
+
+/** The state /health reports once the deployment is working. */
+const READY = HEALTH_STATUS_LINE.match(/configured \?\s*"([a-z_]+)"/)?.[1];
 
 /**
  * Inputs to a script's own run rather than settings of the deployment it
@@ -155,23 +159,30 @@ describe("what a script may read to decide a deployment's state", () => {
     );
   });
 
-  it("watches a real deployment leave the state it starts in", () => {
+  it("watches a real deployment reach the state it has to reach", () => {
     expect(smoke).toContain("JSON.parse");
-    expect(UNCONFIGURED, "the state /health reports for a missing setting has moved").toBeDefined();
-    // Every one click deploy starts here, and this is the branch that used to
-    // wait for the word ADMIN_BOT_TOKEN to appear on the page. It is where the
-    // proof that the Worker boots at all lives, so it cannot simply be dropped
-    // in favour of the states that come after it.
-    expect(smoke, "a smoke run never sees an unconfigured deployment").toContain(
-      `?.status === "${UNCONFIGURED}"`,
+    // Every one click deploy used to start in not_configured, and this branch
+    // waited for the word ADMIN_BOT_TOKEN to appear on the page. A deployment
+    // given nothing is now ready on its first request, so the proof that the
+    // Worker boots at all lives in that state instead — read off the record,
+    // never off a sentence.
+    expect(READY, "the state /health reports for a working deployment has moved").toBeDefined();
+    expect(smoke, "a smoke run never sees a ready deployment").toContain(
+      `?.status === "${READY}"`,
     );
     // Whatever else it names, it reads that off the record too.
     for (const status of STATUSES.filter((named) => smoke.includes(named))) {
       expect(smoke, `${status} is not read off the record`).toContain(`?.status === "${status}"`);
     }
-    // And it holds the page to the same answer, by the names the record gave,
-    // rather than by a phrase this script decided the page ought to use.
-    expect(smoke).toMatch(/missing\.every\(\(name\) => \w+\.body\.includes\(name\)\)/);
+    // And the page is judged by its markup, not by a phrase this script decided
+    // the page ought to use: the day somebody rewords the page, a correct
+    // deployment must not fail the run that exists to catch mistakes.
+    const sentences = [...smoke.matchAll(/\.body\.includes\("([^"]*)"\)/g)].map(
+      (match) => match[1] as string,
+    );
+    for (const phrase of sentences) {
+      expect(phrase, `the smoke run waits for the page to say "${phrase}"`).toMatch(/^[^ ]*$/);
+    }
   });
 });
 
@@ -187,26 +198,38 @@ describe("the settings a script names", () => {
     }
   });
 
-  it("hands the hand install every box the deploy form asks for", () => {
-    // The hand install is the way out of a failed one click deploy, so anything
-    // the button can be given it must be able to be given too. It could set the
-    // Telegram pair and nothing else, which is now the optional door.
-    expect(DEPLOY_FORM.length).toBeGreaterThan(0);
-    for (const setting of DEPLOY_FORM) {
+  it("asks a new owner for nothing at all", () => {
+    // The deploy form makes every name in this file a required field, in front
+    // of somebody who has just pressed a button and has nothing to put in any
+    // of them. One box was enough to stop them: it asked for a password to a
+    // thing that did not exist yet. A deployment issues itself the key that
+    // opens it, so the honest length of this list is zero, and a name added
+    // back here is a wall put back in front of every new owner.
+    expect(DEPLOY_FORM).toEqual([]);
+  });
+
+  it("still lets the hand install give every setting the Worker declares", () => {
+    // The hand install is the way out of a failed one click deploy, so nothing
+    // being on the form does not mean nothing can be set. These are the ones an
+    // owner chooses afterwards, from a console they can already reach.
+    for (const setting of ["CONSOLE_KEY", "ADMIN_BOT_TOKEN", "OWNER_TELEGRAM_ID"]) {
+      expect(DECLARED.has(setting), `the Worker does not declare ${setting}`).toBe(true);
       expect(install, `install.mjs never reads ${setting}`).toContain(`process.env.${setting}`);
       expect(install, `install.mjs never sets ${setting}`).toContain(`"${setting}"`);
     }
   });
 
-  it("proves the door the deploy form asks for on a real deployment", () => {
-    // A console key is a string its owner makes up, so a smoke run can make one
-    // up too. Nothing else the form asks for has an excuse for being untested,
-    // and the door most deployments will use was the one never exercised.
-    for (const setting of DEPLOY_FORM) {
-      expect(smoke, `${setting} is never set during a smoke run`).toMatch(
-        new RegExp(`"secret",\\s*"put",\\s*"${setting}"`),
-      );
-    }
+  it("proves on a real deployment the door a new owner actually walks", () => {
+    // The path is: open the address, read the key off the page, sign in. It is
+    // the only path most deployments will ever use and it was the one never
+    // exercised, so the smoke run walks it end to end rather than setting a
+    // secret no owner will set.
+    expect(smoke, "the smoke run never reads the key off the page").toContain('class="key"');
+    expect(smoke, "the smoke run never signs in with it").toContain('"/admin/claim"');
+    // And the override, which is the only way to take a leaked key back.
+    expect(smoke, "CONSOLE_KEY is never proved on a real deployment").toMatch(
+      /"secret",\s*"put",\s*"CONSOLE_KEY"/,
+    );
   });
 
   it("quotes the Worker's own minimum key length, when it quotes one at all", () => {

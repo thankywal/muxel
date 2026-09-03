@@ -13,14 +13,20 @@ the first minute:
 
 ## If you cannot get in
 
-Losing your way into the console is not losing the deployment. The key that
-signs you in is a setting on your own Worker, so you can set a different one
-and use that.
+Losing your way into the console is not losing the deployment. Your deployment
+issued itself the key that signs you in, and you can replace it with one of your
+own at any time.
+
+If you have never signed in, there is nothing to recover: open your Worker's
+address and the key is printed on that page.
+
+Otherwise:
 
 1. In Cloudflare open **Workers and Pages**, open your Worker, then
    **Settings**, then **Variables and Secrets**.
-2. Edit `CONSOLE_KEY` — or add it, if this deployment never had one — and put in
-   a new phrase of at least 16 characters.
+2. Add a secret named `CONSOLE_KEY` — or edit it, if you already set one — and
+   put in a new phrase of at least 16 characters. A key you set there wins over
+   the one your deployment issued itself.
 3. Open [app.muxel.site](https://app.muxel.site), paste your deployment's
    address, and enter the new key.
 
@@ -32,9 +38,11 @@ ended by replacing it, not by hunting down the browsers still holding it.
 Nothing else changes. Your businesses, your uploaded documents and every
 conversation live in your D1 database, and none of them is touched by this.
 
-The one thing nobody can do is give you back the key you had. Your deployment
-does not store it — it compares what you type against the setting — so there is
-no copy of it anywhere to be read out, by us, by Cloudflare, or by you.
+The one thing nobody outside your own Cloudflare account can do is read your key
+back to you. A key you set is a Worker secret and opaque even in the dashboard;
+the one your deployment issued itself lives in its own storage, which nobody but
+that account can reach. Either way there is no copy of it here, and none at
+Cloudflare's support desk.
 
 A Telegram console is the other door and the same holds in both directions. If
 the console bot is gone, or you no longer have the account it was set up for,
@@ -166,16 +174,14 @@ pnpm install
 
 CLOUDFLARE_API_TOKEN=your-token \
 CLOUDFLARE_ACCOUNT_ID=your-account-id \
-CONSOLE_KEY=a-phrase-you-make-up \
 node scripts/install.mjs
 ```
 
-`CONSOLE_KEY` is a phrase you invent, at least 16 characters, and it is the
-whole of what a deployment needs from you. Keep it where you keep passwords.
+It asks for nothing else. When it finishes it prints your deployment's address;
+open that and the page hands you the console key it made for itself.
 
-The last line is optional. Without it the Worker deploys and then waits, and
-says on its own `/setup` page what it is waiting for, exactly as a button deploy
-does before you fill in the form.
+To choose your own key instead, add `CONSOLE_KEY=a-phrase-you-make-up` to that
+command, at least 16 characters, and keep it where you keep passwords.
 
 If you would rather drive the console from Telegram, pass `ADMIN_BOT_TOKEN` and
 `OWNER_TELEGRAM_ID` instead, or as well. They go on together or not at all,
@@ -194,8 +200,8 @@ each other.
 
 When it finishes it prints your address and what to do with it: open
 [app.muxel.site](https://app.muxel.site), paste that address in and enter your
-console key, or, if you set up a bot instead, open it in Telegram and send
-`/start`.
+console key — which is printed on your deployment's own address — or, if you set
+up a bot instead, open it in Telegram and send `/start`.
 
 ## Installing from a terminal instead
 
