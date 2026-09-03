@@ -168,10 +168,14 @@ describe("a console key too short to be one", () => {
       KNOWLEDGE: { describe: async () => { throw new Error("remote only"); } },
     }) as never;
 
-  it("stops a deployment that has no other door", async () => {
+  it("stops nothing, on a deployment with no other door either", async () => {
+    // It used to refuse to finish. Nothing now depends on the owner having
+    // supplied a key at all, so the only thing left to do about a short one is
+    // to say it is being ignored.
     const outcome = await runSetup(deployment({ CONSOLE_KEY: "hunter2" }), "https://x.workers.dev");
-    expect(outcome.ok).toBe(false);
-    expect(outcome.missing).toEqual(["CONSOLE_KEY"]);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.shortKey).toBe(true);
+    expect(outcome.missing).toEqual([]);
   });
 
   it("does not stop one Telegram is already carrying", async () => {
@@ -194,7 +198,8 @@ describe("a console key too short to be one", () => {
         "https://x.workers.dev",
       ),
     );
-    expect(page).toContain("too short to use");
+    expect(page).toContain("shorter than");
+    expect(page).toContain("not being used");
     expect(page).toContain("will not sign you in");
     expect(page).not.toContain("Not ready yet");
   });

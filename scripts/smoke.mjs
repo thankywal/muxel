@@ -174,6 +174,21 @@ async function get(path) {
   }
 }
 
+/** Sends a JSON body to a path, the way the console signs in. */
+async function post(path, body) {
+  try {
+    const response = await fetch(`${url}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
+    });
+    return { status: response.status, body: await response.text() };
+  } catch (error) {
+    return { status: 0, body: String(error) };
+  }
+}
+
 /**
  * Polls until the answer settles or time runs out, and judges only the final
  * state. A brand new workers.dev address flaps while it propagates, answering
@@ -182,11 +197,11 @@ async function get(path) {
  * deadline, so nothing real is masked by waiting; a flap that resolves was
  * never a failure to begin with.
  */
-async function until(path, predicate, deadlineMs = 150_000) {
+async function until(path, predicate, deadlineMs = 150_000, send = get) {
   const deadline = Date.now() + deadlineMs;
   let last = { status: 0, body: "" };
   for (;;) {
-    last = await get(path);
+    last = await send(path);
     if (predicate(last) || Date.now() > deadline) {
       return last;
     }
@@ -221,58 +236,75 @@ function missingIn(body) {
     : null;
 }
 
-// Nothing is configured yet, which is the state every one click deploy starts
-// in. Reaching this answer at all proves the Worker boots, the bundle runs and
-// the bindings resolve, and what it has to say is that it cannot be reached
-// yet and what would change that.
-const unconfigured = await until("/health", (r) => record(r.body)?.status === "not_configured");
-const named = missingIn(unconfigured.body);
-const missing = named ?? [];
+// The page a person actually opens is the first thing that happens, because
+// opening it is what runs setup: the Worker cannot learn its own address any
+// other way. It has to carry the key too, being the only place its owner can
+// learn it.
+const firstScreen = await until("/setup", (r) => r.status === 200, 60_000);
+const issued = /<p class="key"><code>([A-Za-z0-9_-]+)<\/code><\/p>/.exec(firstScreen.body)?.[1];
 check(
-  "an unconfigured deployment says so",
-  unconfigured.status === 503 && record(unconfigured.body)?.status === "not_configured",
-  `status ${unconfigured.status}: ${unconfigured.body.slice(0, 120).replace(/\n/g, " ")}`,
-);
-check("it names something to act on", missing.length > 0, JSON.stringify(named));
-
-// The page a person actually opens has to carry the same answer. A deployment
-// that tells a monitor one thing and its owner another sends that owner to set
-// something nothing is waiting for. The names come from the record, so this
-// asks whether the page agrees rather than what either of them worded it as.
-const firstScreen = await until("/setup", (r) => r.status === 503, 60_000);
-check(
-  "setup explains instead of crashing",
-  firstScreen.status === 503,
+  "the first screen is a finished setup",
+  firstScreen.status === 200,
   `status ${firstScreen.status}: ${firstScreen.body.slice(0, 80).replace(/\n/g, " ")}`,
 );
 check(
-  "the first screen names what the record names",
-  missing.length > 0 && missing.every((name) => firstScreen.body.includes(name)),
-  missing.join(", "),
+  "it hands over a console key long enough to be one",
+  typeof issued === "string" && issued.length >= 16,
+  issued === undefined ? "no key on the page" : `${issued.length} characters`,
 );
 
-// Now give it the one thing the deploy form asks for. A console key is a
-// string the owner makes up and needs no other account, which is exactly why
-// it is the door most deployments will use, and why this script can prove it
-// without being handed anything. A UUID is far past the length the Worker
-// insists on, so a red run here is the code's fault and never the key's.
-const consoleKey = randomUUID();
-wrangler(["secret", "put", "CONSOLE_KEY", "--config", configPath], { input: `${consoleKey}\n` });
-
-const setup = await until("/setup", (r) => r.status === 200);
+// And the record agrees with the page.
+//
+// /health reports what has already happened rather than causing it, so this
+// comes second: opening the address above is what ran setup. What it used to
+// report first was the opposite — a 503 naming the secret its owner still had
+// to invent — and that state no longer exists for a deployment given nothing.
+const ready = await until("/health", (r) => record(r.body)?.status === "ready", 150_000);
 check(
-  "setup completes with nothing but a console key",
-  setup.status === 200,
-  `status ${setup.status}`,
-);
-
-const ready = await until("/health", (r) => record(r.body)?.status === "ready", 60_000);
-check(
-  "health reports ready",
+  "a deployment given nothing is ready",
   ready.status === 200 &&
     record(ready.body)?.status === "ready" &&
     (missingIn(ready.body) ?? []).length === 0,
-  ready.body.slice(0, 120),
+  `status ${ready.status}: ${ready.body.slice(0, 120).replace(/\n/g, " ")}`,
+);
+
+// The whole of what a new owner does: take the key off that page and sign in.
+const claimed = await post("/admin/claim", { key: issued ?? "" });
+check(
+  "the key on the page signs the owner in",
+  claimed.status === 200 && typeof record(claimed.body)?.token === "string",
+  `status ${claimed.status}: ${claimed.body.slice(0, 120)}`,
+);
+
+// And once somebody has, the public page stops printing it.
+const afterClaim = await until("/setup", (r) => r.status === 200 && !r.body.includes('class="key"'));
+check(
+  "the page stops printing the key once it has been used",
+  issued !== undefined && !afterClaim.body.includes(issued),
+  afterClaim.body.includes('class="key"') ? "still printed" : "",
+);
+
+// Choosing your own key is the override, and the one recovery path there is.
+// Setting it has to end the session the issued key opened, or a leaked key
+// could not be taken back.
+const consoleKey = randomUUID();
+wrangler(["secret", "put", "CONSOLE_KEY", "--config", configPath], { input: `${consoleKey}\n` });
+
+// Polled: putting a secret redeploys the Worker, and the old code answers
+// until the new one takes over.
+const chosen = await until("/admin/claim", (r) => r.status === 200, 60_000, (path) =>
+  post(path, { key: consoleKey }),
+);
+check(
+  "a key the owner chose replaces the one that was issued",
+  chosen.status === 200,
+  `status ${chosen.status}: ${chosen.body.slice(0, 120)}`,
+);
+const displaced = await post("/admin/claim", { key: issued ?? "" });
+check(
+  "and the issued key stops working",
+  displaced.status === 401,
+  `status ${displaced.status}`,
 );
 
 // Telegram is the other door, and it is optional, so it is proved only when

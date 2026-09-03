@@ -68,21 +68,22 @@ describe("the doors muxel init will open", () => {
     ]);
   });
 
-  it("refuses only when there is no door at all, and says both ways in", () => {
-    const refused = refusal(() => consoleDoors({}));
-    expect(refused.code).toBe("invalid_input");
-    // Both, in the same breath. Naming one of them turns a choice back into a
-    // requirement, which is the thing this whole change was about.
-    for (const flag of ["--console-key", "--admin-bot-token", "--owner-telegram-id"]) {
-      expect(refused.message, flag).toContain(flag);
-    }
+  it("refuses nothing, because no flags is a working deployment", () => {
+    // It used to refuse an install that named no door, on the grounds that the
+    // deployment would have no way in. That is no longer true: it issues itself
+    // a console key on its first run and prints it on its own setup page, so a
+    // command line insisting on a flag here would be insisting on something the
+    // Worker stopped needing.
+    const doors = consoleDoors({});
+    expect(doors.consoleKey).toBeNull();
+    expect(doors.telegram).toBeNull();
   });
 
   it("reads a flag the shell expanded to nothing as a flag that was not given", () => {
     // `--console-key "$KEY"` with KEY unset is somebody who gave no key, and
-    // the answer they need is the one above, not a deployment holding a secret
-    // that is the empty string.
-    expect(refusal(() => consoleDoors({ consoleKey: "   " })).code).toBe("invalid_input");
+    // what they get is the deployment's own key rather than a deployment
+    // holding a secret that is the empty string.
+    expect(consoleDoors({ consoleKey: "   " }).consoleKey).toBeNull();
     expect(consoleDoors({ consoleKey: KEY, adminBotToken: "", ownerTelegramId: "" }).telegram)
       .toBeNull();
   });

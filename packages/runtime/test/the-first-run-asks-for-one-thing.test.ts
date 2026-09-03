@@ -61,15 +61,22 @@ describe("the list of things to get ready first", () => {
   for (const name of READMES) {
     const doc = root(name);
 
-    it(`asks for three things, and a console key is the third of them, in ${name}`, () => {
+    it(`asks for two accounts and nothing else, in ${name}`, () => {
       const before = holding(doc, "github.com/signup");
       // The count is the section's own numbered parts rather than the sentence
-      // that introduces them, so a file that says three and lists four fails
+      // that introduces them, so a file that says two and lists three fails
       // here rather than reading correctly and instructing wrongly.
-      expect((before.body.match(/^### /gm) ?? []).length).toBe(3);
-      expect(before.body).toContain("CONSOLE_KEY");
-      // And it says how long it has to be, in the figure the Worker enforces.
-      expect(before.body).toContain(String(CONSOLE_KEY_MIN_LENGTH));
+      expect((before.body.match(/^### /gm) ?? []).length).toBe(2);
+    });
+
+    it(`asks nobody to invent a secret before anything exists, in ${name}`, () => {
+      // This is the wall the change was made to remove, and the one the deploy
+      // form itself put back: it makes every secret it finds a required field,
+      // so a person who has pressed a button is stopped and asked for a
+      // password to a thing that does not exist yet. Nothing on this list may
+      // name a setting again.
+      const before = holding(doc, "github.com/signup");
+      expect(settingsIn(before)).toEqual([]);
     });
 
     it(`sends nobody to Telegram before they have a deployment, in ${name}`, () => {
@@ -89,17 +96,11 @@ describe("the walkthrough of the deploy form", () => {
     const doc = root(name);
 
     it(`names the settings the deploy flow reads, and no others, in ${name}`, () => {
-      // .dev.vars.example is what a deployment is asked for. A walkthrough that
-      // names a setting missing from there sends somebody looking for a box
-      // that is not on the form, and one that omits a name leaves a box empty
-      // with no explanation.
-      expect(settingsIn(holding(doc, "cosine")).sort()).toEqual([...ASKED_AT_SETUP].sort());
-    });
-
-    it(`asks for the key first, as that file lists it first, in ${name}`, () => {
-      // The order is the argument: one box finishes setup, and the two under it
-      // are the door somebody may never want.
+      // .dev.vars.example is what a deployment is asked for, and it now asks
+      // for nothing, so a walkthrough that names a setting here is describing a
+      // box that is not on the form. The two files move together or this fails.
       expect(settingsIn(holding(doc, "cosine"))).toEqual(ASKED_AT_SETUP);
+      expect(ASKED_AT_SETUP).toEqual([]);
     });
 
     it(`still carries the two Vectorize values nothing can fill in, in ${name}`, () => {

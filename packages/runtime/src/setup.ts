@@ -27,13 +27,13 @@
 
 import { generateId, generateShortId, MuxelError } from "@muxel/core";
 
+import { consoleClaimed, ensureConsoleKey } from "./console-key.js";
 import { open, seal, sha256Hex } from "./crypto.js";
 import { addOperator, findOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
 import {
   consoleKey,
   CONSOLE_KEY_MIN_LENGTH,
-  hasConsoleKey,
   hasTelegramConsole,
   missingConfiguration,
   ownerTelegramId,
@@ -98,16 +98,15 @@ export interface SetupOutcome {
   readonly owner: number | null;
   readonly missing: readonly string[];
   readonly note: string;
-  /** Whether this deployment can be signed into with a console key. */
-  readonly consoleKey?: boolean;
   /**
-   * A key made up for an owner who has no way in yet.
+   * The console key this deployment issued to itself, while it is still worth
+   * printing.
    *
-   * Nothing stores it. It is offered because "invent a long random string" is
-   * the step people stall on, and it is worth nothing until they paste it into
-   * the setting themselves.
+   * Present only when the deployment made the key AND nobody has signed in yet.
+   * A key the owner configured themselves is never echoed back: they already
+   * know it, and this page is public. See console-key.ts.
    */
-  readonly suggestedKey?: string;
+  readonly issuedKey?: string;
   /**
    * A CONSOLE_KEY that is set and too short to be one.
    *
@@ -128,45 +127,26 @@ function notReady(note: string, missing: readonly string[] = []): SetupOutcome {
     schemaVersion: 0,
     botUsername: null,
     owner: null,
-    consoleKey: false,
-    // Naming CONSOLE_KEY is this deployment saying nobody can get in at all,
-    // which is the only moment a suggestion helps. Somebody halfway through
-    // the Telegram door is named their own missing half instead, and handing
-    // them a key as well would be a second answer to a question they did not
-    // ask.
-    suggestedKey: missing.includes("CONSOLE_KEY") ? generateId(24) : undefined,
     missing,
     note,
   };
 }
 
 export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> {
-  // A key that is set but short is a different mistake from setting none, and
-  // it is answered first so it can be named as itself.
+  // A CONSOLE_KEY that is set and shorter than the minimum is not a key: this
+  // Worker's address is public and the key is the only lock on it, so length is
+  // the whole of the rule. Sixteen characters is far past what anybody can
+  // guess, which is also why there is no attempt limit — a limit would defend
+  // against an attack that cannot be mounted while adding a number for the
+  // owner to wonder about.
   //
-  // Length is the whole of the rule because this Worker's address is public
-  // and the key is the only lock on it. Sixteen characters is far past what
-  // anybody can guess, which is also why there is no attempt limit here: a
-  // limit would defend against an attack that cannot be mounted, while adding
-  // a number for the owner to wonder about.
-  //
-  // It stops the deployment only when it is the ONLY door. Somebody with a
-  // working Telegram console who then adds a short key has not broken
-  // anything, and taking their deployment down over a setting they added
-  // optionally would be this page punishing them for trying something. The
-  // short key simply is not a door — consoleKey() already refuses it — and the
-  // page says so further down.
-  const key = env.CONSOLE_KEY?.trim() ?? "";
-  const shortKey = key.length > 0 && consoleKey(env) === null;
-  if (shortKey && !hasTelegramConsole(env)) {
-    return notReady(
-      `CONSOLE_KEY has to be at least ${CONSOLE_KEY_MIN_LENGTH} characters, and this one is `
-      + "shorter. The address of this Worker is public, so that key is the whole lock on your "
-      + "console. Set a longer one, or remove it and connect a Telegram console instead, then "
-      + "reload this page.",
-      ["CONSOLE_KEY"],
-    );
-  }
+  // It stops nothing. The deployment has its own key and works either way, so
+  // refusing to finish over an optional setting would take a working console
+  // down to punish somebody for trying something. It is said out loud on the
+  // page instead, because a key that is set and ignored is the worst of both:
+  // the owner believes they chose their key and they did not.
+  const configured = consoleKey(env);
+  const shortKey = (env.CONSOLE_KEY?.trim() ?? "").length > 0 && configured === null;
 
   const missing = missingConfiguration(env);
   if (missing.length > 0) {
@@ -268,13 +248,16 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
       });
   }
 
-  // The console key admits one person and the access checks downstream look
-  // them up like anybody else, so the row has to exist. Without it a claimed
-  // session is answered with "this console is private" by the very deployment
-  // its holder set up.
-  if (hasConsoleKey(env)) {
-    await addOperator(env, { telegramUserId: WEB_OWNER_ID, role: "owner" });
-  }
+  // Every deployment can be signed into from a browser, so every deployment
+  // gets the key for it here, and this is the only place that makes one.
+  //
+  // The key admits one person and the access checks downstream look them up
+  // like anybody else, so the row has to exist. Without it a claimed session is
+  // answered with "this console is private" by the very deployment its holder
+  // set up. It is installed even where Telegram is connected: the browser door
+  // is not a fallback for people without Telegram, it is the ordinary way in.
+  const key = await ensureConsoleKey(env);
+  await addOperator(env, { telegramUserId: WEB_OWNER_ID, role: "owner" });
 
   await env.STATE.put(ORIGIN_KEY, origin);
 
@@ -287,7 +270,8 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
     schemaVersion,
     botUsername: username,
     owner,
-    consoleKey: hasConsoleKey(env),
+    // Shown only until somebody signs in, and only if this deployment chose it.
+    issuedKey: configured === null && !(await consoleClaimed(env)) ? key : undefined,
     shortKey,
     missing: [],
     repo: SOURCE_REPO,
@@ -458,35 +442,32 @@ function renderUpdatesCard(outcome: SetupOutcome): string {
 }
 
 /**
- * Offers a key to somebody who has no way into their own deployment.
+ * Hands the owner the key their deployment made for them.
  *
- * What stops people here is not typing a secret into a box, it is being asked
- * to invent one. So one is made for them, and the page is plain about what it
- * is: this deployment has not kept it and does not know it, and it is worth
- * nothing until they set it themselves.
+ * What stopped people here was never typing a secret into a box, it was being
+ * asked to invent one before anything existed — and Cloudflare's deploy form
+ * would not let them past it. So the deployment makes its own and this is where
+ * it says what it is.
+ *
+ * Shown until somebody signs in for the first time, because until then nobody
+ * owns this deployment and its owner has no other way to learn the key. After
+ * that first sign in this card is gone for good.
  */
-function renderKeyOffer(outcome: SetupOutcome): string {
-  const key = outcome.suggestedKey ?? "";
+function renderKeyCard(outcome: SetupOutcome): string {
+  const key = outcome.issuedKey ?? "";
   if (key === "") {
     return "";
   }
   return `
       <div class="card">
-        <p><strong>How to get in</strong></p>
-        <p>One secret is all this needs. In the Cloudflare dashboard open
-        <strong>Settings</strong>, then <strong>Variables and Secrets</strong>,
-        and add a secret named <code>CONSOLE_KEY</code>. Reload this page, then
-        open <strong>app.muxel.site</strong>, paste the address of this page and
-        enter the same key.</p>
-        <p>Here is one, if you would rather not invent your own:</p>
-        <p><code>${escapeHtml(key)}</code></p>
-        <p>Nothing here has kept that key. It is a suggestion and nothing else
-        until you paste it into <code>CONSOLE_KEY</code> yourself, and reloading
-        this page will offer a different one.</p>
-        <p>Would you rather use Telegram? Set <code>ADMIN_BOT_TOKEN</code> and
-        <code>OWNER_TELEGRAM_ID</code> instead and your console is a bot rather
-        than a key. Either door works on its own, and the other can be added at
-        any time.</p>
+        <p><strong>Your console key</strong></p>
+        <p class="key"><code>${escapeHtml(key)}</code></p>
+        <p>Open <strong>app.muxel.site</strong>, paste the address of this page,
+        and paste that key. Nothing else is needed and nothing else was asked of
+        you: your deployment made this key itself.</p>
+        <p>Keep it where you keep passwords. It is shown here until the first
+        time you sign in, and then this page stops showing it, because this page
+        is public and by then the console has an owner.</p>
       </div>`;
 }
 
@@ -498,14 +479,11 @@ export function renderSetupPage(outcome: SetupOutcome): string {
   // console key and no bot is set up, not half built, and a page that read
   // otherwise would send its owner looking for a bot nobody asked them for.
   const telegram = bot !== "";
-  const key = outcome.consoleKey === true;
   const body = outcome.ok
     ? `
       <p class="ok">Your console is connected.</p>
       <dl>
-        <dt>Console key</dt><dd>${
-          key ? "set" : outcome.shortKey === true ? "set, and too short to use" : "not set"
-        }</dd>
+        <dt>Console key</dt><dd>${outcome.issuedKey !== undefined ? "issued, below" : "set"}</dd>
         ${
           telegram
             ? `<dt>Console bot</dt><dd>@${bot}</dd>
@@ -513,25 +491,26 @@ export function renderSetupPage(outcome: SetupOutcome): string {
             : `<dt>Console bot</dt><dd>none</dd>`
         }
       </dl>
+      ${renderKeyCard(outcome)}
       ${
-        key
+        outcome.issuedKey === undefined
           ? `<p>Open <strong>app.muxel.site</strong>, paste the address of this page, and
       enter your console key. That is your private control panel: add a business
       there and it will ask for the bot your customers will write to.</p>`
-          : outcome.shortKey === true
-            ? `<p class="warn">Your <code>CONSOLE_KEY</code> is shorter than
+          : ""
+      }
+      ${
+        outcome.shortKey === true
+          ? `<p class="warn">The <code>CONSOLE_KEY</code> you set is shorter than
       ${CONSOLE_KEY_MIN_LENGTH} characters, so it is not being used and will not sign you in.
-      Telegram is carrying this deployment; nothing is broken. Lengthen it and it becomes a
-      second way in, from any browser.</p>`
-            : `<p>You have no console key. Add <code>CONSOLE_KEY</code> to this Worker's
-      settings, at least ${CONSOLE_KEY_MIN_LENGTH} characters, and you can open the console
-      from a browser without going through Telegram at all.</p>`
+      Nothing is broken — the key above is the one that works. Set a longer
+      <code>CONSOLE_KEY</code> if you would rather choose your own.</p>`
+          : ""
       }
       ${
         telegram
           ? `<p>Open <strong>@${bot}</strong> in Telegram and send
-      <code>/start</code>. This bot is your private control panel: add a business
-      there and it will ask for the bot your customers will write to.</p>`
+      <code>/start</code>. This bot is a second way into the same console.</p>`
           : `<p>Telegram is optional and this deployment has none. If you would like a
       console you can carry in Telegram as well, add <code>ADMIN_BOT_TOKEN</code> and
       <code>OWNER_TELEGRAM_ID</code> and reload this page. Nothing set up now is lost
@@ -551,8 +530,7 @@ export function renderSetupPage(outcome: SetupOutcome): string {
         outcome.missing.length > 0
           ? `<p>Missing: <code>${outcome.missing.map(escapeHtml).join("</code>, <code>")}</code></p>`
           : ""
-      }
-      ${renderKeyOffer(outcome)}`;
+      }`;
 
   return `<!doctype html>
 <html lang="en">
@@ -579,6 +557,7 @@ export function renderSetupPage(outcome: SetupOutcome): string {
     padding: 0.25rem 1rem; margin: 1.75rem 0;
   }
   .card p:first-child { margin-top: 0.85rem; }
+  .key code { font-size: 1.15em; user-select: all; padding: 0.35em 0.5em; }
   code {
     font: 0.9em ui-monospace, monospace;
     background: rgba(127,127,127,0.15); padding: 0.1em 0.35em; border-radius: 4px;

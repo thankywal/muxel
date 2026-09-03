@@ -21,15 +21,16 @@ export interface Env {
   /** Default reply language for a new business, as a language tag such as "my". */
   readonly BUSINESS_LOCALE?: string;
 
-  // Required at setup, but as two doors: either of these on its own is enough.
+  // Every one of these is optional. A deployment is asked for nothing at all:
+  // it issues itself a console key on first run, and Telegram is a second door
+  // for owners who want one.
   /**
-   * The string that signs the owner into the web console.
+   * Overrides the console key this deployment issued to itself.
    *
-   * Setup used to refuse to finish without a Telegram bot, because the console
-   * bot was the only thing that could say who was asking. Somebody with no
-   * Telegram account could not use their own deployment at all, which is the
-   * first wall a new owner walks into. This is the other door, and it is one
-   * box: a string they make up, typed into the console once.
+   * Set only when an owner wants to choose their own key, or has to replace one
+   * that leaked. It wins over the issued key, and setting it ends every session
+   * the old one opened. See console-key.ts for where a key comes from when this
+   * is absent, which is the ordinary case.
    */
   readonly CONSOLE_KEY?: string;
   /** Token of the Telegram bot that serves the operator console. */
@@ -96,20 +97,19 @@ const isSet = (value: string | undefined): boolean =>
   typeof value === "string" && value.trim().length > 0;
 
 /**
- * Returns the console key when this deployment has one, and null when it does
- * not. A key too short to be a lock is not one: the callers that ask this
- * question are asking whether somebody can be let in, and the answer there is
- * no. Setup asks the narrower question itself, so that it can say which of the
- * two mistakes was made.
+ * Returns the console key set as a secret, and null when none is set.
+ *
+ * A key too short to be a lock is not one: the callers that ask this question
+ * are asking whether somebody can be let in, and the answer there is no. Setup
+ * asks the narrower question itself, so that it can say which mistake was made.
+ *
+ * This is the configured key only. Most deployments have none and are signed
+ * into with the key they issued themselves, so nearly every caller wants
+ * peekConsoleKey from console-key.ts instead.
  */
 export function consoleKey(env: Env): string | null {
   const raw = env.CONSOLE_KEY?.trim() ?? "";
   return raw.length >= CONSOLE_KEY_MIN_LENGTH ? raw : null;
-}
-
-/** Reports whether this deployment can be signed into with a console key. */
-export function hasConsoleKey(env: Env): boolean {
-  return consoleKey(env) !== null;
 }
 
 /** Reports whether this deployment has a Telegram console to connect. */
@@ -120,28 +120,23 @@ export function hasTelegramConsole(env: Env): boolean {
 /**
  * Returns the names of any settings that setup cannot proceed without.
  *
- * There are two ways in and either one is enough, so this is not a list of
- * required names any more: it is the shortest honest answer to "what do I
- * still have to do", and it is empty as soon as one door is complete.
+ * Almost always empty, and that is the design: a deployment issues itself a
+ * console key on first run, so there is no setting anybody has to supply for it
+ * to work. The one thing still worth naming is a Telegram door somebody started
+ * and did not finish, because half of that pair registers a webhook for a bot
+ * the deployment cannot name an owner for.
  *
  * The health endpoint reports this list so a misconfigured deployment is
  * diagnosable without reading Worker logs. Only names are reported, never
  * values.
  */
 export function missingConfiguration(env: Env): string[] {
-  if (hasConsoleKey(env) || hasTelegramConsole(env)) {
-    return [];
-  }
   // Somebody with one of the two Telegram values has been to BotFather and is
-  // halfway through that door. Answering them with the name of a different
-  // door would read as though the work they had already done was wrong, so
-  // they are told which half is still missing.
+  // halfway through that door. They are told which half is still missing.
   if (isSet(env.ADMIN_BOT_TOKEN) !== isSet(env.OWNER_TELEGRAM_ID)) {
     return [isSet(env.ADMIN_BOT_TOKEN) ? "OWNER_TELEGRAM_ID" : "ADMIN_BOT_TOKEN"];
   }
-  // Nobody has started either door, so the one named is the one that is a
-  // single box and needs no second account, no other app and no bot.
-  return ["CONSOLE_KEY"];
+  return [];
 }
 
 /** Parses the configured owner, returning null when it is absent or malformed. */

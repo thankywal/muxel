@@ -234,7 +234,10 @@ describe("when neither door opens", () => {
     expect(attempt.token).toBeNull();
     expect(attempt.inside).toBe(false);
     expect(attempt.errorShown).toBe(true);
-    expect(attempt.error).toContain("CONSOLE_KEY");
+    // And it says where the key actually is, which is the deployment's own
+    // page. Naming the setting instead sent people to a box in a dashboard to
+    // read a secret that is not stored there.
+    expect(attempt.error).toContain("Worker's own page");
     expect(attempt.error).toContain("console bot");
     expect(attempt.error).not.toContain("That code is not valid any more.");
     expect(attempt.error).not.toContain("That key is not this deployment's console key.");
@@ -244,7 +247,7 @@ describe("when neither door opens", () => {
 describe("the screen somebody with no Telegram reads", () => {
   it("names the key on the field that takes it, and the bot as the other way", () => {
     const panel = page.slice(page.indexOf('class="panel pad connect"'), page.indexOf('id="connectErr"'));
-    expect(panel).toContain("CONSOLE_KEY");
+    expect(panel).toMatch(/printed on your deployment's own page/);
     // Telegram, conditionally. It was the only instruction on this screen.
     expect(panel).toMatch(/if you set up a\s+console bot/);
     expect(panel).not.toContain("Open your console bot in Telegram, tap");
@@ -257,9 +260,16 @@ describe("the screen somebody with no Telegram reads", () => {
     const telegram = items.filter((item) => /Telegram|BotFather|ADMIN_BOT_TOKEN/.test(item));
     expect(telegram).toHaveLength(1);
     expect(items.indexOf(telegram[0] as string)).toBe(items.length - 1);
-    // And the key is asked for before the deploy form that has to carry it.
-    const asked = items.findIndex((item) => item.includes("CONSOLE_KEY"));
-    expect(asked).toBeGreaterThanOrEqual(0);
-    expect(asked).toBeLessThan(items.length - 1);
+    // And nothing before the deploy asks the reader to invent anything. The
+    // deploy form makes every secret it is told about a required field, so a
+    // step here that names one is a wall in front of somebody who has nothing
+    // to put in it.
+    const deploy = items.findIndex((item) => item.includes("Create and deploy"));
+    expect(deploy).toBeGreaterThanOrEqual(0);
+    for (const item of items.slice(0, deploy + 1)) {
+      expect(item, `a step before deploying names a setting: ${item}`).not.toMatch(
+        /<code>[A-Z][A-Z0-9_]{3,}<\/code>/,
+      );
+    }
   });
 });

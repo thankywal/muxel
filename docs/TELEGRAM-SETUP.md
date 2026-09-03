@@ -7,9 +7,11 @@ Markdown that Telegram will not render, and every link tappable.
 Each one ends at the same place, the console open in their browser, because
 that is where the guided part takes over. Telegram is at the bottom of every
 one of them, as something to add afterwards, because setup no longer needs it
-and the person you are helping may not have an account at all.
+and the person you are helping may not have an account at all. Nothing before
+the deploy asks them to invent anything: the deployment issues its own console
+key and shows it on the page they open next.
 
-**Send these as plain text.** They contain `CONSOLE_KEY`, `ADMIN_BOT_TOKEN` and
+**Send these as plain text.** They contain `ADMIN_BOT_TOKEN` and
 `OWNER_TELEGRAM_ID`, and a client set to Markdown reads the underscores as
 italics and swallows them. The reader has to type those names exactly.
 
@@ -23,7 +25,7 @@ arrives split in half.
 ```
 Muxel sets up your own AI assistant for your customers. It runs in your own Cloudflare account. Free, no card needed, about 10 minutes.
 
-Get these 3 things ready first.
+Get these 2 things ready first.
 
 1) A Cloudflare account
 https://dash.cloudflare.com/sign-up
@@ -32,9 +34,6 @@ Confirm the email it sends you. Stay on the free plan.
 2) A GitHub account
 https://github.com/signup
 You never write code there. It just keeps a copy so your assistant can be updated.
-
-3) A console key you make up
-Any phrase you can type again, at least 16 characters. It is the password to your own console, so keep it to yourself and write it down now. Nobody can recover it for you later.
 
 Now deploy.
 
@@ -46,13 +45,14 @@ Cloudflare will ask you to sign in, connect GitHub, and install its GitHub app. 
 On the form:
 - Vectorize Dimensions: 1024
 - Vectorize Metric: cosine
-- CONSOLE_KEY: the key from step 3
 
 Everything else, leave as it is. Press deploy and wait.
 
 When it finishes, open the page Cloudflare shows you. If it says your code copy is public, tap the link on that page and set the repository to Private. Takes 10 seconds.
 
-Copy the address of that page. Then open https://app.muxel.site, paste the address in, and type your console key. That is your console.
+That page also shows your console key, a long random string your deployment made for itself. Copy it and keep it safe: the page stops showing it once you have signed in.
+
+Copy the address of that page too. Then open https://app.muxel.site, paste the address in, and paste the key. That is your console.
 
 It will ask you to add a business. Give it the name of your shop.
 
@@ -72,7 +72,7 @@ Want it on Telegram too? Add it any day you like. Nothing you set up before it i
 ```
 Muxel က သင့်ဝယ်သူတွေအတွက် AI assistant တစ်ခု ဆောက်ပေးပါတယ်။ သင့်ကိုယ်ပိုင် Cloudflare account ထဲမှာ run ပါတယ်။ အခမဲ့၊ card မလို၊ ၁၀ မိနစ်ခန့်ပါ။
 
-အရင်ဆုံး ဒီ ၃ ခု ပြင်ဆင်ပါ။
+အရင်ဆုံး ဒီ ၂ ခု ပြင်ဆင်ပါ။
 
 ၁) Cloudflare account
 https://dash.cloudflare.com/sign-up
@@ -81,9 +81,6 @@ https://dash.cloudflare.com/sign-up
 ၂) GitHub account
 https://github.com/signup
 အဲဒီမှာ code ရေးစရာ မလိုပါဘူး။ သင့် assistant ကို update လုပ်လို့ရအောင် မိတ္တူ သိမ်းထားဖို့ပါ။
-
-၃) သင်ကိုယ်တိုင် စဉ်းစားထားတဲ့ console key တစ်ခု
-ပြန်ရိုက်လို့ရမယ့် စာသားတစ်ခုဖြစ်ပြီး အနည်းဆုံး စာလုံး ၁၆ လုံး ရှိရပါမယ်။ သင့်ကိုယ်ပိုင် console ရဲ့ password ဖြစ်လို့ ကိုယ်တစ်ယောက်တည်းသာ သိအောင် ထားပြီး အခုပဲ မှတ်သားထားပါ။ နောက်ပိုင်း ဘယ်သူမှ ပြန်ရှာမပေးနိုင်ပါဘူး။
 
 အခု deploy လုပ်ပါ။
 
@@ -95,13 +92,14 @@ Cloudflare က sign in လုပ်ဖို့၊ GitHub ချိတ်ဖိ�
 Form မှာ:
 - Vectorize Dimensions: 1024
 - Vectorize Metric: cosine
-- CONSOLE_KEY: အဆင့် ၃ က သင့် key
 
 ကျန်တာ အားလုံး မထိပါနဲ့။ Deploy နှိပ်ပြီး စောင့်ပါ။
 
 ပြီးရင် Cloudflare ပြတဲ့ စာမျက်နှာကို ဖွင့်ပါ။ "your code copy is public" လို့ ပြရင် အဲဒီ link ကို နှိပ်ပြီး repository ကို Private ပြောင်းပါ။ ၁၀ စက္ကန့်ပဲ ကြာပါတယ်။
 
-အဲဒီ စာမျက်နှာရဲ့ လိပ်စာကို ကူးယူပါ။ ပြီးရင် https://app.muxel.site ကို ဖွင့်ပြီး လိပ်စာကို ကူးထည့်ကာ သင့် console key ကို ရိုက်ထည့်ပါ။ အဲဒါ သင့် console ပါ။
+အဲဒီ စာမျက်နှာမှာ သင့် console key ကိုပါ ပြပါလိမ့်မယ်။ deployment ကိုယ်တိုင် ဆောက်ထားတဲ့ ကျပန်း စာလုံးရှည်တစ်ခုပါ။ ကူးယူပြီး သေချာသိမ်းထားပါ။ တစ်ခါ ဝင်ပြီးရင် အဲဒီစာမျက်နှာက ပြတော့မှာ မဟုတ်ပါဘူး။
+
+စာမျက်နှာရဲ့ လိပ်စာကိုလည်း ကူးယူပါ။ ပြီးရင် https://app.muxel.site ကို ဖွင့်ပြီး လိပ်စာနဲ့ key ကို ကူးထည့်ပါ။ အဲဒါ သင့် console ပါ။
 
 Business တစ်ခု ထည့်ဖို့ တောင်းပါလိမ့်မယ်။ သင့်ဆိုင်နာမည်ကို ပေးလိုက်ပါ။
 
@@ -121,7 +119,7 @@ Telegram ပေါ်မှာပါ လိုချင်ပါသလား။ 
 ```
 Muxel ช่วยตั้งผู้ช่วย AI สำหรับลูกค้าของคุณ โดยทำงานในบัญชี Cloudflare ของคุณเอง ฟรี ไม่ต้องใช้บัตร ใช้เวลาราว 10 นาที
 
-เตรียม 3 อย่างนี้ก่อน
+เตรียม 2 อย่างนี้ก่อน
 
 1) บัญชี Cloudflare
 https://dash.cloudflare.com/sign-up
@@ -130,9 +128,6 @@ https://dash.cloudflare.com/sign-up
 2) บัญชี GitHub
 https://github.com/signup
 คุณไม่ต้องเขียนโค้ดที่นั่น มันเก็บสำเนาไว้เพื่อให้อัปเดตผู้ช่วยของคุณได้
-
-3) รหัสคอนโซลที่คุณคิดขึ้นเอง
-ข้อความอะไรก็ได้ที่คุณพิมพ์ซ้ำได้ อย่างน้อย 16 ตัวอักษร มันคือรหัสผ่านของคอนโซลของคุณเอง เก็บไว้กับตัวและจดไว้ตั้งแต่ตอนนี้ ภายหลังไม่มีใครกู้คืนให้คุณได้
 
 จากนั้นเริ่ม deploy
 
@@ -144,13 +139,14 @@ Cloudflare จะให้คุณเข้าสู่ระบบ เชื�
 ในแบบฟอร์ม:
 - Vectorize Dimensions: 1024
 - Vectorize Metric: cosine
-- CONSOLE_KEY: รหัสจากข้อ 3
 
 ที่เหลือปล่อยไว้ตามเดิม กด deploy แล้วรอ
 
 เมื่อเสร็จ ให้เปิดหน้าที่ Cloudflare แสดง ถ้าขึ้นว่าสำเนาโค้ดของคุณเป็นสาธารณะ ให้แตะลิงก์บนหน้านั้นแล้วตั้ง repository เป็น Private ใช้เวลาแค่ 10 วินาที
 
-คัดลอกที่อยู่ของหน้านั้นไว้ แล้วเปิด https://app.muxel.site วางที่อยู่ลงไป และพิมพ์รหัสคอนโซลของคุณ นั่นคือคอนโซลของคุณ
+หน้านั้นจะแสดงรหัสคอนโซลของคุณด้วย เป็นสตริงสุ่มยาว ๆ ที่ deployment สร้างขึ้นเอง คัดลอกไว้และเก็บให้ดี เพราะหน้านั้นจะหยุดแสดงเมื่อคุณเข้าสู่ระบบครั้งแรกแล้ว
+
+คัดลอกที่อยู่ของหน้านั้นไว้ด้วย แล้วเปิด https://app.muxel.site วางที่อยู่ลงไป และวางรหัสนั้น นั่นคือคอนโซลของคุณ
 
 ระบบจะให้คุณเพิ่มธุรกิจ ใส่ชื่อร้านของคุณลงไป
 
@@ -170,7 +166,7 @@ Cloudflare จะให้คุณเข้าสู่ระบบ เชื�
 ```
 Muxel 帮你为客户搭建一个 AI 助手，完全运行在你自己的 Cloudflare 账户里。免费，不需要银行卡，大约 10 分钟。
 
-先准备好这 3 样东西。
+先准备好这 2 样东西。
 
 1) 一个 Cloudflare 账户
 https://dash.cloudflare.com/sign-up
@@ -179,9 +175,6 @@ https://dash.cloudflare.com/sign-up
 2) 一个 GitHub 账户
 https://github.com/signup
 你不需要在那里写代码，它只是保存一份副本，方便以后更新你的助手。
-
-3) 一个你自己想的控制台密钥
-任何你能再打出来的字符串，至少 16 个字符。它就是你自己控制台的密码，只留给自己，现在就记下来。以后没有人能帮你找回。
 
 现在开始部署。
 
@@ -193,13 +186,14 @@ Cloudflare 会让你登录、连接 GitHub，并安装它的 GitHub 应用。请
 在表单中填写：
 - Vectorize Dimensions: 1024
 - Vectorize Metric: cosine
-- CONSOLE_KEY: 第 3 步的那个密钥
 
 其余保持默认。点击 deploy 然后等待。
 
 完成后，打开 Cloudflare 显示的页面。如果上面提示你的代码副本是公开的，点击页面上的链接把仓库设为 Private，只需 10 秒。
 
-复制那个页面的地址。然后打开 https://app.muxel.site，把地址粘贴进去，再输入你的控制台密钥。那就是你的控制台。
+那个页面上还会显示你的控制台密钥，是你的部署自己生成的一串长随机字符。复制下来好好保存：你第一次登录之后，那个页面就不再显示它了。
+
+把那个页面的地址也复制下来。然后打开 https://app.muxel.site，把地址粘贴进去，再把密钥粘贴进去。那就是你的控制台。
 
 它会让你添加一个商家，填你的店名就行。
 
@@ -219,7 +213,7 @@ Cloudflare 会让你登录、连接 GitHub，并安装它的 GitHub 应用。请
 ```
 Muxel は、あなた自身の Cloudflare アカウントの中で動く、お客様向けの AI アシスタントです。無料で、カードは不要、10 分ほどで終わります。
 
-まず次の 3 つを用意してください。
+まず次の 2 つを用意してください。
 
 1) Cloudflare アカウント
 https://dash.cloudflare.com/sign-up
@@ -228,9 +222,6 @@ https://dash.cloudflare.com/sign-up
 2) GitHub アカウント
 https://github.com/signup
 コードを書く必要はありません。あとで更新できるようにコピーを保管するだけです。
-
-3) 自分で決めるコンソールキー
-もう一度打てる文字列なら何でも構いませんが、16 文字以上にしてください。あなた自身のコンソールのパスワードなので、人に教えず、今のうちに控えておいてください。あとから誰も再発行できません。
 
 では、デプロイします。
 
@@ -242,13 +233,14 @@ Cloudflare がログイン、GitHub の連携、そして GitHub アプリのイ
 フォームでは:
 - Vectorize Dimensions: 1024
 - Vectorize Metric: cosine
-- CONSOLE_KEY: 手順 3 で決めたキー
 
 ほかはそのままで構いません。deploy を押して待ちます。
 
 終わったら Cloudflare が表示するページを開いてください。コードのコピーが公開されていると書かれていたら、そのページのリンクからリポジトリを Private にしてください。10 秒で終わります。
 
-そのページのアドレスをコピーします。次に https://app.muxel.site を開き、アドレスを貼り付けて、コンソールキーを入力してください。それがあなたのコンソールです。
+そのページには、deployment が自分で作った長いランダムなコンソールキーも表示されます。コピーして大切に保管してください。一度サインインすると、そのページはもう表示しなくなります。
+
+そのページのアドレスもコピーします。次に https://app.muxel.site を開き、アドレスとキーを貼り付けてください。それがあなたのコンソールです。
 
 ビジネスの追加を求められます。お店の名前を入れてください。
 

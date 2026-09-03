@@ -21,7 +21,8 @@ import { handleAdminUpdate, localeFor, pendingFor, screenFor } from "../telegram
 import { CapturingClient } from "./capture.js";
 import { sha256Hex } from "../crypto.js";
 import { findOperator } from "../db/queries.js";
-import { consoleKey, CONSOLE_KEY_MIN_LENGTH, WEB_OWNER_ID, type Env } from "../env.js";
+import { peekConsoleKey, recordConsoleClaim } from "../console-key.js";
+import { WEB_OWNER_ID, type Env } from "../env.js";
 
 /** Codes are short because they are typed by hand, and brief because of it. */
 const CODE_TTL_SECONDS = 600;
@@ -121,14 +122,17 @@ async function pair(env: Env, code: string): Promise<Response> {
  * the moment they change it.
  */
 async function claim(env: Env, presented: string): Promise<Response> {
-  const expected = consoleKey(env);
+  const expected = await peekConsoleKey(env);
   if (expected === null) {
+    // A deployment issues itself a key the first time its address is opened, so
+    // having none means nobody has opened it yet — which is also the one thing
+    // its owner has to do to be told what their key is.
     return json(
       {
         error: "no_console_key",
         message:
-          "This deployment has no console key. Add CONSOLE_KEY to the Worker's settings, at "
-          + `least ${CONSOLE_KEY_MIN_LENGTH} characters, and open its address to finish setting up.`,
+          "This deployment has not finished setting up. Open its address in a browser once; "
+          + "the page shows the console key.",
       },
       401,
     );
@@ -136,6 +140,10 @@ async function claim(env: Env, presented: string): Promise<Response> {
   if (!sameSecret(presented.trim(), expected)) {
     return json({ error: "bad_key", message: "That is not this deployment's console key." }, 401);
   }
+  // Written before the session is handed over: this is the record that the
+  // deployment now has an owner, and it is what stops its public setup page
+  // printing the key.
+  await recordConsoleClaim(env);
   return issueSession(env, WEB_OWNER_ID, expected);
 }
 
@@ -157,7 +165,7 @@ export async function operatorFor(env: Env, request: Request): Promise<number | 
   if (held === null) return null;
   const [owner, stamp] = held.split(":");
   if (stamp !== undefined) {
-    const current = consoleKey(env);
+    const current = await peekConsoleKey(env);
     if (current === null || (await keyStamp(current)) !== stamp) {
       await env.STATE.delete(key);
       return null;

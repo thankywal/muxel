@@ -116,15 +116,10 @@ export function consoleDoors(options: DoorOptions): ConsoleDoors {
     );
   }
 
-  if (consoleKey === null && adminBotToken === null) {
-    throw new MuxelError(
-      "invalid_input",
-      "this deployment would have no way in. Pass --console-key with a phrase you make up, or "
-      + "--admin-bot-token and --owner-telegram-id together for a console in Telegram. Either "
-      + "one on its own is a finished deployment and the other can be added afterwards",
-      { doors: ["--console-key", "--admin-bot-token with --owner-telegram-id"] },
-    );
-  }
+  // No door named is not an error. A deployment issues itself a console key on
+  // its first run and prints it on its own setup page, so an install with no
+  // flags at all produces a working, reachable deployment. Refusing here would
+  // be the command line insisting on something the Worker stopped needing.
 
   // Same reason as the id below: the Worker cannot answer until it exists, and
   // a key too short to be a lock costs a whole provisioning run before the
@@ -304,12 +299,15 @@ function nextSteps(doors: ConsoleDoors, workerUrl: string | null): string[] {
         : `Open app.muxel.site, paste ${workerUrl}, and enter your console key.`,
     );
   } else {
-    // The length a key has to be is the Worker's rule and the Worker's setup
-    // page states it. Repeating the number here would be a second copy of it,
-    // and the copy that goes stale is always the one further from the check.
+    // No key was given, so the deployment made one. It is on the setup page and
+    // nowhere else, which is why this sends the operator to the address rather
+    // than to a setting in a dashboard.
     steps.push(
-      "There is no console key here. Add CONSOLE_KEY in the Worker's settings to sign in from a "
-      + "browser as well; its setup page says how long it has to be.",
+      workerUrl === null
+        ? "Open the deployment's address in a browser. It shows the console key it made for "
+          + "itself; take it to app.muxel.site with the address."
+        : `Open ${workerUrl} in a browser. It shows the console key it made for itself; take it `
+          + `to app.muxel.site with ${workerUrl}.`,
     );
   }
 
