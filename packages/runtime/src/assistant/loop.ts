@@ -18,6 +18,9 @@ import {
   approvalsByMessage,
   askApproval,
   attachApprovals,
+  attachToMessage,
+  attachmentsByIds,
+  attachmentsFor,
   chatTranscript,
   recordPrompt,
   recordSteps,
@@ -162,6 +165,13 @@ function systemPrompt(capability: Capabilities): string {
   "a setting is a card they say yes to, and you say what you are proposing in your own words in",
   "the same message.",
   "",
+  "The owner can send you files. When they do, the message says what arrived and read_file gives",
+  "you the text of one, by name. Read it before you say anything about it. Where it goes is a",
+  "change like any other: add_file_to_business puts it into one business's knowledge and pulls any",
+  "price list out of it, and prices you can see in the file can be proposed one card each with",
+  "save_price. Which of those they want, ask them — a menu they sent to talk about is not a menu",
+  "they want filed.",
+  "",
   "Answer in the language the owner writes in. Keep it short: they are reading it on a screen",
   "beside their work, not in a report.",
   ].join("\n");
@@ -211,6 +221,20 @@ export function outcomeNote(approvals: readonly Approval[]): string {
   return `\n\n[Not from the owner. What became of what you proposed in the message above: ${said.join("; ")}]`;
 }
 
+/**
+ * The files sent with one turn, in a line the model can read.
+ *
+ * Names and sizes only. The text of a file is read with read_file, when the
+ * model decides it needs it: a menu is four thousand characters, and putting
+ * every file ever sent into every turn's history would be paid for on every
+ * message afterwards.
+ */
+export function fileNote(files: readonly { filename: string; chars: number }[]): string {
+  if (files.length === 0) return "";
+  const said = files.map((file) => `${file.filename} (${file.chars} characters of text)`);
+  return `\n\n[Not from the owner. Files sent with the message above, readable with read_file: ${said.join("; ")}]`;
+}
+
 export interface AssistantReply {
   readonly text: string;
   readonly approvals: readonly Approval[];
@@ -246,6 +270,15 @@ export async function ask(
      * written down as words the owner used.
      */
     asked?: "owner" | "console";
+    /**
+     * Files the owner sent with this message.
+     *
+     * Uploaded before the message exists, and bound to it here. The text is not
+     * put into the transcript: a menu is four thousand characters and the
+     * transcript is what the owner reads. The model is told what arrived and
+     * reads what it needs with read_file.
+     */
+    files?: readonly string[];
     /** Called as the loop works, when someone is watching. */
     onEvent?: (event: LoopEvent) => void;
   },
@@ -261,11 +294,15 @@ export async function ask(
     documentDataConfigured(env),
   ]);
   const system = systemPrompt({ webSearch, documentData });
-  const ctx: ToolContext = { env, userId };
+  const ctx: ToolContext = { env, userId, chatId };
+  const attached = await attachmentsByIds(env, userId, input.files ?? []);
   const messageId =
     input.asked === "console"
       ? ""
       : await addOperatorMessage(env, { chatId, userId, role: "user", content: question });
+  // Bound to the turn they were sent with, so the thread can draw them under
+  // the right message and a later turn can see they were sent at all.
+  if (messageId !== "") await attachToMessage(env, userId, attached.map((file) => file.id), messageId, chatId);
 
   // This chat only. One flat transcript carried yesterday's argument about
   // delivery into today's question about refunds.
@@ -273,6 +310,10 @@ export async function ask(
   // the model could not tell an approved change from one it had never made, so
   // an owner who replied "yes" got the same proposal a second time.
   const decided = await approvalsByMessage(env, chatId);
+  // What was sent, turn by turn. Without it "add the menu I sent you" in the
+  // next message names a file the model has never heard of, because the text
+  // was never in the transcript and the filename was mentioned once.
+  const sent = await attachmentsFor(env, chatId);
   // The note is a turn of its own, not a postscript inside the model's message.
   //
   // Concatenated, it read as something the assistant had written, and a small
@@ -286,7 +327,7 @@ export async function ask(
   const history = (await chatTranscript(env, chatId, 20))
     .filter((message) => message.id !== messageId)
     .flatMap((message) => {
-      const note = outcomeNote(decided[message.id] ?? []);
+      const note = `${fileNote(sent[message.id] ?? [])}${outcomeNote(decided[message.id] ?? [])}`;
       return note === ""
         ? [{ role: message.role, content: message.content }]
         : [
@@ -294,6 +335,17 @@ export async function ask(
             { role: "user" as const, content: note.trim() },
           ];
     });
+
+  // What the model is asked, which is the owner's words plus what came with
+  // them. The transcript keeps the words alone: the note is this deployment's
+  // bookkeeping, and an owner reading their own message back should find what
+  // they typed.
+  const asking =
+    attached.length === 0
+      ? question
+      : `${question.length === 0 ? "The owner sent this and said nothing with it." : question}${fileNote(attached)}\n\nRead them with read_file before you answer about them. `
+        + `To put one into a business's knowledge, and pull any price list out of it, propose `
+        + `add_file_to_business.`;
 
   const steps: ChatMessage[] = [];
   const took: { tool: string; ok: boolean }[] = [];
@@ -322,7 +374,7 @@ export async function ask(
           : businesses.map((business) => `${business.name} (id ${business.id})`).join(", ")
       }`,
       history,
-      userMessage: question,
+      userMessage: asking,
       businessId: businesses[0]?.id ?? "operator",
       tools: TOOL_SPECS,
       steps,

@@ -675,6 +675,34 @@ const MIGRATIONS: readonly Migration[] = [
         WHERE message_id IN (SELECT id FROM operator_message WHERE role = 'user')`,
     ],
   },
+  {
+    // A file the owner sent in the assistant chat, kept as the text it holds.
+    //
+    // The bytes are not kept. There is no bucket to keep them in on a
+    // deployment that has not bound one, and the assistant reads text: what a
+    // photograph of a menu is worth here is the menu, not the photograph. The
+    // original is read once, on arrival, and what came out of it is the record.
+    //
+    // It carries no message id until the turn it was sent with has been
+    // written, which is why the column has a default rather than a foreign key:
+    // a file exists from the moment it is uploaded, and the message it belongs
+    // to does not exist until the owner presses send.
+    version: 20,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS operator_attachment (
+         id         TEXT PRIMARY KEY,
+         user_id    INTEGER NOT NULL,
+         chat_id    TEXT NOT NULL,
+         message_id TEXT NOT NULL DEFAULT '',
+         filename   TEXT NOT NULL,
+         mime       TEXT NOT NULL,
+         bytes      INTEGER NOT NULL,
+         text       TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )`,
+      `CREATE INDEX IF NOT EXISTS operator_attachment_idx ON operator_attachment (chat_id, created_at)`,
+    ],
+  },
 ];
 
 /** Highest migration this build knows about. */
