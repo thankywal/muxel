@@ -157,6 +157,13 @@ export function widgetScript(input: {
   var lastSeen = 0;
   var polling = null;
   var greeted = false;
+  // Whether a message of ours is out and unanswered. The answer to /send is
+  // what draws that turn — the reply, and the seq that covers both rows — so
+  // while it is out the poll has nothing to add. Left to run, a poll that
+  // landed during the model's few seconds of thinking found the row this
+  // widget had already drawn and drew it again, so a customer saw their own
+  // question twice.
+  var sending = false;
 
   function bubbleFor(text, who) {
     var el = document.createElement("div");
@@ -183,10 +190,14 @@ export function widgetScript(input: {
     try { localStorage.setItem(KEY, id); } catch (e) { /* private mode */ }
   }
 
+  // Every row is drawn once, and the seq is the record of how far that has
+  // got. A poll answered late, after a send has already moved lastSeen past
+  // its rows, brings nothing new.
   function show(messages) {
     for (var i = 0; i < messages.length; i += 1) {
       var m = messages[i];
-      if (m.seq > lastSeen) { lastSeen = m.seq; }
+      if (m.seq <= lastSeen) { continue; }
+      lastSeen = m.seq;
       bubbleFor(m.text, m.role === "user" ? "u" : "a");
     }
   }
@@ -194,13 +205,18 @@ export function widgetScript(input: {
   // Only while the panel is open, and only to collect what a person typed on
   // the other side. A closed widget costs the shop nothing.
   function poll() {
-    if (!session) { return; }
+    if (!session || sending) { return; }
     fetch(C.api + "/poll?session=" + encodeURIComponent(session) + "&after=" + lastSeen, {
       method: "GET",
       credentials: "omit",
     })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && d.messages && d.messages.length) { show(d.messages); } })
+      .then(function (d) {
+        // Asked before the send went out and answered during it: the send's
+        // own answer covers whatever this found.
+        if (sending) { return; }
+        if (d && d.messages && d.messages.length) { show(d.messages); }
+      })
       .catch(function () { /* a dropped poll is retried by the next one */ });
   }
 
@@ -396,6 +412,7 @@ export function widgetScript(input: {
     input.value = "";
     bubbleFor(text, "u");
     send.disabled = true;
+    sending = true;
     typing(true);
 
     fetch(C.api + "/send", {
@@ -409,13 +426,17 @@ export function widgetScript(input: {
         typing(false);
         send.disabled = false;
         if (res.d && res.d.session) { remember(res.d.session); }
+        // Moved before the poll is let back in, so the rows this turn wrote
+        // are already behind it.
         if (res.d && typeof res.d.seq === "number") { lastSeen = res.d.seq; }
+        sending = false;
         if (res.ok && res.d && res.d.reply) { bubbleFor(res.d.reply, "a"); return; }
         bubbleFor((res.d && res.d.error) || "Something went wrong. Please try again.", "e");
       })
       .catch(function () {
         typing(false);
         send.disabled = false;
+        sending = false;
         bubbleFor("Could not reach us just now. Please try again.", "e");
       });
   };
