@@ -220,6 +220,26 @@ describe("a question typed while the shop is answering", () => {
   });
 });
 
+describe("a second Enter while the first is out", () => {
+  it("sends nothing, and keeps what was typed for afterwards", async () => {
+    // Seen live: two POST /send 73ms apart, two bubbles, two replies. The
+    // button was disabled; the form was not, and Enter submits the form.
+    const w = mountWidget();
+    w.open();
+    w.type(QUESTION);
+    const send = w.take();
+    w.type("ဈေးနှုန်း ဘယ်လောက်လဲ");
+    expect(w.pending, "a second send went out while the first was in flight").toHaveLength(0);
+    expect(w.bubbles()).toEqual([`u:${QUESTION}`]);
+    send.resolve({ session: "s1", seq: 6, reply: ANSWER });
+    await w.flush();
+    // The reply has arrived; the next Enter is a new turn.
+    w.type("ဈေးနှုန်း ဘယ်လောက်လဲ");
+    expect(w.take().url).toContain("/send");
+    expect(w.bubbles()).toEqual([`u:${QUESTION}`, `a:${ANSWER}`, "u:ဈေးနှုန်း ဘယ်လောက်လဲ"]);
+  });
+});
+
 describe("what the poll is for still arrives", () => {
   it("draws a person's reply from the shop once, and not again on the next poll", async () => {
     const w = mountWidget();
