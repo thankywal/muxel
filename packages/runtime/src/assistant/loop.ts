@@ -187,7 +187,15 @@ function systemPrompt(capability: Capabilities): string {
  */
 export type LoopEvent =
   | { readonly type: "status"; readonly label: string }
-  | { readonly type: "step"; readonly tool: string; readonly ok: boolean }
+  /**
+   * A tool, when it starts and again when it lands.
+   *
+   * `ok` is null while it is running. Reading a file or indexing one takes
+   * seconds during which nothing used to appear, because a step was only
+   * reported once it had finished — so the slowest part of a turn was the part
+   * with nothing on screen.
+   */
+  | { readonly type: "step"; readonly tool: string; readonly ok: boolean | null }
   | { readonly type: "text"; readonly text: string };
 
 /**
@@ -359,8 +367,20 @@ export async function ask(
   let prompt: Prompt | null = null;
   /** Whether this turn has already been told it called nothing. Once only. */
   let asked = false;
-  /** The first thing the model said, from a round that also called a tool. */
-  let lead = "";
+  /**
+   * Everything the model has said this turn, in the order it said it.
+   *
+   * A turn is several rounds and the model speaks on most of them: what it is
+   * about to look at, what it found, what it is proposing and why. All of that
+   * used to be overwritten by the next round — only the first sentence and the
+   * last one survived, and both arrived together at the end. The owner watched
+   * a still screen for ten seconds and then read a conclusion whose reasons had
+   * been deleted.
+   *
+   * They are kept here, sent the moment each one is said, and stored joined, so
+   * the live turn and the one reopened tomorrow are the same words.
+   */
+  const words: string[] = [];
   // Every step of the loop is a call, and the owner pays for all of them. One
   // number for the turn, not for the last leg of it.
   const spent = { model, inputTokens: 0, outputTokens: 0 };
@@ -385,17 +405,17 @@ export async function ask(
     spent.outputTokens += turn.outputTokens ?? 0;
 
     text = turn.text.trim();
-    // What the model said on its way to the tools, kept rather than dropped.
+    // Said once, and said now.
     //
-    // Every round overwrote `text`, so only the last one survived and the owner
-    // saw ten identical step rows and then, at the end, a finished answer. The
-    // model had usually said what it was about to do before it did it, and that
-    // sentence was thrown away every time. Kept, the turn reads in the order it
-    // happened: what it understood, then the work, then what came of it.
-    //
-    // Only from a round that went on to call something. A round with text and
-    // no calls is the whole answer, not a lead in, and is handled below.
-    if (text.length > 0 && turn.toolCalls.length > 0 && lead.length === 0) lead = text;
+    // Every round that speaks adds to the turn, and the words go out on the
+    // wire immediately rather than waiting for the turn to finish. A repeat is
+    // not added twice: the round that is told it called nothing is invited to
+    // "say the same thing again", and taking it at its word would print the
+    // sentence twice.
+    if (text.length > 0 && !words.includes(text)) {
+      words.push(text);
+      say({ type: "text", text });
+    }
     if (turn.toolCalls.length === 0) {
       // Nothing was called. On the first round that means the model has looked
       // at nothing and changed nothing, and it has just written the only thing
@@ -547,6 +567,7 @@ export async function ask(
       // Routing it through the model would put a credential in a transcript
       // that this deployment reads back to itself on every later turn.
       if (tool.name === "connect_telegram") {
+        say({ type: "step", tool: tool.name, ok: null });
         try {
           await tool.run(ctx, call.args);
           prompt = { kind: "telegram_token", businessId: String(call.args.business_id ?? "") };
@@ -565,6 +586,9 @@ export async function ask(
         }
       }
 
+      // Said before it runs. A read of a long file, or an index write, is the
+      // several seconds in the middle of a turn that used to show nothing.
+      say({ type: "step", tool: tool.name, ok: null });
       try {
         const result = await tool.run(ctx, call.args);
         // A read hands back something the model has not seen yet, so the turn
@@ -604,10 +628,11 @@ export async function ask(
     if (proposedOnly && turn.toolCalls.length > 0 && text.length > 0) break;
   }
 
-  if (text.length === 0) {
-    // It ran out of steps without answering. Saying so is better than an empty
-    // bubble, and better than inventing a summary of work it did not finish.
-    text =
+  if (words.length === 0) {
+    // It ran out of steps without saying anything at all. Saying so is better
+    // than an empty bubble, and better than inventing a summary of work it did
+    // not finish.
+    const fallback =
       prompt?.kind === "question"
         ? prompt.question
         : approvals.length > 0
@@ -615,9 +640,14 @@ export async function ask(
           : prompt !== null
             ? "I need one thing from you below."
             : "I could not finish that. Ask me again, more narrowly.";
+    words.push(fallback);
+    say({ type: "text", text: fallback });
   }
 
-  say({ type: "text", text });
+  // One record. The transcript used to keep the last round's text while the
+  // wire carried the first round's as well, so the turn on screen and the same
+  // turn reopened tomorrow were different messages.
+  text = words.join("\n\n");
   const answerId = await addOperatorMessage(env, {
     chatId,
     userId,
@@ -632,12 +662,8 @@ export async function ask(
   await recordSteps(env, answerId, took).catch(() => undefined);
   await recordUsageFor(env, answerId, spent).catch(() => undefined);
   if (prompt !== null) await recordPrompt(env, answerId, { ...prompt }).catch(() => undefined);
-  // The lead is dropped when the final answer is the same words, which is what
-  // a model does when it says its plan and then repeats it as the summary.
-  const said = lead.length > 0 && lead !== text ? `${lead}\n\n${text}` : text;
-
   return {
-    text: said,
+    text,
     approvals: approvals.map((approval) => ({ ...approval, messageId: answerId })),
     steps: took,
     usage: spent,

@@ -1883,16 +1883,20 @@ function stepPills(steps) {
   if (steps.length === 0) return "";
   const seen = new Map();
   for (const step of steps) {
-    const key = `${step.tool}:${step.ok ? 1 : 0}`;
+    // Three states, not two. A tool still running is neither done nor failed,
+    // and keying it as failed drew a red pill for work that was going fine.
+    const key = `${step.tool}:${step.ok === null ? "r" : step.ok ? 1 : 0}`;
     const held = seen.get(key);
     if (held) held.n += 1;
     else seen.set(key, { tool: step.tool, ok: step.ok, n: 1 });
   }
   return [...seen.values()]
-    .map(
-      (step) => `<span class="step ${step.ok ? "" : "bad"}">${icon(step.ok ? "check" : "retry", 12)}
-         ${h(STEP_WORDS[step.tool] ?? step.tool)}${step.n > 1 ? `<b>${step.n}</b>` : ""}</span>`,
-    )
+    .map((step) => {
+      const state = step.ok === null ? "running" : step.ok ? "" : "bad";
+      const mark = step.ok === null ? "" : icon(step.ok ? "check" : "retry", 12);
+      return `<span class="step ${state}">${mark}
+         ${h(STEP_WORDS[step.tool] ?? step.tool)}${step.n > 1 ? `<b>${step.n}</b>` : ""}</span>`;
+    })
     .join("");
 }
 
@@ -2201,8 +2205,9 @@ async function sendToAssistant(event) {
      <div class="turn ai" id="asThinking">
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${h(modelLabel())}</b></div>
-       <div class="ai-body thinking"><span class="work-label">Thinking</span></div>
+       <div class="ai-body"></div>
        <div class="steps"></div>
+       <div class="waiting"><span class="work-label">Thinking</span></div>
      </div>`,
   );
   thread.scrollTop = thread.scrollHeight;
@@ -2321,13 +2326,21 @@ async function askAssistant(body, signal) {
     return { ok: false, data: {} };
   }
   if (done === null) return { ok: false, data: {} };
-  // The words are typed out before the finished screen replaces them, so the
-  // answer appears the way it was written rather than all at once.
+  // Whatever the stream did not carry, typed on from where it stopped. On a
+  // deployment too old to send its words as it says them, that is all of them.
   await typeOut(done.text ?? "");
+  $("asThinking")?.querySelector(".waiting")?.remove();
   return { ok: true, data: done };
 }
 
-/** What the deployment says it is doing, drawn into the waiting turn. */
+/**
+ * What the deployment says it is doing, drawn into the waiting turn.
+ *
+ * Everything arrives as it happens: the words the model says on each round, the
+ * tool it has just started, and the same tool again when it lands. The turn
+ * reads down the screen in the order it occurred — what it said, what it did,
+ * and what it is doing now — rather than appearing whole at the end.
+ */
 function showProgress(event) {
   const turn = $("asThinking");
   if (turn === null) return;
@@ -2336,12 +2349,23 @@ function showProgress(event) {
     if (label) label.textContent = event.label;
     return;
   }
+  if (event.type === "text") {
+    // Every round's words, kept in order. Typing brings the body up to them.
+    turn.__said = [...(turn.__said ?? []), event.text];
+    void typeOut(turn.__said.join("\n\n"));
+    return;
+  }
   if (event.type === "step") {
     // Held as a list and drawn again, because a pill carries a count and a
-    // count cannot be appended to.
-    turn.__steps = [...(turn.__steps ?? []), { tool: event.tool, ok: event.ok }];
+    // count cannot be appended to. A tool that has landed replaces the running
+    // row for the same tool rather than adding a second one.
+    const held = [...(turn.__steps ?? [])];
+    const running = event.ok === null ? -1 : held.findIndex((s) => s.tool === event.tool && s.ok === null);
+    if (running > -1) held[running] = { tool: event.tool, ok: event.ok };
+    else held.push({ tool: event.tool, ok: event.ok });
+    turn.__steps = held;
     const steps = turn.querySelector(".steps");
-    if (steps) steps.innerHTML = stepPills(turn.__steps);
+    if (steps) steps.innerHTML = stepPills(held);
     scrollThread();
   }
 }
@@ -2360,11 +2384,16 @@ async function typeOut(text) {
   const turn = $("asThinking");
   if (turn === null || text.length === 0) return;
   const body = turn.querySelector(".ai-body");
-  body.classList.remove("thinking");
-  const label = turn.querySelector(".work-label");
-  if (label) label.remove();
+  // Where the words already are. A turn speaks several times and each arrival
+  // types on from the last, so nothing is written out twice.
+  const from = (turn.__painted ?? "").length;
+  turn.__painted = text;
+  if (text.length <= from) {
+    body.innerHTML = md(text);
+    return;
+  }
   const at = performance.now();
-  for (let cut = 0; cut <= text.length; cut += Math.max(1, Math.ceil(text.length / 220))) {
+  for (let cut = from; cut <= text.length; cut += Math.max(1, Math.ceil((text.length - from) / 220))) {
     if (state.stopped) break;
     body.innerHTML = md(text.slice(0, cut));
     scrollThread();
@@ -2461,8 +2490,9 @@ async function reportOnTaps() {
     `<div class="turn ai" id="asThinking">
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${h(modelLabel())}</b></div>
-       <div class="ai-body thinking"><span class="work-label">Checking what changed</span></div>
+       <div class="ai-body"></div>
        <div class="steps"></div>
+       <div class="waiting"><span class="work-label">Checking what changed</span></div>
      </div>`,
   );
   thread.scrollTop = thread.scrollHeight;

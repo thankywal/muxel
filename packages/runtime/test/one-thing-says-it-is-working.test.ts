@@ -30,12 +30,24 @@ describe("the turn in flight", () => {
     expect(skeletons).toHaveLength(2);
   });
 
-  it("says it is working once, in the body, not beside the model's name", () => {
+  it("says it is working once, in the answer's column, not beside the model's name", () => {
     for (const turn of skeletons) {
       const head = turn.slice(turn.indexOf('class="ai-head"'), turn.indexOf('class="ai-body'));
       expect(head).not.toContain("work-label");
-      expect(turn).toMatch(/class="ai-body thinking"><span class="work-label">[A-Z]/);
+      // Exactly one, and it holds the word the deployment is currently saying.
+      expect((turn.match(/work-label/g) ?? []).length).toBe(1);
+      expect(turn).toMatch(/<div class="waiting"><span class="work-label">[A-Z]/);
     }
+  });
+
+  it("stands under what has been said and done, where the next words go", () => {
+    // A turn speaks several times. The line belongs after the words so far and
+    // after the tools so far, because that is where the next of either lands.
+    for (const turn of skeletons) {
+      expect(turn.indexOf('class="ai-body"')).toBeLessThan(turn.indexOf('class="waiting"'));
+      expect(turn.indexOf('class="steps"')).toBeLessThan(turn.indexOf('class="waiting"'));
+    }
+    expect(css).toContain(".ai-body:empty + .steps:empty + .waiting { margin-top: 0; }");
   });
 
   it("has no second indicator under it", () => {
@@ -53,16 +65,16 @@ describe("the turn in flight", () => {
     expect(handler.slice(0, 200)).toContain('turn.querySelector(".work-label")');
   });
 
-  it("is gone before the answer is written into the same place", () => {
-    const fn = app.slice(app.indexOf("async function typeOut"));
-    const before = fn.indexOf("body.innerHTML");
-    expect(fn.indexOf('body.classList.remove("thinking")')).toBeLessThan(before);
-    expect(fn.indexOf("label.remove()")).toBeLessThan(before);
+  it("is gone once the turn is over", () => {
+    // Not when the first words arrive: the model speaks again on later rounds,
+    // and the line has to still be there saying so.
+    const fn = app.slice(app.indexOf("async function askAssistant"));
+    expect(fn).toContain('$("asThinking")?.querySelector(".waiting")?.remove()');
   });
 });
 
 describe("how the waiting line is drawn", () => {
-  const rule = css.slice(css.indexOf(".ai-body.thinking .work-label"), css.indexOf("@keyframes reading"));
+  const rule = css.slice(css.indexOf(".waiting .work-label"), css.indexOf("@keyframes reading"));
 
   it("reaches below the baseline, because the paint stops at the box", () => {
     // background-clip: text paints only inside the background box. At a tight
@@ -84,13 +96,13 @@ describe("the demonstration on the front page", () => {
   it("draws the console's own waiting line, not one of its own", () => {
     // The page's argument is that it is the product; a second style for the
     // same moment would be the one invented thing on it.
-    expect(demo).toContain('<div class="ai-body thinking"><span class="work-label">Thinking</span>');
+    expect(demo).toContain('<div class="waiting"><span class="work-label">Thinking</span>');
     const head = demo.slice(demo.indexOf('class="ai-head"'), demo.indexOf('class="ai-body'));
     expect(head).not.toContain("work-label");
-    expect(demoCss).toContain(".demo .ai-body.thinking .work-label");
+    expect(demoCss).toContain(".demo .waiting .work-label");
   });
 
-  it("stops being a waiting line when it holds an answer", () => {
-    expect(demo).toContain('body.classList.remove("thinking")');
+  it("takes the line away before it writes the answer", () => {
+    expect(demo).toContain('box.querySelector(".waiting")?.remove()');
   });
 });

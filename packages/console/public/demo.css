@@ -55,8 +55,8 @@
 /* The console's own waiting line, drawn the same way. See app.css. */
 .demo .work-label { font-size: 14.5px; line-height: 1.7; color: var(--d-muted); }
 .demo .work-label::after { content: " ···"; letter-spacing: .5px; }
-.demo .ai-body.thinking { display: flex; align-items: center; min-height: 26px; }
-.demo .ai-body.thinking .work-label {
+.demo .waiting { display: flex; align-items: center; min-height: 26px; }
+.demo .waiting .work-label {
   padding-bottom: .12em;
   background: linear-gradient(100deg, var(--d-muted) 0 42%, var(--d-ink) 50%, var(--d-muted) 58% 100%);
   background-size: 260% 100%;
