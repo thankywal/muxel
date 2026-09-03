@@ -74,7 +74,9 @@ describe("what follows the answer", () => {
   it("is handed ctx.waitUntil by the Worker, and carried to the tool", () => {
     expect(src("index.ts")).toMatch(/handleConsoleApi\(env, request, rest\.slice\("\/api"\.length\), \(work\) => ctx\.waitUntil\(work\)\)/);
     expect(src("web/console-api.ts")).toMatch(/decide\(env, userId, segments\[2\], body\.yes === true, after\)/);
-    expect(src("assistant/decide.ts")).toMatch(/const ctx: ToolContext = \{ env, userId, after \}/);
+    // The context decide builds carries it; what else that context holds is
+    // decide's business and not this test's.
+    expect(src("assistant/decide.ts")).toMatch(/const ctx: ToolContext = \{[^}]*\bafter\b[^}]*\}/);
     // Both price tools, and the Price list tab's own writes.
     expect((src("assistant/tools.ts").match(/\}, ctx\.after\);/g) ?? []).length).toBe(2);
     expect((src("web/console-api.ts").match(/\}, after\);/g) ?? []).length).toBe(3);

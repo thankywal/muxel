@@ -147,6 +147,13 @@ vi.mock("../src/assistant/store.js", () => ({
   })),
   listChatApprovals: vi.fn(async () => []),
   chatOfApproval: vi.fn(async () => "k1"),
+  saveAttachment: vi.fn(async () => ({ id: "at1", filename: "f", mime: "text/plain", bytes: 1, chars: 1 })),
+  attachmentsByIds: vi.fn(async () => []),
+  attachmentsFor: vi.fn(async () => ({})),
+  attachToMessage: vi.fn(async () => undefined),
+  attachmentByName: vi.fn(async () => null),
+  attachmentNames: vi.fn(async () => []),
+  getAttachment: vi.fn(async () => null),
   titleFrom: (text: string) => text.slice(0, 52),
 }));
 vi.mock("../src/assistant/loop.js", () => ({

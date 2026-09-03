@@ -70,6 +70,15 @@ const state = {
   /** The turn in flight, so the stop square has something to stop. */
   pending: null,
   stopped: false,
+  /**
+   * Files the owner has attached and not yet sent.
+   *
+   * Each one is read by the deployment as it is picked, not when send is
+   * pressed: reading a PDF takes a few seconds, and doing it on send would
+   * make every message with a file in it feel broken. A chip with no id is
+   * still being read.
+   */
+  files: [],
   locale: "en",
 };
 
@@ -336,6 +345,8 @@ const NEEDS = {
   outside: 14,
   /** Not a page: the turn a tap on a card starts, which the deployment writes. */
   tapAnswered: 18,
+  /** Not a page: files sent in the conversation. */
+  files: 19,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -568,6 +579,10 @@ function openChat(chatId) {
   state.chatId = chatId;
   state.newChat = chatId === null;
   state.assistant = null;
+  // Files staged for a message that was never sent belong to the conversation
+  // they were staged in. Carrying them into the next one would attach a menu
+  // to a question about something else.
+  state.files = [];
   go("assistant");
 }
 
@@ -1547,7 +1562,8 @@ const OPENERS = [
  * model answered, with its working above it and its actions below.
  */
 function drawAssistant() {
-  const { messages = [], approvals = [], steps = {}, usage = {}, prompts = {} } = state.assistant ?? {};
+  const { messages = [], approvals = [], steps = {}, usage = {}, prompts = {}, attachments = {} } =
+    state.assistant ?? {};
   const blank = messages.length === 0;
   // Typing "yes" runs nothing; the button on the card does. So a waiting change
   // is said once above the box the owner is about to type into, with a way to
@@ -1568,6 +1584,7 @@ function drawAssistant() {
           : messages
               .map((m, i) =>
                 turnHtml(m, steps[m.id] ?? [], cardsFor(m.id), usage[m.id], {
+                  files: attachments[m.id] ?? [],
                   prompt: prompts[m.id],
                   // Only the last turn is still waiting on anything. An older
                   // question was answered by whatever was said after it.
@@ -1585,10 +1602,17 @@ function drawAssistant() {
                  ${icon("bell", 14)}${waiting.length} change${waiting.length === 1 ? "" : "s"}
                  waiting for you — tap Yes on the card</button>`
         }
-        <div class="composer">
+        <div class="composer" id="asBox">
+          <div class="attached" id="asFiles">${fileChips(state.files, true)}</div>
           <textarea id="asText" rows="1" placeholder="Ask about your businesses, or tell it what to change"
             autocomplete="off"></textarea>
           <div class="composer-row">
+            ${
+              state.apiRevision < NEEDS.files
+                ? ""
+                : `<button class="clip" type="button" id="asClip" title="Attach a file">${icon("attach", 16)}</button>
+                   <input type="file" id="asFile" multiple hidden>`
+            }
             <span class="composer-model" id="composerModel">${h(modelLabel())}</span>
             <span class="grow"></span>
             <button class="send" type="submit" id="asSend" title="Send">${icon("up", 17)}</button>
@@ -1610,6 +1634,7 @@ function drawAssistant() {
       $("view").querySelector(".approval.waiting")?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   bindTurnActions();
+  wireFileBox();
   wireCodeBlocks($("view"));
   wireImages($("view"));
   $("view").querySelectorAll("[data-ask]").forEach((b) => {
@@ -1620,13 +1645,142 @@ function drawAssistant() {
   });
 }
 
+/**
+ * The files on a message, or the ones about to be sent with one.
+ *
+ * The same chip in both places, because it is the same thing at two moments:
+ * what the owner handed over. `removable` is the only difference — a file that
+ * has been sent cannot be taken back out of the message it was sent with.
+ */
+function fileChips(files, removable) {
+  if (!files || files.length === 0) return "";
+  return files
+    .map((file, index) => {
+      const reading = !file.id;
+      return `<span class="chip-file${reading ? " reading" : ""}">
+        ${icon("doc", 13)}<span class="name">${h(file.filename)}</span>
+        <span class="size">${reading ? "reading…" : sizeOf(file.bytes)}</span>
+        ${removable && !reading ? `<button type="button" class="x" data-drop="${index}" title="Remove">×</button>` : ""}
+      </span>`;
+    })
+    .join("");
+}
+
+/** A file size a person reads, rather than a number of bytes. */
+function sizeOf(bytes = 0) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Redraws the row of files waiting to be sent, without redrawing the thread. */
+function paintFiles() {
+  const box = $("asFiles");
+  if (box === null) return;
+  box.innerHTML = fileChips(state.files, true);
+  box.querySelectorAll("[data-drop]").forEach((b) => {
+    b.onclick = () => {
+      state.files.splice(Number(b.dataset.drop), 1);
+      paintFiles();
+    };
+  });
+}
+
+/**
+ * The three ways a file gets into the conversation: the clip, a drop, a paste.
+ *
+ * All three end in the same call, because they are the same act. Dropping onto
+ * the thread counts as well as dropping onto the box: the thread is most of
+ * the screen, and a drop that lands there and does nothing reads as a console
+ * that cannot take files.
+ */
+function wireFileBox() {
+  const picker = $("asFile");
+  if (picker === null) return;
+  $("asClip").onclick = () => picker.click();
+  picker.onchange = (event) => {
+    takeFiles(event.target.files);
+    event.target.value = "";
+  };
+  const page = $("view").querySelector(".chat-page");
+  if (page !== null) {
+    page.ondragover = (event) => {
+      event.preventDefault();
+      page.classList.add("dropping");
+    };
+    page.ondragleave = () => page.classList.remove("dropping");
+    page.ondrop = (event) => {
+      event.preventDefault();
+      page.classList.remove("dropping");
+      takeFiles(event.dataTransfer?.files);
+    };
+  }
+  $("asText").onpaste = (event) => {
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (files.length === 0) return;
+    // Only when it is a file. Pasting text is pasting text.
+    event.preventDefault();
+    takeFiles(files);
+  };
+}
+
+/** How many files can ride on one message. The deployment holds to this too. */
+const MAX_FILES = 6;
+
+/**
+ * Hands the files to the deployment, which reads them and keeps the text.
+ *
+ * Read now, not on send. A PDF takes a few seconds to read and a photograph of
+ * a menu takes longer; doing that when the owner presses send would make every
+ * message carrying a file feel like a broken one.
+ */
+async function takeFiles(list) {
+  const files = [...(list ?? [])];
+  if (files.length === 0) return;
+  for (const file of files) {
+    if (state.files.length >= MAX_FILES) {
+      toast(`${MAX_FILES} files at a time.`);
+      break;
+    }
+    const chip = { filename: file.name, bytes: file.size };
+    state.files.push(chip);
+    paintFiles();
+    const { ok, data } = await api("assistant/files", {
+      method: "POST",
+      raw: true,
+      body: file,
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+        // Percent encoded: a header is latin-1 and a filename is not.
+        "x-filename": encodeURIComponent(file.name),
+        ...(state.chatId ? { "x-chat-id": state.chatId } : {}),
+      },
+    });
+    const at = state.files.indexOf(chip);
+    if (!ok) {
+      if (at > -1) state.files.splice(at, 1);
+      paintFiles();
+      toast(data.message || "That file could not be read.");
+      continue;
+    }
+    if (at > -1) state.files[at] = data.file;
+    paintFiles();
+  }
+}
+
 /** One turn: who said it, what they said, and what it led to. */
 function turnHtml(message, steps, cards, usage, waiting = {}) {
   // Both sides are rendered, not just the model's. An owner who pastes a link
   // or a table has written the same markup, and showing them the asterisks
   // while formatting the reply would be an odd thing to explain.
   if (message.role === "user") {
-    return `<div class="turn user"><div class="ubub">${md(message.content)}</div></div>`;
+    // A file on its own is a message. An owner who dropped a price list in and
+    // said nothing sent something perfectly clear, and it is drawn as what it
+    // was rather than as an empty bubble.
+    const files = fileChips(waiting.files ?? [], false);
+    return `<div class="turn user">${files === "" ? "" : `<div class="attached">${files}</div>`}${
+      message.content.length === 0 ? "" : `<div class="ubub">${md(message.content)}</div>`
+    }</div>`;
   }
   return `<div class="turn ai" data-msg="${h(message.id)}">
       <div class="ai-head">
@@ -2007,7 +2161,10 @@ async function sendToAssistant(event) {
   event.preventDefault?.();
   const input = $("asText");
   const text = input.value.trim();
-  if (!text) return;
+  // Only the files that have finished being read. One still being read is not
+  // yet anything the deployment could be asked about.
+  const files = state.files.filter((file) => file.id);
+  if (!text && files.length === 0) return;
   input.value = "";
   input.style.height = "auto";
   input.disabled = true;
@@ -2035,7 +2192,9 @@ async function sendToAssistant(event) {
   const thread = $("asThread");
   thread.insertAdjacentHTML(
     "beforeend",
-    `<div class="turn user"><div class="ubub">${md(text)}</div></div>
+    `<div class="turn user">${
+       files.length === 0 ? "" : `<div class="attached">${fileChips(files, false)}</div>`
+     }${text.length === 0 ? "" : `<div class="ubub">${md(text)}</div>`}</div>
      <div class="turn ai" id="asThinking">
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${h(modelLabel())}</b>
@@ -2046,8 +2205,18 @@ async function sendToAssistant(event) {
   );
   thread.scrollTop = thread.scrollHeight;
 
+  // Cleared before the answer, not after: they are on the message now, and a
+  // turn the owner stops or that fails must not leave them staged for the next
+  // one, where they would be sent a second time.
+  state.files = [];
+  paintFiles();
   const { ok, data, aborted } = await askAssistant(
-    { text, chatId: state.chatId ?? undefined, model: state.chatModel ?? undefined },
+    {
+      text,
+      chatId: state.chatId ?? undefined,
+      model: state.chatModel ?? undefined,
+      ...(files.length === 0 ? {} : { files: files.map((file) => file.id) }),
+    },
     state.pending.signal,
   );
   state.pending = null;
@@ -2065,6 +2234,10 @@ async function sendToAssistant(event) {
   if (!ok) {
     $("asThinking")?.remove();
     input.value = text;
+    // Given back, both halves of it. A message that did not go is a message
+    // still to send, and re-attaching four files by hand is not a recovery.
+    state.files = files;
+    paintFiles();
     growBox(input);
     return;
   }

@@ -36,6 +36,7 @@ describe("every tool says whether it changes anything", () => {
   it("marks as writes exactly the things that change something", () => {
     const writes = TOOLS.filter((t) => t.writes).map((t) => t.name).sort();
     expect(writes).toEqual([
+      "add_file_to_business",
       "create_business",
       "delete_business",
       "delete_note",

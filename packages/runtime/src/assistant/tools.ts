@@ -42,7 +42,8 @@ import {
 } from "../db/queries.js";
 import { listHandovers } from "../db/queries.js";
 import { productsView, saveProductEntry, follow, type After } from "../products.js";
-import { syncNotes } from "../rag/ingest.js";
+import { addDocument, syncNotes } from "../rag/ingest.js";
+import { attachmentByName, attachmentNames } from "./store.js";
 import { readDocumentData, UNSURE_BELOW } from "../rag/nutrient.js";
 import { retrieve } from "../rag/retrieve.js";
 import { isSearchKind, webSearch, type SearchKind } from "../web-search.js";
@@ -61,6 +62,14 @@ export interface ToolContext {
    * wait for it. See products.ts follow().
    */
   readonly after?: After;
+  /**
+   * The conversation this is running in.
+   *
+   * Only the file tools need it, and they need it because a file is found by
+   * the name the owner gave it, which is unique to a conversation rather than
+   * to the whole account.
+   */
+  readonly chatId?: string;
 }
 
 export interface AssistantTool {
@@ -84,6 +93,37 @@ const str = (args: Record<string, unknown>, key: string): string =>
 
 const bool = (args: Record<string, unknown>, key: string): boolean | undefined =>
   typeof args[key] === "boolean" ? (args[key] as boolean) : undefined;
+
+/** How much of a file comes back in one read. */
+const FILE_PIECE_CHARS = 6000;
+
+const num = (args: Record<string, unknown>, key: string): number | undefined =>
+  typeof args[key] === "number" ? (args[key] as number) : undefined;
+
+/**
+ * A file the owner sent in this conversation, or a refusal it can act on.
+ *
+ * Named, not identified. The model is told the filenames when the turn opens
+ * and hands one back; an id would be a string only this deployment understands,
+ * shown on a card the owner has to read.
+ */
+async function sentFile(
+  ctx: ToolContext,
+  filename: string,
+): Promise<{ filename: string; text: string }> {
+  if (filename.length === 0) throw new Error("Which file? Name it as the owner sent it.");
+  const chatId = ctx.chatId ?? "";
+  const file = chatId === "" ? null : await attachmentByName(ctx.env, ctx.userId, chatId, filename);
+  if (file === null) {
+    const sent = chatId === "" ? [] : await attachmentNames(ctx.env, ctx.userId, chatId);
+    throw new Error(
+      sent.length === 0
+        ? "No file has been sent in this conversation."
+        : `No file called ${filename} here. Sent in this conversation: ${sent.join(", ")}.`,
+    );
+  }
+  return file;
+}
 
 /** Refuses a business the asker cannot see, before anything reads it. */
 async function reachable(ctx: ToolContext, businessId: string): Promise<string> {
@@ -578,6 +618,64 @@ export const TOOLS: readonly AssistantTool[] = [
         if (typeof value === "string") patch[key] = value;
       }
       return saveProfile(ctx.env, id, patch);
+    },
+  },
+  {
+    name: "read_file",
+    description:
+      "Read a file the owner sent in this conversation, by the name it was sent under. Comes back "
+      + "as text, in pieces for a long one: `from` is the character to start at, and the reply says "
+      + "whether there is more.",
+    parameters: {
+      type: "object",
+      properties: {
+        filename: { type: "string" },
+        from: { type: "number", description: "Character to start at. 0 for the beginning." },
+      },
+      required: ["filename"],
+    },
+    writes: false,
+    run: async (ctx, args) => {
+      const file = await sentFile(ctx, str(args, "filename"));
+      const from = Math.max(0, Math.floor(num(args, "from") ?? 0));
+      const piece = file.text.slice(from, from + FILE_PIECE_CHARS);
+      return {
+        filename: file.filename,
+        text: piece,
+        // Said rather than left to be worked out from lengths, because a model
+        // that stops halfway through a price list quotes half a price list.
+        more: from + piece.length < file.text.length
+          ? `There are ${file.text.length - from - piece.length} more characters. Call read_file again with from ${from + piece.length}.`
+          : "That is the whole file.",
+      };
+    },
+  },
+  {
+    name: "add_file_to_business",
+    description:
+      "Put a file the owner sent into one business's knowledge, so its agent can answer from it. "
+      + "If it holds a price list, the prices are pulled out of it as well. Name the file exactly "
+      + "as it was sent.",
+    parameters: {
+      type: "object",
+      properties: { ...BUSINESS_ARG, filename: { type: "string" } },
+      required: ["business_id", "filename"],
+    },
+    writes: true,
+    summarise: (args) => `Add ${str(args, "filename")} to what it knows`,
+    run: async (ctx, args) => {
+      const id = await reachable(ctx, str(args, "business_id"));
+      const file = await sentFile(ctx, str(args, "filename"));
+      // As text, because text is what was kept. The bytes were read once on
+      // arrival and a second reading of a photograph would cost the owner the
+      // same call twice and could disagree with the first.
+      const result = await addDocument(ctx.env, {
+        businessId: id,
+        filename: file.filename,
+        contentType: "text/plain",
+        body: new TextEncoder().encode(file.text).buffer as ArrayBuffer,
+      });
+      return { added: file.filename, pieces: result.chunkCount, searchable: result.searchable };
     },
   },
   {

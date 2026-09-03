@@ -57,7 +57,7 @@ describe("what the model is told about its own proposals", () => {
   it("is attached to the transcript the model reads", () => {
     // Not computed and dropped. The history each turn is built from carries it.
     expect(loop).toMatch(/const decided = await approvalsByMessage\(env, chatId\)/);
-    expect(loop).toMatch(/const note = outcomeNote\(decided\[message\.id\] \?\? \[\]\)/);
+    expect(loop).toMatch(/outcomeNote\(decided\[message\.id\] \?\? \[\]\)/);
     expect(loop).toMatch(/\{ role: "user" as const, content: note\.trim\(\) \}/);
   });
 

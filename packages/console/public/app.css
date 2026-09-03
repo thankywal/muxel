@@ -246,7 +246,8 @@ main.chatting .content > :not(.chat-page) { margin: 20px 28px; flex: none; }
 
 .turn { max-width: 720px; margin: 0 auto 22px; padding: 0 28px; }
 /* The owner's own words get an edge; the assistant's answer is the page. */
-.turn.user { display: flex; justify-content: flex-end; margin-bottom: 18px; }
+/* A column, because a message can carry files above its words. */
+.turn.user { display: flex; flex-direction: column; align-items: flex-end; margin-bottom: 18px; }
 .ubub { background: var(--surface); border: 1px solid var(--line); border-radius: 16px 16px 4px 16px;
         padding: 10px 14px; font-size: 14px; max-width: 78%; box-shadow: var(--shadow); }
 .ai-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -357,6 +358,26 @@ h5.md-h, h6.md-h { font-size: 14px; color: var(--ink-2); }
 .composer-model { font-size: 12px; color: var(--muted); border: 1px solid var(--line);
                   border-radius: 999px; padding: 3px 10px; cursor: pointer; }
 .composer-model:hover { color: var(--brand-ink); border-color: var(--brand-line); }
+/* Files: the same chip in the composer and in the message it was sent with. */
+.attached { display: flex; flex-wrap: wrap; gap: 6px; }
+.attached:not(:empty) { margin-bottom: 8px; }
+.chip-file { display: inline-flex; align-items: center; gap: 6px; max-width: 260px;
+             border: 1px solid var(--line); background: var(--bg); border-radius: 10px;
+             padding: 5px 8px; font-size: 12px; color: var(--ink-2); }
+.chip-file svg { flex: none; color: var(--muted); }
+.chip-file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.chip-file .size { color: var(--muted); flex: none; }
+.chip-file.reading { opacity: .7; }
+.chip-file .x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px;
+                line-height: 1; padding: 0 2px; flex: none; }
+.chip-file .x:hover { color: var(--ink); }
+.turn.user .attached { justify-content: flex-end; max-width: 78%; }
+.clip { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
+        background: none; color: var(--muted); display: grid; place-items: center; cursor: pointer;
+        flex: none; }
+.clip:hover { color: var(--brand-ink); border-color: var(--brand-line); }
+.chat-page.dropping .composer { border-color: var(--brand-line); background: var(--brand-soft); }
+
 .send { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--brand); color: #fff;
         display: grid; place-items: center; cursor: pointer; flex: none; }
 .send:disabled { opacity: .45; cursor: default; }

@@ -10,7 +10,7 @@
 
 import type { Env } from "../env.js";
 import type { After } from "../products.js";
-import { getApproval, settleApproval } from "./store.js";
+import { chatOfApproval, getApproval, settleApproval } from "./store.js";
 import { findTool, type ToolContext } from "./tools.js";
 
 export type Decision =
@@ -47,7 +47,10 @@ export async function decide(
   const claimed = await settleApproval(env, userId, approvalId, "approved", "");
   if (!claimed) return { ok: false, message: "That was already decided." };
 
-  const ctx: ToolContext = { env, userId, after };
+  // The conversation the card is in, because a change that files a sent file
+  // finds it by the name the owner used, and a name belongs to a conversation.
+  const chatId = (await chatOfApproval(env, userId, approvalId)) ?? "";
+  const ctx: ToolContext = { env, userId, after, chatId };
   try {
     await tool.run(ctx, approval.args);
     await env.DB.prepare("UPDATE operator_approval SET result = ? WHERE id = ?")

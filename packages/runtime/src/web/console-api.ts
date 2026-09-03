@@ -92,8 +92,11 @@ import { allowanceNow, neuronsFor, type Allowance } from "../cloudflare/allowanc
 import { accountName, workersSubdomain } from "../cloudflare/account.js";
 import { cloudflareAccess, forgetAccess } from "../cloudflare/access.js";
 import {
+  attachmentsByIds,
+  attachmentsFor,
   chatTranscript,
   promptsFor,
+  saveAttachment,
   stepsFor,
   usageFor,
   createChat,
@@ -108,7 +111,9 @@ import {
 import {
   addDocument,
   GENERATED_DOCUMENTS,
+  MAX_DOCUMENT_BYTES,
   NOTES_FILENAME,
+  readUpload,
   removeDocument,
   syncNotes,
 } from "../rag/ingest.js";
@@ -197,8 +202,12 @@ async function businessCard(env: Env, businessId: string) {
  *      for with `after: "approvals"`. A deployment that predates it reads that
  *      as an empty message and refuses, so the console does not ask for one
  *      until the deployment can answer it.
+ *  19  files sent in the conversation: a door to hand one over, the files each
+ *      message carried, and a message that is a file and no words. Additive,
+ *      but the console hides the paperclip on a deployment that predates it
+ *      rather than offering a door that answers 404.
  */
-export const API_REVISION = 18;
+export const API_REVISION = 19;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -219,6 +228,17 @@ function decodeCaption(raw: string | null): string {
     return new TextDecoder().decode(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0))).slice(0, 1024);
   } catch {
     return "";
+  }
+}
+
+/** A filename as the browser sent it, whatever alphabet it is written in. */
+function decodeName(raw: string | null): string {
+  if (raw === null || raw.length === 0) return "file";
+  try {
+    return decodeURIComponent(raw) || "file";
+  } catch {
+    // Not encoded, or encoded wrongly. What arrived is better than nothing.
+    return raw;
   }
 }
 
@@ -521,6 +541,7 @@ export async function handleConsoleApi(
       chat: { id: string; model: string },
       question: string,
       asked: "owner" | "console" = "owner",
+      files: readonly string[] = [],
     ): Response => {
       const { readable, writable } = new TransformStream();
       const writer = writable.getWriter();
@@ -539,6 +560,7 @@ export async function handleConsoleApi(
             question,
             model: chat.model,
             asked,
+            files,
             onEvent: send,
           });
           const allowance = await allowanceNow(env);
@@ -549,6 +571,7 @@ export async function handleConsoleApi(
             chat,
             messages: await chatTranscript(env, chat.id, 60),
             steps: await stepsFor(env, chat.id),
+            attachments: await attachmentsFor(env, chat.id),
             prompts: await promptsFor(env, chat.id),
             usage: priced(await usageFor(env, chat.id), allowance),
             allowance: {
@@ -606,11 +629,12 @@ export async function handleConsoleApi(
       const wanted = url.searchParams.get("chat");
       const chat =
         wanted === null ? (chats[0] ?? null) : await getChat(env, userId, wanted);
-      const [messages, approvals, steps, spent, allowance] = await Promise.all([
+      const [messages, approvals, steps, spent, attachments, allowance] = await Promise.all([
         chat === null ? Promise.resolve([]) : chatTranscript(env, chat.id, 60),
         chat === null ? Promise.resolve([]) : listChatApprovals(env, userId, chat.id),
         chat === null ? Promise.resolve({}) : stepsFor(env, chat.id),
         chat === null ? Promise.resolve({}) : usageFor(env, chat.id),
+        chat === null ? Promise.resolve({}) : attachmentsFor(env, chat.id),
         allowanceNow(env),
       ]);
       const prompts = chat === null ? {} : await promptsFor(env, chat.id);
@@ -621,6 +645,8 @@ export async function handleConsoleApi(
         // What it looked at, against the answer it produced. Read back from the
         // record, so a reopened chat shows the same working the live one did.
         steps,
+        // The files the owner sent, against the message they were sent with.
+        attachments,
         // What any turn is still waiting on the owner for.
         prompts,
         // What each answer cost, and where the day's allowance stands.
@@ -632,11 +658,72 @@ export async function handleConsoleApi(
       });
     }
 
+    /**
+     * A file the owner sends in the conversation.
+     *
+     * Read into text here, once, and kept as text. The bytes arrive as the body
+     * with the name in a header, the same way the media door works: a multipart
+     * parse would buffer the file twice to describe what the browser already
+     * described, on a worker with a memory ceiling.
+     *
+     * Nothing is filed anywhere yet. This is the owner handing something over;
+     * where it goes is a change, and a change waits for their yes like every
+     * other one.
+     */
+    if (method === "POST" && segments[1] === "files") {
+      const bytes = await request.arrayBuffer();
+      if (bytes.byteLength === 0) return json({ error: "no_file" }, 400);
+      if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
+        return json({ error: "too_large", message: "Files are limited to 20 MB." }, 413);
+      }
+      // Percent encoded, because a header is latin-1 and a filename is not.
+      // The other upload doors flatten anything outside ASCII to underscores,
+      // which turns a Burmese menu into ________.pdf on the one screen where
+      // the owner has to recognise it again.
+      const filename = decodeName(request.headers.get("x-filename")).slice(0, 120);
+      const mime = request.headers.get("content-type") ?? "application/octet-stream";
+      let text: string;
+      try {
+        text = await readUpload(env, { businessId: "", filename, contentType: mime, body: bytes });
+      } catch (error) {
+        return json(
+          { error: "unreadable", message: error instanceof Error ? error.message : "unknown" },
+          400,
+        );
+      }
+      if (text.trim().length === 0) {
+        // Said plainly rather than stored empty. A file with no text in it is a
+        // scan or a photograph of nothing, and the owner is better told now
+        // than left asking the assistant about a file it cannot read.
+        return json(
+          {
+            error: "no_text",
+            message:
+              "There is no text in that file. A scanned page or a photograph of one has nothing to "
+              + "read: send the document or spreadsheet it came from.",
+          },
+          400,
+        );
+      }
+      const chatId = (request.headers.get("x-chat-id") ?? "").slice(0, 64);
+      const file = await saveAttachment(env, {
+        userId,
+        chatId,
+        filename,
+        mime,
+        bytes: bytes.byteLength,
+        text,
+      });
+      return json({ ok: true, file });
+    }
+
     if (method === "POST" && segments.length === 1) {
       const body = (await request.json().catch(() => ({}))) as {
         text?: string;
         chatId?: string;
         model?: string;
+        /** Files the owner attached to this message, already uploaded. */
+        files?: string[];
         /** Set when the owner answered a card rather than typed something. */
         after?: string;
       };
@@ -655,7 +742,12 @@ export async function handleConsoleApi(
           + "were to, read what it returns, and tell the owner in one short paragraph what they now "
           + "have and what, if anything, did not go through. If something failed, say what and why."
         : String(body.text ?? "").trim();
-      if (text.length === 0) return json({ error: "empty" }, 400);
+      // A file on its own is a message. An owner who drops a price list in and
+      // says nothing has said something perfectly clear.
+      const files = Array.isArray(body.files)
+        ? body.files.filter((id): id is string => typeof id === "string" && id.length > 0).slice(0, 6)
+        : [];
+      if (text.length === 0 && files.length === 0) return json({ error: "empty" }, 400);
 
       // A message with no chat starts one, titled with what was just typed.
       // Asking for a title first would be a question nobody wants to answer.
@@ -670,7 +762,10 @@ export async function handleConsoleApi(
         chat = await createChat(
           env,
           userId,
-          titleFrom(text),
+          // A conversation that opened with a file is named after the file.
+          text.length > 0
+            ? titleFrom(text)
+            : titleFrom((await attachmentsByIds(env, userId, files))[0]?.filename ?? ""),
           typeof body.model === "string" && MODEL_PRESETS.some((p) => p.id === body.model)
             ? body.model
             : await defaultModel(),
@@ -684,7 +779,7 @@ export async function handleConsoleApi(
       // answer in one piece, which is what the API did before and what a script
       // calling it still wants.
       if ((request.headers.get("accept") ?? "").includes("text/event-stream")) {
-        return streamed(env, userId, chat, text.slice(0, 4000), tapped ? "console" : "owner");
+        return streamed(env, userId, chat, text.slice(0, 4000), tapped ? "console" : "owner", files);
       }
 
       const reply = await ask(env, {
@@ -693,6 +788,7 @@ export async function handleConsoleApi(
         question: text.slice(0, 4000),
         model: chat.model,
         asked: tapped ? "console" : "owner",
+        files,
       });
       const allowance = await allowanceNow(env);
       return json({
@@ -701,6 +797,7 @@ export async function handleConsoleApi(
         chat,
         messages: await chatTranscript(env, chat.id, 60),
         steps: await stepsFor(env, chat.id),
+        attachments: await attachmentsFor(env, chat.id),
         prompts: await promptsFor(env, chat.id),
         usage: priced(await usageFor(env, chat.id), allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
@@ -731,6 +828,7 @@ export async function handleConsoleApi(
         chat,
         messages: chat === null ? [] : await chatTranscript(env, chat.id, 60),
         steps: chat === null ? {} : await stepsFor(env, chat.id),
+        attachments: chat === null ? {} : await attachmentsFor(env, chat.id),
         prompts: chat === null ? {} : await promptsFor(env, chat.id),
         usage: chat === null ? {} : priced(await usageFor(env, chat.id), allowance),
         allowance: { neuronsToday: allowance.neuronsToday, perDay: allowance.perDay, problem: allowance.problem },
