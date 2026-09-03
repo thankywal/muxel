@@ -16,6 +16,7 @@ import {
   getBusiness,
   getHandover,
   openHandover,
+  recordEvent,
   touchCustomer,
   upsertConversation,
 } from "../db/queries.js";
@@ -269,10 +270,19 @@ async function handleSend(
       ANSWER_DEADLINE_MS,
     );
   } catch (error) {
-    console.error("web reply failed", {
-      businessId: business.id,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("web reply failed", { businessId: business.id, error: detail });
+    // The Worker's own logs need a Cloudflare account to read. This copy is
+    // for the operator who only has the console — and until now it was written
+    // on the Telegram path and nowhere else, so a deployment answering only on
+    // the website recorded nothing at all.
+    ctx.waitUntil(
+      recordEvent(env, {
+        businessId: business.id,
+        kind: "reply_failed",
+        detail: `${question.slice(0, 80)} -> ${detail}`,
+      }).catch(() => undefined),
+    );
     return json(
       { session, error: "Sorry, I could not answer that just now. Please try again." },
       502,

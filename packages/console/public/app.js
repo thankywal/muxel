@@ -164,7 +164,18 @@ const ICONS = {
   assistant: '<path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4z"/><path d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/>',
   inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z"/>',
   diagnostics: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
-  agents: '<rect x="3.5" y="8" width="17" height="11" rx="3.5"/><path d="M12 3.5v4.5M8.5 13h.01M15.5 13h.01"/><circle cx="12" cy="3" r="1.4"/><path d="M1.5 12v3M22.5 12v3"/>',
+  /*
+     The agent, as the owner drew it: a pixel octopus, twelve squares by
+     twelve, in whatever ink the surface around it is using. Filled rather than
+     stroked, so it carries its own fill and stroke and ignores the defaults
+     every other icon here takes. The eyes are holes, not paint: a second
+     colour would stop it being one glyph.
+  */
+  agents:
+    '<path fill="currentColor" stroke="none" d="M6 0h12v6h-12zM0 6h4v2h-4zM6 6h2v12h-2z'
+    + 'M10 6h4v16h-4zM16 6h2v12h-2zM20 6h4v2h-4zM0 8h2v4h-2zM8 8h2v8h-2zM14 8h2v8h-2z'
+    + 'M22 8h2v4h-2zM2 10h4v2h-4zM18 10h4v2h-4zM4 14h2v6h-2zM18 14h2v6h-2zM2 16h2v6h-2z'
+    + 'M20 16h2v6h-2zM8 20h2v4h-2zM14 20h2v4h-2z"/>',
   businesses: '<path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5"/>',
   channels: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
   customers: '<path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 20v-2a4 4 0 0 0-3-3.9"/>',
@@ -1832,8 +1843,16 @@ function costLine(usage) {
       : problem === "unreachable"
         ? "Cloudflare did not answer for the neuron figures"
         : "";
-  return `<span class="cost" ${why ? `title="${h(why)}"` : ""}>${h(parts.join(" · "))}${
-    why ? " ·<span class=\"cost-why\">?</span>" : ""
+  // A button, because it is one. It was a span carrying a title, so the only
+  // way to it was to hover for a second and wait, a click did nothing at all,
+  // and a keyboard never reached it — on the one control whose whole job is to
+  // explain a number that is missing.
+  return `<span class="cost">${h(parts.join(" · "))}${
+    why === ""
+      ? ""
+      : ` ·<button type="button" class="cost-why" title="${h(why)}"
+           data-why="${h(why)}"${problem === "not_configured" ? ' data-fix="settings"' : ""}
+           aria-label="Why there is no neuron figure">?</button>`
   }</span>`;
 }
 
@@ -1901,6 +1920,25 @@ function stepPills(steps) {
 }
 
 function bindTurnActions() {
+  // Says it where it was asked, and takes it back on a second press. A toast
+  // would be gone before the sentence has been read, and this one ends in
+  // something to do about it.
+  $("view").querySelectorAll("[data-why]").forEach((b) => {
+    b.onclick = () => {
+      const turn = b.closest(".turn");
+      const open = turn.querySelector(".why-note");
+      if (open !== null) return open.remove();
+      turn.insertAdjacentHTML(
+        "beforeend",
+        `<div class="why-note">${h(b.dataset.why)}${
+          b.dataset.fix ? ` <a href="#" data-goto="${h(b.dataset.fix)}">Open settings</a>` : ""
+        }</div>`,
+      );
+      turn
+        .querySelector(".why-note [data-goto]")
+        ?.addEventListener("click", (e) => (e.preventDefault(), go(b.dataset.fix)));
+    };
+  });
   $("view").querySelectorAll("[data-copy]").forEach((b) => {
     b.onclick = async () => {
       const body = b.closest(".turn").querySelector(".ai-body").textContent;

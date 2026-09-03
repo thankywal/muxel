@@ -21,6 +21,7 @@ import {
   getBusiness,
   insertChunks,
   listNotes,
+  recordEvent,
   setDocumentStatus,
 } from "../db/queries.js";
 import type { Env } from "../env.js";
@@ -491,6 +492,14 @@ export async function addDocument(env: Env, input: IngestInput): Promise<IngestR
   if ((GENERATED_DOCUMENTS as readonly string[]).includes(input.filename)) {
     return result;
   }
+
+  // Written here rather than at the three doors that upload a file, so a
+  // fourth cannot arrive without it.
+  await recordEvent(env, {
+    businessId: input.businessId,
+    kind: "document_added",
+    detail: `${input.filename} — ${result.chunkCount} pieces`,
+  }).catch(() => undefined);
 
   await markExtractionPending(env, { businessId: input.businessId, documentId: result.documentId })
     .then(async () => {

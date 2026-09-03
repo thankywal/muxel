@@ -320,8 +320,13 @@ h5.md-h, h6.md-h { font-size: 14px; color: var(--ink-2); }
 /* What this answer drew from the day's allowance. */
 .cost { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap;
         font-variant-numeric: tabular-nums; }
-.cost-why { display: inline-grid; place-items: center; width: 14px; height: 14px; margin-left: 5px;
-  border: 1px solid var(--line); border-radius: 50%; font-size: 9.5px; cursor: help; }
+.cost-why { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 5px;
+  padding: 0; border: 1px solid var(--line); border-radius: 50%; font-size: 9.5px;
+  background: none; color: inherit; font-family: inherit; cursor: pointer; }
+.cost-why:hover { border-color: var(--brand-line); color: var(--brand-ink); }
+.why-note { margin-top: 8px; padding: 8px 11px; border-radius: 9px; background: var(--surface-2);
+            border: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); }
+.why-note a { color: var(--brand-ink); }
 .ai-acts { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .t-act { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; cursor: pointer;
          color: var(--muted); font-size: 12px; padding: 4px 7px; border-radius: 7px; }
