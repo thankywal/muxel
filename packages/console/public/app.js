@@ -5563,30 +5563,78 @@ $("connectForm").addEventListener("submit", async (e) => {
   }
   worker = result.base;
   localStorage.setItem(KEY, worker);
-  // Reaching it is not the same as being allowed into it, so the code comes next.
+  // Reaching it is not the same as being allowed into it, so the secret comes next.
   $("step2").hidden = false;
   $("pairCode").focus();
 });
 
+/**
+ * Asks one of the deployment's doors whether this secret opens it.
+ *
+ * A console is routinely newer than the deployment it is talking to: this file
+ * is served from wherever the console is hosted, and the Worker is whatever its
+ * owner last deployed. A door that deployment has never heard of answers "not
+ * found" in plain text and without the cross origin headers, so the browser
+ * refuses the call before any status is read. That is the same nothing as a
+ * refusal, and both are read here the way `api()` reads a call it could not
+ * make: no answer from this door, so ask the next one.
+ */
+async function askDoor(path, body) {
+  let response;
+  try {
+    response = await fetch(`${worker}/admin/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, data: {} };
+  }
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok, data: data ?? {} };
+}
+
+/**
+ * One field, two doors.
+ *
+ * A deployment is set up with a console key, with a console bot, or with both,
+ * so this takes whichever the owner has rather than asking them which kind of
+ * deployment they are running. Nothing here looks at what was typed to work out
+ * which of the two it is: the shape of a secret is not a fact about it, and the
+ * first owner to choose a key that reads like a code would be told they had
+ * typed the wrong thing. Both doors are asked instead, and the deployment says.
+ *
+ * The key goes as it was typed, because the owner chose those characters and
+ * the deployment compares them. The code is upper cased, which is the form that
+ * door has always been handed and what this field used to do to everything.
+ *
+ * The key door first and the pairing door last, because pairing spends the code
+ * whether or not its answer reaches this browser. In the other order a
+ * connection dropping between the two calls would leave the owner holding a
+ * code that has already been used.
+ */
 $("pairForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const code = $("pairCode").value.trim().toUpperCase();
-  if (!code) return;
+  const secret = $("pairCode").value.trim();
+  if (!secret) return;
   $("pairBtn").disabled = true;
   $("connectErr").classList.remove("on");
-  const response = await fetch(`${worker}/admin/pair`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
-  const data = await response.json().catch(() => ({}));
+  const claimed = await askDoor("claim", { key: secret });
+  const opened = claimed.ok ? claimed : await askDoor("pair", { code: secret.toUpperCase() });
   $("pairBtn").disabled = false;
-  if (!response.ok) {
-    $("connectErr").textContent = data.message || "That code did not work.";
+  if (!opened.ok) {
+    // Neither door's own message. "That code is not valid any more" is a wrong
+    // thing to say to somebody who typed their key, and no single door knows
+    // which of the two the owner was reaching for, so the answer names both
+    // ways in and blames neither.
+    $("connectErr").textContent =
+      "That did not open this deployment. A console key is the CONSOLE_KEY set in the Worker's " +
+      "settings; a pairing code comes from your console bot in Telegram, if you have one, and is " +
+      "only good for a few minutes.";
     $("connectErr").classList.add("on");
     return;
   }
-  token = data.token;
+  token = opened.data.token;
   localStorage.setItem(TOK, token);
   showConsole(true);
 });

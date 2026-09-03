@@ -22,7 +22,7 @@ import {
   type Product,
 } from "@muxel/core";
 
-import type { Env } from "../env.js";
+import { WEB_OWNER_ID, type Env } from "../env.js";
 
 function now(): string {
   return new Date().toISOString();
@@ -102,9 +102,18 @@ export async function findOperator(
 
 /** Returns the Telegram account of the deployment owner, if one is installed. */
 export async function findOwner(env: Env): Promise<number | null> {
+  // Both callers use what comes back as a Telegram chat id — escalation.ts to
+  // say a customer is waiting, updates.ts to say a release has landed — so the
+  // owner who arrived through the console rather than through Telegram is not
+  // one of them. WEB_OWNER_ID is a row in this table and not an account
+  // Telegram has ever heard of; sending to it fails, the callers swallow it,
+  // and a deployment with both doors would quietly stop alerting the moment
+  // the console row happened to be the older of the two.
   const row = await env.DB.prepare(
-    "SELECT telegram_user_id FROM operator WHERE role = 'owner' ORDER BY created_at LIMIT 1",
-  ).first<{ telegram_user_id: number }>();
+    "SELECT telegram_user_id FROM operator WHERE role = 'owner' AND telegram_user_id != ? ORDER BY created_at LIMIT 1",
+  )
+    .bind(WEB_OWNER_ID)
+    .first<{ telegram_user_id: number }>();
   return row?.telegram_user_id ?? null;
 }
 

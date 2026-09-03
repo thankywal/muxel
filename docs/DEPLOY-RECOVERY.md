@@ -1,14 +1,53 @@
-# When the deploy button leaves a Hello world
+# When a deployment will not let you in
 
-Cloudflare's one click deploy copies this repository into your own GitHub
-account and then builds it. That copy step occasionally fails, and it fails
-quietly: the dashboard still says the deploy succeeded.
+Three different things send people here, and they are worth telling apart in
+the first minute:
 
-This page tells you how to recognise it in ten seconds and how to finish the
-install either way. Nothing here is lost work. No documents, conversations or
-credentials are involved yet, because the assistant never started.
+* **The deploy button left a `Hello world`.** Cloudflare's copy step failed
+  quietly and the dashboard still reported success. Start at *Check that it
+  worked*.
+* **The deploy form refused the configuration file.** Usually the GitHub rate
+  limit rather than the file. See *A different failure that reads like ours*.
+* **The deployment is fine and you cannot sign into it.** Nothing is broken and
+  nothing is lost. That one is first, below, because it is the shortest.
+
+## If you cannot get in
+
+Losing your way into the console is not losing the deployment. The key that
+signs you in is a setting on your own Worker, so you can set a different one
+and use that.
+
+1. In Cloudflare open **Workers and Pages**, open your Worker, then
+   **Settings**, then **Variables and Secrets**.
+2. Edit `CONSOLE_KEY` — or add it, if this deployment never had one — and put in
+   a new phrase of at least 16 characters.
+3. Open [app.muxel.site](https://app.muxel.site), paste your deployment's
+   address, and enter the new key.
+
+**Changing the key takes the old one back.** Signing in hands your browser a
+token good for thirty days, and a token opened with a key stops working the
+moment that is no longer the key. So a key you think somebody else has seen is
+ended by replacing it, not by hunting down the browsers still holding it.
+
+Nothing else changes. Your businesses, your uploaded documents and every
+conversation live in your D1 database, and none of them is touched by this.
+
+The one thing nobody can do is give you back the key you had. Your deployment
+does not store it — it compares what you type against the setting — so there is
+no copy of it anywhere to be read out, by us, by Cloudflare, or by you.
+
+A Telegram console is the other door and the same holds in both directions. If
+the console bot is gone, or you no longer have the account it was set up for,
+add a `CONSOLE_KEY` and you are in from a browser regardless. If you have a key
+and want the bot as well, set `ADMIN_BOT_TOKEN` and `OWNER_TELEGRAM_ID` in the
+same place and open `/setup` on your deployment once; that request is what
+registers the webhook. Either door on its own is a whole deployment, and adding
+the second loses nothing set up under the first.
 
 ## Check that it worked
+
+Nothing below this line is lost work. No documents, conversations or
+credentials are involved yet, because the assistant never started.
 
 Open your deployment's address with `/health` on the end:
 
@@ -127,13 +166,21 @@ pnpm install
 
 CLOUDFLARE_API_TOKEN=your-token \
 CLOUDFLARE_ACCOUNT_ID=your-account-id \
-ADMIN_BOT_TOKEN=your-console-bot-token \
-OWNER_TELEGRAM_ID=your-telegram-id \
+CONSOLE_KEY=a-phrase-you-make-up \
 node scripts/install.mjs
 ```
 
-The last two lines are optional. Without them the Worker deploys and waits for
-those two settings, exactly as a button deploy does before you fill in the form.
+`CONSOLE_KEY` is a phrase you invent, at least 16 characters, and it is the
+whole of what a deployment needs from you. Keep it where you keep passwords.
+
+The last line is optional. Without it the Worker deploys and then waits, and
+says on its own `/setup` page what it is waiting for, exactly as a button deploy
+does before you fill in the form.
+
+If you would rather drive the console from Telegram, pass `ADMIN_BOT_TOKEN` and
+`OWNER_TELEGRAM_ID` instead, or as well. They go on together or not at all,
+because half a pair configures nothing. Either door finishes the install on its
+own, so there is no reason to make a bot here unless you want one.
 
 The script creates the database, the namespace and the Vectorize index if they
 are missing and adopts them if they already exist, so it is safe to run against
@@ -145,8 +192,24 @@ It deploys the configuration shipped in this repository, not a separate one, so
 what you get is the same Worker the button installs. A test holds the two to
 each other.
 
-When it finishes it prints your address. Open your console bot in Telegram and
-send `/start`.
+When it finishes it prints your address and what to do with it: open
+[app.muxel.site](https://app.muxel.site), paste that address in and enter your
+console key, or, if you set up a bot instead, open it in Telegram and send
+`/start`.
+
+## Installing from a terminal instead
+
+`scripts/install.mjs` is for repairing an account that a deploy left half built.
+If you simply prefer the command line, the packaged tool does the same job with
+wrangler's own login rather than an API token:
+
+```
+node packages/cli/dist/index.js init --console-key "a-phrase-you-make-up"
+```
+
+It takes `--admin-bot-token` and `--owner-telegram-id` too, together, for a
+Telegram console instead or as well. Giving it no door at all is the one thing
+it refuses, and it names both when it does.
 
 ## Automatic updates after a direct install
 

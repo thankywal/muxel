@@ -234,13 +234,21 @@
       <div class="below">
         <div class="panel pad">
           <h2>Deploy it, step by step</h2>
+          <!--
+            Telegram is last because setup no longer waits for it. Two of the
+            six steps used to be a trip to BotFather before anything worked at
+            all, which asked a person to open an account on somebody else's
+            chat app to reach a console in their own browser. A console key is
+            a whole way in, so the first five steps are the whole of setup and
+            the sixth is a door to add if you want it.
+          -->
           <ol class="steps">
           <li><b>Create a Cloudflare account</b><p>The free plan is enough. Confirm the email it sends you.</p></li>
           <li><b>Create a GitHub account</b><p>You never write code there. It keeps the copy your deployment updates from.</p></li>
-          <li><b>Make two bots with @BotFather</b><p>Send <code>/newbot</code> twice. The first is your private console, the second is the one customers write to.</p></li>
-          <li><b>Get your Telegram id</b><p>Send <code>/start</code> to <code>@userinfobot</code> and copy the number it replies with.</p></li>
-          <li><b>Press deploy</b><p>On the form set <code>ADMIN_BOT_TOKEN</code> to the console bot's token and <code>OWNER_TELEGRAM_ID</code> to your number. Leave the rest alone.</p></li>
-          <li><b>Come back here</b><p>Cloudflare gives you a URL for your deployment. Paste it below and the console opens.</p></li>
+          <li><b>Think of a console key</b><p>Any phrase, 16 characters or more. It is what signs you in to this console, so keep it to yourself.</p></li>
+          <li><b>Press deploy</b><p>On the form set <code>CONSOLE_KEY</code> to that phrase. Leave the rest alone.</p></li>
+          <li><b>Come back here</b><p>Cloudflare gives you a URL for your deployment. Paste it below, then your key, and the console opens.</p></li>
+          <li><b>Telegram, if you want it</b><p>Optional, and later is fine. <code>/newbot</code> to <code>@BotFather</code> gives you a bot your customers write to; a second one is this console in your pocket, with <code>ADMIN_BOT_TOKEN</code> set to its token and <code>OWNER_TELEGRAM_ID</code> to the number <code>@userinfobot</code> replies with.</p></li>
         </ol>
           <a class="btn btn-primary" target="_blank" rel="noopener" href="https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel">Get started · deploy to Cloudflare</a>
         </div>
@@ -286,11 +294,24 @@
               <button class="btn btn-primary" type="submit" id="connectBtn">Continue</button>
             </form>
 
+            <!--
+              One field, because a deployment has one owner and they know what
+              they set. It used to say "type the code from your Telegram bot",
+              which is the whole of the instruction for somebody who has a bot
+              and a dead end for somebody who has never used Telegram. The
+              field takes either; app.js asks both doors and the deployment
+              says which one this is.
+
+              Typed as it was typed: the capitals and the wide letter spacing
+              were right for an eight character code and wrong for a phrase the
+              owner chose, where showing back something other than what was
+              pressed is a way to lose an afternoon to a key that looks correct.
+            -->
             <div id="step2" hidden style="margin-top:18px;border-top:1px solid var(--line);padding-top:18px">
-              <p>Open your console bot in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
+              <p>Your console key: the <code>CONSOLE_KEY</code> you set when you deployed. Or, if you set up a
+                 console bot, open it in Telegram, tap <b>Web console</b>, and type the code it shows.</p>
               <form class="row" id="pairForm">
-                <input id="pairCode" placeholder="ABCD2345" autocomplete="off" spellcheck="false"
-                       style="text-transform:uppercase;letter-spacing:.14em;font-weight:700">
+                <input id="pairCode" placeholder="Console key, or a pairing code" autocomplete="off" spellcheck="false">
                 <button class="btn btn-primary" type="submit" id="pairBtn">Open console</button>
               </form>
             </div>

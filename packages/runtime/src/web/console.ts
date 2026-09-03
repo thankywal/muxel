@@ -9,13 +9,19 @@
  * The pairing goes through the bot on purpose. It is the channel the owner is
  * already trusted on, so no password is invented, no email is sent, and nothing
  * about the owner is stored anywhere outside their own deployment.
+ *
+ * There is a second door for the owner who has no Telegram account, and it is
+ * the one thing they hold that nobody else does: the key they set on their own
+ * Worker. Presenting it is the same claim the bot makes on their behalf — I am
+ * the person who deployed this — so it ends in the same session, minted by the
+ * same code, and the two doors cannot drift apart.
  */
 
 import { handleAdminUpdate, localeFor, pendingFor, screenFor } from "../telegram/admin.js";
 import { CapturingClient } from "./capture.js";
 import { sha256Hex } from "../crypto.js";
 import { findOperator } from "../db/queries.js";
-import type { Env } from "../env.js";
+import { consoleKey, CONSOLE_KEY_MIN_LENGTH, WEB_OWNER_ID, type Env } from "../env.js";
 
 /** Codes are short because they are typed by hand, and brief because of it. */
 const CODE_TTL_SECONDS = 600;
@@ -43,6 +49,59 @@ export async function issuePairingCode(env: Env, userId: number): Promise<string
   return code;
 }
 
+/**
+ * Compares two secrets without letting a near miss come back sooner.
+ *
+ * Written out here rather than imported so this door carries its own answer:
+ * an early return on the first differing byte would let a caller recover the
+ * key one character at a time from the timings alone.
+ */
+function sameSecret(presented: string, expected: string): boolean {
+  const left = new TextEncoder().encode(presented);
+  const right = new TextEncoder().encode(expected);
+  // The length of a secret is not itself secret, so returning on it early is
+  // safe, and it keeps the loop below constant with respect to content.
+  if (left.length !== right.length) {
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= (left[i] as number) ^ (right[i] as number);
+  }
+  return diff === 0;
+}
+
+/**
+ * Which console key a session was opened with, in sixteen characters.
+ *
+ * Not the key: a hash of it, so a copy of this deployment's KV still is not a
+ * set of working secrets. It exists so that changing the key is a real remedy.
+ * Without it, "change CONSOLE_KEY" only stops the next sign in — every browser
+ * already carrying a thirty day token keeps working, which is exactly the case
+ * you change a leaked key for.
+ */
+async function keyStamp(key: string): Promise<string> {
+  return (await sha256Hex(key)).slice(0, 16);
+}
+
+/**
+ * Mints the session both doors end in, for the operator that was recognised.
+ *
+ * A session opened with the console key remembers which key opened it. One
+ * paired from Telegram does not, and is not affected by the key changing: it
+ * was the console bot that vouched for that person, not a setting.
+ */
+async function issueSession(env: Env, userId: number, key?: string): Promise<Response> {
+  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  // Only the hash is kept, so a copy of this deployment's KV is not a set of
+  // working tokens.
+  const value = key === undefined ? String(userId) : `${userId}:${await keyStamp(key)}`;
+  await env.STATE.put(sessionKey(await sha256Hex(token)), value, {
+    expirationTtl: SESSION_TTL_SECONDS,
+  });
+  return json({ ok: true, token });
+}
+
 /** Trades a code for a token. The code is spent whether or not it was valid. */
 async function pair(env: Env, code: string): Promise<Response> {
   const key = codeKey(code.trim().toUpperCase());
@@ -51,22 +110,60 @@ async function pair(env: Env, code: string): Promise<Response> {
   if (owner === null) {
     return json({ error: "bad_code", message: "That code is not valid any more." }, 401);
   }
-  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-  // Only the hash is kept, so a copy of this deployment's KV is not a set of
-  // working tokens.
-  await env.STATE.put(sessionKey(await sha256Hex(token)), owner, {
-    expirationTtl: SESSION_TTL_SECONDS,
-  });
-  return json({ ok: true, token });
+  return issueSession(env, Number(owner));
 }
 
-/** Resolves a bearer token back to the operator it was issued for. */
+/**
+ * Trades this deployment's own console key for a token.
+ *
+ * Unlike a pairing code the key is not spent: it is a setting on the Worker,
+ * it is how its owner gets in from every browser they own, and it stops working
+ * the moment they change it.
+ */
+async function claim(env: Env, presented: string): Promise<Response> {
+  const expected = consoleKey(env);
+  if (expected === null) {
+    return json(
+      {
+        error: "no_console_key",
+        message:
+          "This deployment has no console key. Add CONSOLE_KEY to the Worker's settings, at "
+          + `least ${CONSOLE_KEY_MIN_LENGTH} characters, and open its address to finish setting up.`,
+      },
+      401,
+    );
+  }
+  if (!sameSecret(presented.trim(), expected)) {
+    return json({ error: "bad_key", message: "That is not this deployment's console key." }, 401);
+  }
+  return issueSession(env, WEB_OWNER_ID, expected);
+}
+
+/**
+ * Resolves a bearer token back to the operator it was issued for.
+ *
+ * A session that names the key it was opened with is only good while that is
+ * still the key. Changing CONSOLE_KEY is how an owner takes a leaked one back,
+ * and it has to end the sessions it opened or it takes nothing back at all.
+ * The row is deleted rather than left to expire, so the next call does not pay
+ * for the same discovery again.
+ */
 export async function operatorFor(env: Env, request: Request): Promise<number | null> {
   const header = request.headers.get("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (token.length < 32) return null;
-  const owner = await env.STATE.get(sessionKey(await sha256Hex(token)));
-  return owner === null ? null : Number(owner);
+  const key = sessionKey(await sha256Hex(token));
+  const held = await env.STATE.get(key);
+  if (held === null) return null;
+  const [owner, stamp] = held.split(":");
+  if (stamp !== undefined) {
+    const current = consoleKey(env);
+    if (current === null || (await keyStamp(current)) !== stamp) {
+      await env.STATE.delete(key);
+      return null;
+    }
+  }
+  return Number(owner);
 }
 
 /** The headers every answer from this door carries. */
@@ -122,6 +219,11 @@ export async function handleConsoleRequest(
   if (path === "/pair") {
     const body = (await request.json().catch(() => ({}))) as { code?: string };
     return pair(env, String(body.code ?? ""));
+  }
+
+  if (path === "/claim") {
+    const body = (await request.json().catch(() => ({}))) as { key?: string };
+    return claim(env, String(body.key ?? ""));
   }
 
   if (path === "/screen") {

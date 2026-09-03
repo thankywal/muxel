@@ -10,6 +10,12 @@
  * can register the Telegram webhook against it, record it for later repair,
  * apply the schema and install the configured owner.
  *
+ * There are two ways to reach the console and setup finishes with either. A
+ * console key needs nothing registered anywhere, so its half is one row: the
+ * owner. The Telegram half is the one with an outside party in it, and it runs
+ * only when both of its settings are there, so a deployment is never left
+ * holding half a bot.
+ *
  * No business is created here. A business exists because a bot serves it, and
  * that pairing is made in the console. The bot connected at this point is the
  * console itself, which belongs to the deployment and to no business.
@@ -22,9 +28,18 @@
 import { generateId, generateShortId, MuxelError } from "@muxel/core";
 
 import { open, seal, sha256Hex } from "./crypto.js";
-import { addOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
+import { addOperator, findOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
 import { ensureSchema } from "./db/migrate.js";
-import { missingConfiguration, ownerTelegramId, type Env } from "./env.js";
+import {
+  consoleKey,
+  CONSOLE_KEY_MIN_LENGTH,
+  hasConsoleKey,
+  hasTelegramConsole,
+  missingConfiguration,
+  ownerTelegramId,
+  WEB_OWNER_ID,
+  type Env,
+} from "./env.js";
 import { dimensionAdvice } from "./rag/dimensions.js";
 import {
   enableUpdatesUrl,
@@ -83,6 +98,25 @@ export interface SetupOutcome {
   readonly owner: number | null;
   readonly missing: readonly string[];
   readonly note: string;
+  /** Whether this deployment can be signed into with a console key. */
+  readonly consoleKey?: boolean;
+  /**
+   * A key made up for an owner who has no way in yet.
+   *
+   * Nothing stores it. It is offered because "invent a long random string" is
+   * the step people stall on, and it is worth nothing until they paste it into
+   * the setting themselves.
+   */
+  readonly suggestedKey?: string;
+  /**
+   * A CONSOLE_KEY that is set and too short to be one.
+   *
+   * Only reachable on a deployment Telegram is already carrying, where it is a
+   * thing to fix rather than a thing that stops anything. Said out loud all the
+   * same: a key that is set and ignored is the worst of both, because the owner
+   * believes they have a second way in and they have not.
+   */
+  readonly shortKey?: boolean;
   /** The GitHub copy this was built from, when the build could tell. */
   readonly repo?: string;
   readonly repoVisibility?: RepoVisibility;
@@ -94,19 +128,56 @@ function notReady(note: string, missing: readonly string[] = []): SetupOutcome {
     schemaVersion: 0,
     botUsername: null,
     owner: null,
+    consoleKey: false,
+    // Naming CONSOLE_KEY is this deployment saying nobody can get in at all,
+    // which is the only moment a suggestion helps. Somebody halfway through
+    // the Telegram door is named their own missing half instead, and handing
+    // them a key as well would be a second answer to a question they did not
+    // ask.
+    suggestedKey: missing.includes("CONSOLE_KEY") ? generateId(24) : undefined,
     missing,
     note,
   };
 }
 
 export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> {
+  // A key that is set but short is a different mistake from setting none, and
+  // it is answered first so it can be named as itself.
+  //
+  // Length is the whole of the rule because this Worker's address is public
+  // and the key is the only lock on it. Sixteen characters is far past what
+  // anybody can guess, which is also why there is no attempt limit here: a
+  // limit would defend against an attack that cannot be mounted, while adding
+  // a number for the owner to wonder about.
+  //
+  // It stops the deployment only when it is the ONLY door. Somebody with a
+  // working Telegram console who then adds a short key has not broken
+  // anything, and taking their deployment down over a setting they added
+  // optionally would be this page punishing them for trying something. The
+  // short key simply is not a door — consoleKey() already refuses it — and the
+  // page says so further down.
+  const key = env.CONSOLE_KEY?.trim() ?? "";
+  const shortKey = key.length > 0 && consoleKey(env) === null;
+  if (shortKey && !hasTelegramConsole(env)) {
+    return notReady(
+      `CONSOLE_KEY has to be at least ${CONSOLE_KEY_MIN_LENGTH} characters, and this one is `
+      + "shorter. The address of this Worker is public, so that key is the whole lock on your "
+      + "console. Set a longer one, or remove it and connect a Telegram console instead, then "
+      + "reload this page.",
+      ["CONSOLE_KEY"],
+    );
+  }
+
   const missing = missingConfiguration(env);
   if (missing.length > 0) {
     return notReady("Add the missing settings as Worker secrets, then reload this page.", missing);
   }
 
-  const owner = ownerTelegramId(env);
-  if (owner === null) {
+  // Only a complete Telegram pair gets the Telegram half of setup. Half of it
+  // registers a webhook for a bot the deployment cannot name an owner for.
+  const telegram = hasTelegramConsole(env);
+  const owner = telegram ? ownerTelegramId(env) : null;
+  if (telegram && owner === null) {
     return notReady(
       "OWNER_TELEGRAM_ID must be the numeric Telegram account id, digits only.",
       ["OWNER_TELEGRAM_ID"],
@@ -118,74 +189,92 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
   const indexNote = await inspectIndex(env);
 
   const schemaVersion = await ensureSchema(env);
+  // Resolved whether or not a bot is connected. It seals every token this
+  // deployment will ever hold, and its existence is what /health reads as the
+  // answer to whether setup has run.
   const masterKey = await resolveMasterKey(env);
 
-  // The bot token is validated before anything is written, so a typo does not
-  // leave a half configured deployment behind.
-  //
-  // A rejected token is a setting to correct, not a crash: it used to throw
-  // past this and the first screen of a new deployment read "Setup could not
-  // finish: Telegram getMe failed", which names an API method to somebody who
-  // has just pasted the wrong one of two tokens. Telegram says what is wrong
-  // with it — Unauthorized, Not Found — and that sentence is what the page
-  // carried nowhere.
-  const token = env.ADMIN_BOT_TOKEN as string;
-  const client = new TelegramClient(token);
-  let me;
-  try {
-    me = await client.getMe();
-  } catch (error) {
-    const said =
-      error instanceof MuxelError && typeof error.details?.description === "string"
-        ? error.details.description
-        : "";
-    return notReady(
-      `Telegram did not accept the console bot token${said === "" ? "" : `: ${said}`}. `
-      + "It is the whole token @BotFather gave you for your console bot, digits and colon "
-      + "included, and not the bot your customers write to. Correct ADMIN_BOT_TOKEN in this "
-      + "Worker's settings and reload this page.",
-      ["ADMIN_BOT_TOKEN"],
-    );
-  }
-  const username = me.username ?? "unknown";
+  let username: string | null = null;
+  let reregistered = false;
 
-  await addOperator(env, { telegramUserId: owner, role: "owner" });
+  // Past the check above, an owner id is the proof that the Telegram pair is
+  // both complete and well formed, so it is the thing this half hangs on.
+  if (owner !== null) {
+    // The bot token is validated before anything is written, so a typo does not
+    // leave a half configured deployment behind.
+    //
+    // A rejected token is a setting to correct, not a crash: it used to throw
+    // past this and the first screen of a new deployment read "Setup could not
+    // finish: Telegram getMe failed", which names an API method to somebody who
+    // has just pasted the wrong one of two tokens. Telegram says what is wrong
+    // with it — Unauthorized, Not Found — and that sentence is what the page
+    // carried nowhere.
+    const token = env.ADMIN_BOT_TOKEN as string;
+    const client = new TelegramClient(token);
+    let me;
+    try {
+      me = await client.getMe();
+    } catch (error) {
+      const said =
+        error instanceof MuxelError && typeof error.details?.description === "string"
+          ? error.details.description
+          : "";
+      return notReady(
+        `Telegram did not accept the console bot token${said === "" ? "" : `: ${said}`}. `
+        + "It is the whole token @BotFather gave you for your console bot, digits and colon "
+        + "included, and not the bot your customers write to. Correct ADMIN_BOT_TOKEN in this "
+        + "Worker's settings and reload this page.",
+        ["ADMIN_BOT_TOKEN"],
+      );
+    }
+    username = me.username ?? "unknown";
 
-  const existing = await getConsoleBot(env);
+    await addOperator(env, { telegramUserId: owner, role: "owner" });
 
-  // A fresh path and secret on every run means an address leaked from an old
-  // deployment stops working as soon as setup is repeated.
-  const webhookPath = generateId(24);
-  const webhookSecret = generateShortId() + generateShortId();
+    reregistered = (await getConsoleBot(env)) !== null;
 
-  await putConsoleBot(env, {
-    username,
-    webhookPath,
-    tokenCiphertext: await seal(masterKey, token),
-    webhookSecretHash: await sha256Hex(webhookSecret),
-  });
+    // A fresh path and secret on every run means an address leaked from an old
+    // deployment stops working as soon as setup is repeated.
+    const webhookPath = generateId(24);
+    const webhookSecret = generateShortId() + generateShortId();
 
-  await client.setWebhook({
-    url: `${origin}/tg/${webhookPath}`,
-    secretToken: webhookSecret,
-  });
-
-  // Published in English, because Telegram holds one list per bot and setup
-  // runs before anyone has chosen a console language. The screens the commands
-  // open are translated.
-  await client
-    .setMyCommands(
-      CONSOLE_COMMANDS.map((entry) => ({
-        command: entry.command,
-        description: t("en", entry.key),
-      })),
-    )
-    // A missing menu is a smaller problem than a setup that refuses to finish.
-    .catch((error: unknown) => {
-      console.warn("could not publish the command list", {
-        reason: error instanceof Error ? error.message : String(error),
-      });
+    await putConsoleBot(env, {
+      username,
+      webhookPath,
+      tokenCiphertext: await seal(masterKey, token),
+      webhookSecretHash: await sha256Hex(webhookSecret),
     });
+
+    await client.setWebhook({
+      url: `${origin}/tg/${webhookPath}`,
+      secretToken: webhookSecret,
+    });
+
+    // Published in English, because Telegram holds one list per bot and setup
+    // runs before anyone has chosen a console language. The screens the commands
+    // open are translated.
+    await client
+      .setMyCommands(
+        CONSOLE_COMMANDS.map((entry) => ({
+          command: entry.command,
+          description: t("en", entry.key),
+        })),
+      )
+      // A missing menu is a smaller problem than a setup that refuses to finish.
+      .catch((error: unknown) => {
+        console.warn("could not publish the command list", {
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
+
+  // The console key admits one person and the access checks downstream look
+  // them up like anybody else, so the row has to exist. Without it a claimed
+  // session is answered with "this console is private" by the very deployment
+  // its holder set up.
+  if (hasConsoleKey(env)) {
+    await addOperator(env, { telegramUserId: WEB_OWNER_ID, role: "owner" });
+  }
 
   await env.STATE.put(ORIGIN_KEY, origin);
 
@@ -198,11 +287,13 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
     schemaVersion,
     botUsername: username,
     owner,
+    consoleKey: hasConsoleKey(env),
+    shortKey,
     missing: [],
     repo: SOURCE_REPO,
     repoVisibility,
     note: [
-      existing === null ? "Setup complete." : "Webhook re-registered against the current address.",
+      reregistered ? "Webhook re-registered against the current address." : "Setup complete.",
       indexNote,
     ]
       .filter((line) => line !== null)
@@ -242,12 +333,26 @@ export async function finishSetup(
     return "skipped";
   }
 
+  if (missingConfiguration(env).length > 0) {
+    return "skipped";
+  }
+
+  if (!hasTelegramConsole(env)) {
+    // A console key registers nothing with anybody, so there is no webhook out
+    // there to drop and nothing here to keep alive. The one thing a schedule
+    // can still owe such a deployment is the first run itself, and the record
+    // that says whether it happened is the owner row: without it a claimed
+    // session is met with "this console is private".
+    if ((await findOperator(env, WEB_OWNER_ID)) !== null) {
+      return "healthy";
+    }
+    await runSetup(env, origin);
+    return "completed";
+  }
+
   if ((await getConsoleBot(env)) === null) {
     // Deployed but never set up. Everything runSetup needs is configuration,
     // and the address is now known, so it can be run from here.
-    if (missingConfiguration(env).length > 0) {
-      return "skipped";
-    }
     await runSetup(env, origin);
     return "completed";
   }
@@ -352,18 +457,86 @@ function renderUpdatesCard(outcome: SetupOutcome): string {
       </div>`;
 }
 
+/**
+ * Offers a key to somebody who has no way into their own deployment.
+ *
+ * What stops people here is not typing a secret into a box, it is being asked
+ * to invent one. So one is made for them, and the page is plain about what it
+ * is: this deployment has not kept it and does not know it, and it is worth
+ * nothing until they set it themselves.
+ */
+function renderKeyOffer(outcome: SetupOutcome): string {
+  const key = outcome.suggestedKey ?? "";
+  if (key === "") {
+    return "";
+  }
+  return `
+      <div class="card">
+        <p><strong>How to get in</strong></p>
+        <p>One secret is all this needs. In the Cloudflare dashboard open
+        <strong>Settings</strong>, then <strong>Variables and Secrets</strong>,
+        and add a secret named <code>CONSOLE_KEY</code>. Reload this page, then
+        open <strong>app.muxel.site</strong>, paste the address of this page and
+        enter the same key.</p>
+        <p>Here is one, if you would rather not invent your own:</p>
+        <p><code>${escapeHtml(key)}</code></p>
+        <p>Nothing here has kept that key. It is a suggestion and nothing else
+        until you paste it into <code>CONSOLE_KEY</code> yourself, and reloading
+        this page will offer a different one.</p>
+        <p>Would you rather use Telegram? Set <code>ADMIN_BOT_TOKEN</code> and
+        <code>OWNER_TELEGRAM_ID</code> instead and your console is a bot rather
+        than a key. Either door works on its own, and the other can be added at
+        any time.</p>
+      </div>`;
+}
+
 /** Renders the outcome as a page a non technical owner can act on. */
 export function renderSetupPage(outcome: SetupOutcome): string {
+  const bot = escapeHtml(outcome.botUsername ?? "");
+  // Two doors, either of which is a finished deployment, so the page reports
+  // which ones are open rather than describing the one it used to insist on. A
+  // console key and no bot is set up, not half built, and a page that read
+  // otherwise would send its owner looking for a bot nobody asked them for.
+  const telegram = bot !== "";
+  const key = outcome.consoleKey === true;
   const body = outcome.ok
     ? `
       <p class="ok">Your console is connected.</p>
       <dl>
-        <dt>Console bot</dt><dd>@${escapeHtml(outcome.botUsername ?? "")}</dd>
-        <dt>Owner</dt><dd>Telegram id ${outcome.owner}</dd>
+        <dt>Console key</dt><dd>${
+          key ? "set" : outcome.shortKey === true ? "set, and too short to use" : "not set"
+        }</dd>
+        ${
+          telegram
+            ? `<dt>Console bot</dt><dd>@${bot}</dd>
+        <dt>Owner</dt><dd>Telegram id ${outcome.owner}</dd>`
+            : `<dt>Console bot</dt><dd>none</dd>`
+        }
       </dl>
-      <p>Open <strong>@${escapeHtml(outcome.botUsername ?? "")}</strong> in Telegram and send
+      ${
+        key
+          ? `<p>Open <strong>app.muxel.site</strong>, paste the address of this page, and
+      enter your console key. That is your private control panel: add a business
+      there and it will ask for the bot your customers will write to.</p>`
+          : outcome.shortKey === true
+            ? `<p class="warn">Your <code>CONSOLE_KEY</code> is shorter than
+      ${CONSOLE_KEY_MIN_LENGTH} characters, so it is not being used and will not sign you in.
+      Telegram is carrying this deployment; nothing is broken. Lengthen it and it becomes a
+      second way in, from any browser.</p>`
+            : `<p>You have no console key. Add <code>CONSOLE_KEY</code> to this Worker's
+      settings, at least ${CONSOLE_KEY_MIN_LENGTH} characters, and you can open the console
+      from a browser without going through Telegram at all.</p>`
+      }
+      ${
+        telegram
+          ? `<p>Open <strong>@${bot}</strong> in Telegram and send
       <code>/start</code>. This bot is your private control panel: add a business
-      there and it will ask for the bot your customers will write to.</p>
+      there and it will ask for the bot your customers will write to.</p>`
+          : `<p>Telegram is optional and this deployment has none. If you would like a
+      console you can carry in Telegram as well, add <code>ADMIN_BOT_TOKEN</code> and
+      <code>OWNER_TELEGRAM_ID</code> and reload this page. Nothing set up now is lost
+      by adding it later.</p>`
+      }
       ${
         outcome.note.includes("dimensions")
           ? `<p class="warn">${escapeHtml(outcome.note)}</p>`
@@ -378,7 +551,8 @@ export function renderSetupPage(outcome: SetupOutcome): string {
         outcome.missing.length > 0
           ? `<p>Missing: <code>${outcome.missing.map(escapeHtml).join("</code>, <code>")}</code></p>`
           : ""
-      }`;
+      }
+      ${renderKeyOffer(outcome)}`;
 
   return `<!doctype html>
 <html lang="en">

@@ -27,7 +27,7 @@ Usage
   muxel <command> [options]
 
 Commands
-  init      Create resources, deploy and connect your console bot
+  init      Create resources, deploy and open a console you can sign into
   deploy    Redeploy the Worker from the current directory
   status    Report the readiness of a running deployment
   doctor    Check local prerequisites
@@ -39,8 +39,13 @@ Global options
   --dir <path>      Directory holding wrangler.jsonc (default: .)
 
 init options
-  --admin-bot-token <token>   Console bot token from @BotFather (required)
-  --owner-telegram-id <id>    Your Telegram account id, digits only (required)
+  Give one way into the console, or both. Either on its own is a finished
+  deployment, and the other can be added to the Worker at any time afterwards.
+
+  --console-key <key>         A phrase you make up; signs you into the web console
+  --admin-bot-token <token>   Console bot token from @BotFather, with the id below
+  --owner-telegram-id <id>    Your Telegram account id, digits only
+
   --prefix <name>             Resource name prefix (default: muxel)
   --account-id <id>           Cloudflare account id (default: from wrangler)
   --gateway-token <token>     Only for models outside Workers AI
@@ -72,8 +77,12 @@ async function dispatch(args: ParsedArgs): Promise<ExitCode> {
       await runInit({
         cwd: dir,
         prefix: flagString(args, "prefix") ?? "muxel",
-        adminBotToken: requireFlag(args, "admin-bot-token"),
-        ownerTelegramId: requireFlag(args, "owner-telegram-id"),
+        // None of the three is required on its own. Which combinations make a
+        // console is runInit's rule, and it is stated once, there, so that this
+        // switch cannot come to disagree with it.
+        ...optional(args, "console-key", "consoleKey"),
+        ...optional(args, "admin-bot-token", "adminBotToken"),
+        ...optional(args, "owner-telegram-id", "ownerTelegramId"),
         ...optional(args, "gateway-token", "gatewayToken"),
         ...optional(args, "account-id", "accountId"),
         skipDeploy: flagBoolean(args, "skip-deploy"),

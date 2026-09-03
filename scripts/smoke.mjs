@@ -14,11 +14,18 @@
  * deployment sees, and tears everything down. It costs nothing: every resource
  * is inside the free tier and is deleted before the script exits.
  *
+ * Setup is proved end to end on every run. A console key is a string the owner
+ * makes up, so this script can make one up too, and the door the deploy form
+ * asks for is the one a real deployment gets tested through. SMOKE_BOT_TOKEN
+ * and SMOKE_OWNER_ID add the other door, which needs an account this script
+ * cannot invent.
+ *
  * Required: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.
- * Optional: SMOKE_BOT_TOKEN, SMOKE_OWNER_ID to also prove /setup end to end.
+ * Optional: SMOKE_BOT_TOKEN, SMOKE_OWNER_ID to also prove the Telegram console.
  */
 
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -187,40 +194,104 @@ async function until(path, predicate, deadlineMs = 150_000) {
   }
 }
 
+/**
+ * The deployment's own record of where it has got to.
+ *
+ * /health publishes it as JSON: a status, and the names of the settings still
+ * wanted. The checks below used to wait for the page to contain the string
+ * ADMIN_BOT_TOKEN, so the day a console key became the first thing a
+ * deployment asks for, a correct deployment failed the smoke and the script
+ * that exists to catch mistakes was reporting one of its own. A record
+ * survives its wording; a sentence does not.
+ */
+function record(body) {
+  try {
+    const parsed = JSON.parse(body);
+    return parsed !== null && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The setting names a record carries, or null when it carries no such list. */
+function missingIn(body) {
+  const missing = record(body)?.missing;
+  return Array.isArray(missing) && missing.every((name) => typeof name === "string" && name !== "")
+    ? missing
+    : null;
+}
+
+// Nothing is configured yet, which is the state every one click deploy starts
+// in. Reaching this answer at all proves the Worker boots, the bundle runs and
+// the bindings resolve, and what it has to say is that it cannot be reached
+// yet and what would change that.
+const unconfigured = await until("/health", (r) => record(r.body)?.status === "not_configured");
+const named = missingIn(unconfigured.body);
+const missing = named ?? [];
+check(
+  "an unconfigured deployment says so",
+  unconfigured.status === 503 && record(unconfigured.body)?.status === "not_configured",
+  `status ${unconfigured.status}: ${unconfigured.body.slice(0, 120).replace(/\n/g, " ")}`,
+);
+check("it names something to act on", missing.length > 0, JSON.stringify(named));
+
+// The page a person actually opens has to carry the same answer. A deployment
+// that tells a monitor one thing and its owner another sends that owner to set
+// something nothing is waiting for. The names come from the record, so this
+// asks whether the page agrees rather than what either of them worded it as.
+const firstScreen = await until("/setup", (r) => r.status === 503, 60_000);
+check(
+  "setup explains instead of crashing",
+  firstScreen.status === 503,
+  `status ${firstScreen.status}: ${firstScreen.body.slice(0, 80).replace(/\n/g, " ")}`,
+);
+check(
+  "the first screen names what the record names",
+  missing.length > 0 && missing.every((name) => firstScreen.body.includes(name)),
+  missing.join(", "),
+);
+
+// Now give it the one thing the deploy form asks for. A console key is a
+// string the owner makes up and needs no other account, which is exactly why
+// it is the door most deployments will use, and why this script can prove it
+// without being handed anything. A UUID is far past the length the Worker
+// insists on, so a red run here is the code's fault and never the key's.
+const consoleKey = randomUUID();
+wrangler(["secret", "put", "CONSOLE_KEY", "--config", configPath], { input: `${consoleKey}\n` });
+
+const setup = await until("/setup", (r) => r.status === 200);
+check(
+  "setup completes with nothing but a console key",
+  setup.status === 200,
+  `status ${setup.status}`,
+);
+
+const ready = await until("/health", (r) => record(r.body)?.status === "ready", 60_000);
+check(
+  "health reports ready",
+  ready.status === 200 &&
+    record(ready.body)?.status === "ready" &&
+    (missingIn(ready.body) ?? []).length === 0,
+  ready.body.slice(0, 120),
+);
+
+// Telegram is the other door, and it is optional, so it is proved only when
+// this run was handed a bot to prove it with: no string this script invents
+// can stand in for an account BotFather has to issue.
 const botToken = process.env.SMOKE_BOT_TOKEN;
 const ownerId = process.env.SMOKE_OWNER_ID;
 
 if (botToken && ownerId) {
-  // With credentials the deployment must become fully ready, exactly as a new
-  // user's does.
-  wrangler(["secret", "put", "ADMIN_BOT_TOKEN", "--config", configPath], { input: botToken });
-  wrangler(["secret", "put", "OWNER_TELEGRAM_ID", "--config", configPath], { input: ownerId });
-  const setup = await until("/setup", (r) => r.status === 200 && r.body.includes("console is connected"));
-  check("setup completes", setup.status === 200 && setup.body.includes("console is connected"),
-    `status ${setup.status}`);
-  const ready = await until("/health", (r) => r.body.includes('"ready"'), 60_000);
-  check("health reports ready", ready.body.includes('"ready"'), ready.body.slice(0, 100));
-} else {
-  // Without credentials the deployment must say precisely what is missing,
-  // which proves the Worker boots, the bundle runs, and the bindings resolve.
-  const health = await until(
-    "/health",
-    (r) => r.status === 503 && r.body.includes("ADMIN_BOT_TOKEN"),
-  );
+  wrangler(["secret", "put", "ADMIN_BOT_TOKEN", "--config", configPath], { input: `${botToken}\n` });
+  wrangler(["secret", "put", "OWNER_TELEGRAM_ID", "--config", configPath], { input: `${ownerId}\n` });
+  // The bot's username is a field of the page, not a phrase in it: the setup
+  // page prints it into the definition list whatever else the page says.
+  const connected = (body) => /<dd>@[A-Za-z0-9_]+<\/dd>/.test(body);
+  const telegram = await until("/setup", (r) => r.status === 200 && connected(r.body));
   check(
-    "health names the missing settings",
-    health.status === 503 && health.body.includes("ADMIN_BOT_TOKEN"),
-    `status ${health.status}: ${health.body.slice(0, 120).replace(/\n/g, " ")}`,
-  );
-  const setup = await until(
-    "/setup",
-    (r) => r.status === 503 && r.body.includes("Missing"),
-    60_000,
-  );
-  check(
-    "setup explains instead of crashing",
-    setup.status === 503 && setup.body.includes("Missing"),
-    `status ${setup.status}: ${setup.body.slice(0, 80).replace(/\n/g, " ")}`,
+    "the Telegram console connects too",
+    telegram.status === 200 && connected(telegram.body),
+    `status ${telegram.status}`,
   );
 }
 
