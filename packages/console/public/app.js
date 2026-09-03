@@ -1748,6 +1748,9 @@ async function takeFiles(list) {
     const { ok, data } = await api("assistant/files", {
       method: "POST",
       raw: true,
+      // Its own message, said once. api() toasts a failure by default, and the
+      // owner would have read the same sentence twice.
+      quiet: true,
       body: file,
       headers: {
         "content-type": file.type || "application/octet-stream",
