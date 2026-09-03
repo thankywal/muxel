@@ -1231,7 +1231,11 @@ export async function openHandover(
       stamp,
     )
     .first<{ opened_at: string }>();
-  const opened = row?.opened_at === stamp;
+  // A row that comes back with this call's own stamp is one this call created.
+  // No row at all is a platform that did not hand one back, which is not a
+  // thing that can be known from here: it counts as opened, because a log with
+  // a repeat in it is worth more than the empty panel this replaces.
+  const opened = row === null || row.opened_at === stamp;
   if (opened) {
     await recordEvent(env, {
       businessId: input.businessId,

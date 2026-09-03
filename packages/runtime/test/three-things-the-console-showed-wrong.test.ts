@@ -34,9 +34,9 @@ describe("what the deployment writes down", () => {
     const fn = src("db/queries.ts");
     const open = fn.slice(fn.indexOf("export async function openHandover"), fn.indexOf("export async function takeOverConversation"));
     expect(open).toContain('kind: "waiting_for_a_person"');
-    // Only when this call is what opened it. A customer with three unanswerable
-    // questions is one thing to do, so it is one line in the log.
-    expect(open).toMatch(/const opened = row\?\.opened_at === stamp/);
+    // Only when this call is what opened it — a customer with three
+    // unanswerable questions is one thing to do, so it is one line. What that
+    // means in each case is run against a database further down.
     expect(open).toMatch(/if \(opened\) \{[\s\S]*recordEvent/);
   });
 
@@ -126,5 +126,59 @@ describe("the agent icon", () => {
     const glyph = app.slice(app.indexOf("  agents:"), app.indexOf("',", app.indexOf("  agents:")));
     expect((glyph.match(/fill=/g) ?? []).length).toBe(1);
     expect(glyph).not.toContain("#000");
+  });
+});
+
+/** A D1 that answers the upsert with whatever `opened_at` the test wants. */
+function fakeDb(openedAt: (stamp: string) => string | null) {
+  const events: { kind: string; detail: string }[] = [];
+  let lastStamp = "";
+  const env = {
+    DB: {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => ({
+          first: async () => {
+            if (!sql.includes("RETURNING opened_at")) return null;
+            lastStamp = String(args[args.length - 1]);
+            const at = openedAt(lastStamp);
+            return at === null ? null : { opened_at: at };
+          },
+          run: async () => {
+            if (sql.startsWith("INSERT INTO event_log")) {
+              events.push({ kind: String(args[2]), detail: String(args[3]) });
+            }
+            return {};
+          },
+        }),
+      }),
+    },
+  } as never;
+  return { env, events };
+}
+
+describe("opening a handover, run against a database", () => {
+  const input = { conversationId: "c1", businessId: "b1", customerId: null, reason: "a wedding for 200" };
+
+  it("says it opened one, and writes the line", async () => {
+    const { openHandover } = await import("../src/db/queries.js");
+    const { env, events } = fakeDb((stamp) => stamp);
+    expect(await openHandover(env, input)).toBe(true);
+    expect(events).toEqual([{ kind: "waiting_for_a_person", detail: "a wedding for 200" }]);
+  });
+
+  it("says nothing the second time the same customer asks", async () => {
+    const { openHandover } = await import("../src/db/queries.js");
+    const { env, events } = fakeDb(() => "2026-09-03T00:00:00.000Z");
+    expect(await openHandover(env, input)).toBe(false);
+    expect(events).toEqual([]);
+  });
+
+  it("writes the line when the platform hands nothing back", async () => {
+    // Unknowable from here, and a log with a repeat in it is worth more than
+    // the permanently empty panel this replaces.
+    const { openHandover } = await import("../src/db/queries.js");
+    const { env, events } = fakeDb(() => null);
+    expect(await openHandover(env, input)).toBe(true);
+    expect(events).toHaveLength(1);
   });
 });
