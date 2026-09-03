@@ -1559,13 +1559,13 @@ function turnHtml(message, steps, cards, usage, waiting = {}) {
     return `<div class="turn user"><div class="ubub">${md(message.content)}</div></div>`;
   }
   return `<div class="turn ai" data-msg="${h(message.id)}">
-      ${steps.length > 0 ? `<div class="steps">${steps.map(stepLine).join("")}</div>` : ""}
       <div class="ai-head">
         <img class="ai-av" src="/assets/logo.png" alt="">
         <b>${h(usage?.label ?? modelLabel())}</b>
         <span class="when">${h(ago(message.createdAt))}</span>
       </div>
       <div class="ai-body">${md(message.content)}</div>
+      <div class="steps">${stepPills(steps)}</div>
       ${cards.length > 0 ? approvalCard(cards) : ""}
       ${waiting.open && waiting.prompt ? promptCard(waiting.prompt) : ""}
       <div class="ai-acts">
@@ -1639,9 +1639,35 @@ const STEP_WORDS = {
   delete_business: "Proposed deleting a business",
 };
 
-const stepLine = (step) =>
-  `<div class="step ${step.ok ? "" : "bad"}">${icon(step.ok ? "check" : "retry", 13)}
-     ${h(STEP_WORDS[step.tool] ?? step.tool)}</div>`;
+/**
+ * What the answer was built from, as pills under it.
+ *
+ * One row per call put ten identical lines of "Proposed a price" above an
+ * answer that had not arrived yet, which is a log, not a receipt. The same
+ * tool called ten times is one thing that happened ten times, so it is one
+ * pill with a count on it, and they sit under the answer because they explain
+ * it rather than announce it.
+ *
+ * Grouped by tool and outcome, in the order each was first called. A tool that
+ * succeeded nine times and failed once is two pills, because those are two
+ * different things to know.
+ */
+function stepPills(steps) {
+  if (steps.length === 0) return "";
+  const seen = new Map();
+  for (const step of steps) {
+    const key = `${step.tool}:${step.ok ? 1 : 0}`;
+    const held = seen.get(key);
+    if (held) held.n += 1;
+    else seen.set(key, { tool: step.tool, ok: step.ok, n: 1 });
+  }
+  return [...seen.values()]
+    .map(
+      (step) => `<span class="step ${step.ok ? "" : "bad"}">${icon(step.ok ? "check" : "retry", 12)}
+         ${h(STEP_WORDS[step.tool] ?? step.tool)}${step.n > 1 ? `<b>${step.n}</b>` : ""}</span>`,
+    )
+    .join("");
+}
 
 function bindTurnActions() {
   $("view").querySelectorAll("[data-copy]").forEach((b) => {
@@ -1940,11 +1966,11 @@ async function sendToAssistant(event) {
     "beforeend",
     `<div class="turn user"><div class="ubub">${md(text)}</div></div>
      <div class="turn ai" id="asThinking">
-       <div class="steps"></div>
        <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
          <b>${h(modelLabel())}</b>
          <span class="work-label">Thinking</span></div>
        <div class="ai-body thinking"><span></span><span></span><span></span></div>
+       <div class="steps"></div>
      </div>`,
   );
   thread.scrollTop = thread.scrollHeight;
@@ -2065,8 +2091,11 @@ function showProgress(event) {
     return;
   }
   if (event.type === "step") {
+    // Held as a list and drawn again, because a pill carries a count and a
+    // count cannot be appended to.
+    turn.__steps = [...(turn.__steps ?? []), { tool: event.tool, ok: event.ok }];
     const steps = turn.querySelector(".steps");
-    if (steps) steps.insertAdjacentHTML("beforeend", stepLine(event));
+    if (steps) steps.innerHTML = stepPills(turn.__steps);
     scrollThread();
   }
 }

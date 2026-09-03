@@ -277,6 +277,8 @@ export async function ask(
   let prompt: Prompt | null = null;
   /** Whether this turn has already been told it called nothing. Once only. */
   let asked = false;
+  /** The first thing the model said, from a round that also called a tool. */
+  let lead = "";
   // Every step of the loop is a call, and the owner pays for all of them. One
   // number for the turn, not for the last leg of it.
   const spent = { model, inputTokens: 0, outputTokens: 0 };
@@ -301,6 +303,17 @@ export async function ask(
     spent.outputTokens += turn.outputTokens ?? 0;
 
     text = turn.text.trim();
+    // What the model said on its way to the tools, kept rather than dropped.
+    //
+    // Every round overwrote `text`, so only the last one survived and the owner
+    // saw ten identical step rows and then, at the end, a finished answer. The
+    // model had usually said what it was about to do before it did it, and that
+    // sentence was thrown away every time. Kept, the turn reads in the order it
+    // happened: what it understood, then the work, then what came of it.
+    //
+    // Only from a round that went on to call something. A round with text and
+    // no calls is the whole answer, not a lead in, and is handled below.
+    if (text.length > 0 && turn.toolCalls.length > 0 && lead.length === 0) lead = text;
     if (turn.toolCalls.length === 0) {
       // Nothing was called. On the first round that means the model has looked
       // at nothing and changed nothing, and it has just written the only thing
@@ -487,8 +500,12 @@ export async function ask(
   await recordSteps(env, answerId, took).catch(() => undefined);
   await recordUsageFor(env, answerId, spent).catch(() => undefined);
   if (prompt !== null) await recordPrompt(env, answerId, { ...prompt }).catch(() => undefined);
+  // The lead is dropped when the final answer is the same words, which is what
+  // a model does when it says its plan and then repeats it as the summary.
+  const said = lead.length > 0 && lead !== text ? `${lead}\n\n${text}` : text;
+
   return {
-    text,
+    text: said,
     approvals: approvals.map((approval) => ({ ...approval, messageId: answerId })),
     steps: took,
     usage: spent,

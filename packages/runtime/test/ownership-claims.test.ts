@@ -120,6 +120,22 @@ describe("the ownership claims", () => {
     }
   });
 
+  it("name only the bindings a deployment actually has", () => {
+    // The landing page said "R2 holds the files" and listed it in the stack
+    // strip. wrangler.jsonc binds no R2 bucket, on purpose: enabling R2 asks
+    // for a payment method, and the deploy is meant to ask for no card. So the
+    // page said the product used a service that no deployment of it has.
+    const wrangler = readFileSync(new URL("../../../wrangler.jsonc", import.meta.url), "utf8");
+    const bound = /"r2_buckets"/.test(wrangler.replace(/^\s*\/\/.*$/gm, ""));
+    expect(bound, "wrangler.jsonc binds R2 now; this test and the page need revisiting").toBe(false);
+    const page = flat(read("index.html"));
+    expect(page).not.toContain("R2 holds the files");
+    expect(page).not.toContain("Cloudflare · Workers · D1 · R2 · Vectorize");
+    // And it says what R2 would be for, and why it is not on.
+    expect(page).toContain("R2 is the one piece nothing binds by default");
+    expect(page).toContain("asks for a payment method");
+  });
+
   it("do not claim a machine is never needed, only that none stays on", () => {
     // Somebody has to press Deploy in a browser. The true claim is that nothing
     // of theirs keeps running afterwards, and that is what is written.
