@@ -32,6 +32,8 @@ export function evaluateConsole(): {
   ) => string;
   /** Every change one answer proposed, in the single card that holds them. */
   approvalCard: (approvals: unknown[]) => string;
+  /** What the answer was built from, grouped and counted. */
+  stepPills: (steps: unknown[]) => string;
   /** What version the deployment is on, as the settings panel prints it. */
   versionBlock: (version: unknown, repo: string) => string;
   /** The owner's little pixel face, drawn from their name. */
@@ -104,6 +106,7 @@ export function evaluateConsole(): {
        costLine: (usage, allowance) => { state.assistant = { allowance }; return costLine(usage); },
        turnHtml: (message, steps, cards) => turnHtml(message, steps, cards, undefined, {}),
        approvalCard,
+       stepPills,
        versionBlock,
        pixelAvatar,
        outsidePanel,

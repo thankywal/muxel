@@ -163,10 +163,12 @@
       <h2>Bring your own cloud</h2>
       <p>
         One click deploys Muxel into your account on Cloudflare's free plan. Workers runs it,
-        D1 stores it, R2 holds the files, Vectorize does the retrieval. We never see any of it.
+        D1 stores it, Vectorize does the retrieval, KV holds your sealed keys. We never see any
+        of it. R2 is the one piece nothing binds by default, because enabling it asks for a
+        payment method: add a bucket and the original of each uploaded file is kept too.
       </p>
     </div>
-    <div class="cf"><span class="dot"></span> Cloudflare · Workers · D1 · R2 · Vectorize</div>
+    <div class="cf"><span class="dot"></span> Cloudflare · Workers · Workers AI · D1 · Vectorize · KV</div>
   </section>
 
   <footer>

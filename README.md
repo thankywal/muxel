@@ -589,10 +589,24 @@ it stays accurate if you change model.
 The token is read only. It cannot deploy, change configuration or read your
 data, and Muxel never displays it.
 
-Muxel deliberately uses no R2 bucket. It would only archive the original of an
-uploaded file, which nothing reads back, and enabling R2 requires a payment
-method even inside its own free tier. Add a binding named `DOCUMENTS` if you
-want originals kept.
+### The original of an uploaded file
+
+Muxel binds no R2 bucket by default, because enabling R2 asks for a payment
+method even inside its own free tier, and the deploy is meant to cost nothing
+and ask for no card.
+
+Without it, an uploaded document is read as text, indexed, and the original is
+not kept. That is enough for every answer Muxel gives a customer.
+
+One feature needs the original: reading a price list as rows with a confidence
+per row, through Nutrient DWS. Extraction reads the file itself, not the prose
+it was flattened into, so there has to be a file. On a deployment with no
+bucket, `read_document_data` says so plainly rather than guessing from the
+text.
+
+To turn it on, create an R2 bucket and add a binding named `DOCUMENTS` to
+`wrangler.jsonc`, then upload the document again: the original is kept from
+that upload onwards, not retrospectively.
 
 ## Security
 

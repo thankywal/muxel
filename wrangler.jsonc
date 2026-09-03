@@ -95,7 +95,7 @@
 
     // Cheapest model a plain Cloudflare login can reach, and the only tier
     // where a small shop stays inside the free daily allowance.
-    "DEFAULT_MODEL": "workers-ai/@cf/google/gemma-4-26b-a4b-it",
+    "DEFAULT_MODEL": "workers-ai/@cf/qwen/qwen3.8-27b",
 
     "AI_GATEWAY_ID": "muxel",
 
