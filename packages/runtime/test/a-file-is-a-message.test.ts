@@ -30,7 +30,7 @@ const seen = vi.hoisted(() => ({
   saved: [] as Record<string, unknown>[],
   asked: [] as string[],
   written: [] as { role: string; content: string }[],
-  indexed: [] as { businessId: string; filename: string; contentType: string; text: string }[],
+  indexed: [] as { businessId: string; filename: string; text: string }[],
   text: "Cappuccino 4.00\nFlat white 4.50\n",
 }));
 
@@ -39,13 +39,12 @@ vi.mock("../src/rag/ingest.js", () => ({
     seen.read.push({ filename: input.filename, bytes: input.body.byteLength });
     return seen.text;
   }),
-  addDocument: vi.fn(async (_env: unknown, input: { businessId: string; filename: string; contentType: string; body: ArrayBuffer }) => {
-    seen.indexed.push({
-      businessId: input.businessId,
-      filename: input.filename,
-      contentType: input.contentType,
-      text: new TextDecoder().decode(input.body),
-    });
+  addDocument: vi.fn(async (_env: unknown, input: { businessId: string; filename: string; text?: string; body?: ArrayBuffer }) => {
+    // Recorded as handed over. A body here would be the text turned back into
+    // bytes under a .pdf name, which the real reader converts and fails on;
+    // a-file-is-read-once.test.ts holds the real reader to that.
+    if (input.body !== undefined) throw new Error("handed bytes to be read again");
+    seen.indexed.push({ businessId: input.businessId, filename: input.filename, text: input.text ?? "" });
     return { documentId: "d1", chunkCount: 2, searchable: true };
   }),
   MAX_DOCUMENT_BYTES: 20 * 1024 * 1024,
@@ -268,13 +267,11 @@ describe("filing one", () => {
     expect(tool?.summarise?.({ filename: "menu.pdf", business_id: "b1" })).toContain("menu.pdf");
   });
 
-  it("indexes the text that was read, not the file a second time", async () => {
+  it("hands on the words that were read, under the file's own name", async () => {
     seen.indexed = [];
     seen.read = [];
     await findTool("add_file_to_business")?.run(ctx, { business_id: "b1", filename: "menu.pdf" });
-    expect(seen.indexed).toEqual([
-      { businessId: "b1", filename: "menu.pdf", contentType: "text/plain", text: "A".repeat(7000) },
-    ]);
+    expect(seen.indexed).toEqual([{ businessId: "b1", filename: "menu.pdf", text: "A".repeat(7000) }]);
     // Reading a photograph twice costs the owner the same call twice, and the
     // two readings can disagree.
     expect(seen.read).toEqual([]);
