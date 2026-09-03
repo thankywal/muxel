@@ -17,8 +17,11 @@
  * It keeps no database, no session and no record of which deployments exist.
  */
 import express from "express";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { fileFor, renderGuide } from "./guide.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4400);
@@ -31,7 +34,38 @@ app.get("/healthz", (_req, res) => {
   res.json({ service: "muxel-console" });
 });
 
-app.use(express.static(path.join(DIR, "public"), { index: false }));
+// No directory redirects: public/docs/ holds the guide's images, and without
+// this express answered /docs itself with a 301 to /docs/ before the guide
+// route below ever saw it.
+app.use(express.static(path.join(DIR, "public"), { index: false, redirect: false }));
+
+/**
+ * The guide, which is the README rendered.
+ *
+ * Read once per process from the copy deploy.sh puts beside this file. The
+ * copy changes only when a deploy replaces it, and a deploy restarts this
+ * process, so there is nothing to invalidate.
+ */
+const GUIDE_DIR = path.join(DIR, "guide");
+const guides = new Map();
+async function guide(key) {
+  const file = fileFor(key);
+  if (file === null) return null;
+  if (!guides.has(key)) {
+    const markdown = await readFile(path.join(GUIDE_DIR, file), "utf8");
+    guides.set(key, renderGuide({ markdown, key }).html);
+  }
+  return guides.get(key);
+}
+app.get(["/docs", "/docs/:key"], async (req, res, next) => {
+  try {
+    const html = await guide(req.params.key ?? "en");
+    if (html === null) return next();
+    res.type("html").send(html);
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * One deployment, two faces, chosen by hostname so each owns a clean root:
