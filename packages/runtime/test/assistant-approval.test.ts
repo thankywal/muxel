@@ -84,8 +84,26 @@ describe("what the loop does with a write", () => {
   it("tells the model nothing has happened", () => {
     // Saying the change was made would have it report a success to the owner
     // that has not occurred, which is the failure this design exists against.
-    expect(loop).toContain("Not done.");
-    expect(loop).toContain("do not say it has been made");
+    //
+    // It used to open with "Not done.", and this used to check for those two
+    // words. They were the problem: a small model read them as a failure and
+    // answered by calling the same tool again, so six prices came back as
+    // twelve cards. The guarantee is unchanged and is what is checked here,
+    // on the joined literals rather than on one line of source.
+    const from = loop.indexOf("if (tool.writes)");
+    // Comments stripped first. The comment explaining why "Not done." was
+    // removed contains those words, and a check that reads them is checking
+    // the explanation rather than the code.
+    const parked = loop
+      .slice(from, loop.indexOf("if (tool.name === ASK_OWNER)", from))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const words = [...parked.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join("");
+    expect(words).toContain("it has not been made yet");
+    expect(words).toContain("do not say it has been made");
+    // And it no longer reads as a failure to be retried.
+    expect(words).not.toContain("Not done.");
+    expect(words).toContain("This call succeeded");
   });
 });
 

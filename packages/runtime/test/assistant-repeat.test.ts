@@ -57,7 +57,22 @@ describe("what the model is told about its own proposals", () => {
   it("is attached to the transcript the model reads", () => {
     // Not computed and dropped. The history each turn is built from carries it.
     expect(loop).toMatch(/const decided = await approvalsByMessage\(env, chatId\)/);
-    expect(loop).toMatch(/content: message\.content \+ outcomeNote\(decided\[message\.id\] \?\? \[\]\)/);
+    expect(loop).toMatch(/const note = outcomeNote\(decided\[message\.id\] \?\? \[\]\)/);
+    expect(loop).toMatch(/\{ role: "user" as const, content: note\.trim\(\) \}/);
+  });
+
+  it("is a turn of its own, not a postscript inside the model's own message", () => {
+    // It used to be concatenated onto the assistant's content. That made it
+    // look like something the assistant had written, and a small model copied
+    // the format: an owner was shown "[What you proposed in this message: ...]"
+    // as part of the answer, which is this deployment's bookkeeping printed in
+    // the reply.
+    expect(loop).not.toMatch(/message\.content \+ outcomeNote/);
+    // And it says whose it is, so it cannot be read as either side talking.
+    expect(outcomeNote([row("approved")])).toContain("Not from the owner.");
+    // The prompt says the same thing, because the model has to know not to
+    // write anything in that shape itself.
+    expect(loop).toContain("never repeat it, and never write anything in that shape yourself");
   });
 });
 
