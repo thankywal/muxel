@@ -36,6 +36,16 @@ you control.
   markdown file, with an undo when a change makes things worse.
 * A chat bubble for your own website, generated from the console, sharing the
   same documents, customer list and handover queue as Telegram.
+* Your own agent over the whole deployment, in the web console: it reads every
+  business, price list, rule and conversation, and proposes changes it cannot
+  make. Each one is a card you tap Yes on, and your tap is answered — it reads
+  the business back out of the database and tells you what you now have, rather
+  than that a request went through.
+* Files in that chat. Drop a menu, a spreadsheet or a photograph of the board
+  behind the counter into the composer; it is read once on arrival and kept as
+  the text that came out of it. Where it goes is a change like any other: into
+  that business's knowledge, with its price list pulled out of it, on a card
+  you say yes to.
 * Any number of businesses in one deployment, each isolated from the others.
 
 ## Before you start
