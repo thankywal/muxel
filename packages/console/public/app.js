@@ -334,6 +334,8 @@ const NEEDS = {
   assistant: 13,
   /** Not a page: the two panels in Settings for keys to services outside. */
   outside: 14,
+  /** Not a page: the turn a tap on a card starts, which the deployment writes. */
+  tapAnswered: 18,
   diagnostics: 2,
   logs: 2,
   channels: 2,
@@ -1874,6 +1876,7 @@ async function approveAll() {
       : `${made} made, ${refused.length} not: ${refused[0]}`,
   );
   drawAssistant();
+  await reportOnTaps();
 }
 
 /**
@@ -2231,6 +2234,89 @@ async function answerApproval(approvalId, yes) {
   if (data.approvals) state.assistant = { ...state.assistant, approvals: data.approvals };
   state.overview = null;
   toast(data.message ?? (yes ? "Done." : "Left as it was."));
+  drawAssistant();
+  await reportOnTaps();
+}
+
+/**
+ * What the tap turned into, said out loud.
+ *
+ * Answering a card used to be the end of it. The row went green, a toast said
+ * "Done." and the conversation had nothing more to say, so an owner who had
+ * just approved six prices had to leave the chat and go and look at the price
+ * list to find out what they now had. Green is a claim about a request, not
+ * about the business.
+ *
+ * So a tap starts a turn, the same way typing does. The instruction is written
+ * by the deployment, not here, and it is not put into the transcript as words
+ * the owner used, because a tap is not a sentence. What comes back is read off
+ * the record: the model calls get_business and says what is actually there —
+ * the one thing a card cannot tell anybody, since a card describes a change
+ * and never its result.
+ *
+ * One turn for a run of taps, not one per card: "Yes to all" on six prices is
+ * one question, and six turns would be six bills for the same answer.
+ */
+async function reportOnTaps() {
+  const thread = $("asThread");
+  // Nothing to speak into. The taps landed either way; this is the telling of
+  // it, and a card answered from somewhere that is not the conversation still
+  // gets its toast. And a deployment that predates the tapped turn is not
+  // asked for one: it would read the request as an empty message and refuse.
+  if (thread === null || !state.chatId || state.pending) return;
+  if (state.apiRevision < NEEDS.tapAnswered) return;
+
+  state.pending = new AbortController();
+  state.stopped = false;
+  const box = $("asText");
+  if (box) box.disabled = true;
+  if ($("asSend")) {
+    $("asSend").hidden = true;
+    $("asStop").hidden = false;
+    $("asStop").onclick = () => {
+      state.stopped = true;
+      state.pending?.abort();
+    };
+  }
+
+  // No bubble above it. The owner's half of this turn is the card they tapped,
+  // which is already on the screen a few lines up.
+  thread.insertAdjacentHTML(
+    "beforeend",
+    `<div class="turn ai" id="asThinking">
+       <div class="ai-head"><img class="ai-av" src="/assets/logo.png" alt="">
+         <b>${h(modelLabel())}</b>
+         <span class="work-label">Checking what changed</span></div>
+       <div class="ai-body thinking"><span></span><span></span><span></span></div>
+       <div class="steps"></div>
+     </div>`,
+  );
+  thread.scrollTop = thread.scrollHeight;
+
+  const { ok, data, aborted } = await askAssistant(
+    { after: "approvals", chatId: state.chatId },
+    state.pending.signal,
+  );
+  state.pending = null;
+  if (box) box.disabled = false;
+  if ($("asSend")) {
+    $("asSend").hidden = false;
+    $("asStop").hidden = true;
+  }
+  if (aborted) return viewAssistant();
+  if (!ok) {
+    // The turn did not come back, so nothing is said about it. The changes
+    // themselves are the record and they are already drawn.
+    $("asThinking")?.remove();
+    return;
+  }
+  state.assistant = data;
+  state.chats = data.chats ?? [];
+  state.newChat = false;
+  if ($("chatList")) {
+    $("chatList").innerHTML = chatRail();
+    bindChatRail();
+  }
   drawAssistant();
 }
 
