@@ -19,7 +19,7 @@
  * to a custom domain.
  */
 
-import { generateId, generateShortId } from "@muxel/core";
+import { generateId, generateShortId, MuxelError } from "@muxel/core";
 
 import { open, seal, sha256Hex } from "./crypto.js";
 import { addOperator, getConsoleBot, putConsoleBot } from "./db/queries.js";
@@ -122,9 +122,31 @@ export async function runSetup(env: Env, origin: string): Promise<SetupOutcome> 
 
   // The bot token is validated before anything is written, so a typo does not
   // leave a half configured deployment behind.
+  //
+  // A rejected token is a setting to correct, not a crash: it used to throw
+  // past this and the first screen of a new deployment read "Setup could not
+  // finish: Telegram getMe failed", which names an API method to somebody who
+  // has just pasted the wrong one of two tokens. Telegram says what is wrong
+  // with it — Unauthorized, Not Found — and that sentence is what the page
+  // carried nowhere.
   const token = env.ADMIN_BOT_TOKEN as string;
   const client = new TelegramClient(token);
-  const me = await client.getMe();
+  let me;
+  try {
+    me = await client.getMe();
+  } catch (error) {
+    const said =
+      error instanceof MuxelError && typeof error.details?.description === "string"
+        ? error.details.description
+        : "";
+    return notReady(
+      `Telegram did not accept the console bot token${said === "" ? "" : `: ${said}`}. `
+      + "It is the whole token @BotFather gave you for your console bot, digits and colon "
+      + "included, and not the bot your customers write to. Correct ADMIN_BOT_TOKEN in this "
+      + "Worker's settings and reload this page.",
+      ["ADMIN_BOT_TOKEN"],
+    );
+  }
   const username = me.username ?? "unknown";
 
   await addOperator(env, { telegramUserId: owner, role: "owner" });
