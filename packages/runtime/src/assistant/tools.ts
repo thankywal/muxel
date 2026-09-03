@@ -668,12 +668,14 @@ export const TOOLS: readonly AssistantTool[] = [
       const file = await sentFile(ctx, str(args, "filename"));
       // As text, because text is what was kept. The bytes were read once on
       // arrival and a second reading of a photograph would cost the owner the
-      // same call twice and could disagree with the first.
+      // same call twice and could disagree with the first. Handed on as text,
+      // not as text turned back into bytes: under the file's own name those
+      // bytes read as a PDF to be converted, and a plain-text "PDF" is a
+      // conversion that fails every time.
       const result = await addDocument(ctx.env, {
         businessId: id,
         filename: file.filename,
-        contentType: "text/plain",
-        body: new TextEncoder().encode(file.text).buffer as ArrayBuffer,
+        text: file.text,
       });
       return { added: file.filename, pieces: result.chunkCount, searchable: result.searchable };
     },

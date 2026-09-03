@@ -58,15 +58,43 @@ export type IngestProgress =
   | { readonly phase: "embedding"; readonly done: number; readonly total: number }
   | { readonly phase: "settling"; readonly elapsedMs: number; readonly timeoutMs: number };
 
-export interface IngestInput {
+interface IngestCommon {
   readonly businessId: string;
   readonly filename: string;
-  readonly contentType: string;
-  readonly body: ArrayBuffer;
   /** Called as work proceeds. Anything it throws is ignored. */
   readonly onProgress?: (progress: IngestProgress) => Promise<void> | void;
   /** How long to wait for the index, when the caller can show the wait. */
   readonly settleTimeoutMs?: number;
+}
+
+/** A file as it arrived: the bytes, and what the sender said they were. */
+export interface IngestFile extends IngestCommon {
+  readonly contentType: string;
+  readonly body: ArrayBuffer;
+}
+
+/**
+ * Text that has already been read out of a file, still under the file's name.
+ *
+ * A file is read into words once, at the door it came through, and the words
+ * are what is kept. This is the shape for handing those words on. It exists
+ * because the other shape cannot carry them honestly: text encoded back into
+ * bytes under the name `menu.pdf` is not a PDF, and the reader, which decides
+ * what a file is from its name, sent exactly that to the platform's document
+ * converter — which has no converter for plain text and answered with an
+ * error. So the owner's price list was read perfectly on arrival and then
+ * refused on filing, every time, with a message about a conversion that should
+ * never have been attempted.
+ */
+export interface IngestText extends IngestCommon {
+  readonly text: string;
+}
+
+export type IngestInput = IngestFile | IngestText;
+
+/** Whether an input still has to be read, or is already words. */
+export function isAlreadyRead(input: IngestInput): input is IngestText {
+  return "text" in input;
 }
 
 export interface IngestResult {
@@ -224,7 +252,7 @@ export function stripConversionPreamble(markdown: string): string {
 }
 
 /** Produces the text of an upload, whatever format it arrived in. */
-export async function readUpload(env: Env, input: IngestInput): Promise<string> {
+export async function readUpload(env: Env, input: IngestFile): Promise<string> {
   const extension = extensionOf(input.filename);
 
   // Already text. Decoding is exact and costs nothing.
@@ -409,7 +437,43 @@ async function indexText(
   }
 }
 
+/** Refuses text too short to have been read from anything. */
+function requireReadable(text: string, filename: string): void {
+  if (text.length < MIN_CONTENT_CHARS) {
+    throw new MuxelError(
+      "invalid_input",
+      "no readable text found in this file. A scanned page or a photograph has no text to read: send the content as a message, or upload the spreadsheet or document it came from",
+      { filename, extracted: text.length },
+    );
+  }
+}
+
 export async function ingestDocument(env: Env, input: IngestInput): Promise<IngestResult> {
+  if (isAlreadyRead(input)) {
+    // Already words, so there is nothing to convert and nothing to archive:
+    // the original bytes were never handed on, and a copy of the text under
+    // the file's name would be an archive of something that is not the file.
+    const text = input.text.trim();
+    const byteSize = new TextEncoder().encode(text).byteLength;
+    if (byteSize > MAX_DOCUMENT_BYTES) {
+      throw new MuxelError("invalid_input", "document exceeds the size limit", {
+        bytes: byteSize,
+        limit: MAX_DOCUMENT_BYTES,
+      });
+    }
+    requireReadable(text, input.filename);
+    return indexText(env, {
+      businessId: input.businessId,
+      filename: input.filename,
+      contentType: "text/plain",
+      byteSize,
+      text,
+      objectKey: "",
+      ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
+      ...(input.settleTimeoutMs === undefined ? {} : { settleTimeoutMs: input.settleTimeoutMs }),
+    });
+  }
+
   if (input.body.byteLength === 0) {
     throw new MuxelError("invalid_input", "document is empty", { filename: input.filename });
   }
@@ -439,13 +503,7 @@ export async function ingestDocument(env: Env, input: IngestInput): Promise<Inge
   }
 
   const text = await readUpload(env, input);
-  if (text.length < MIN_CONTENT_CHARS) {
-    throw new MuxelError(
-      "invalid_input",
-      "no readable text found in this file. A scanned page or a photograph has no text to read: send the content as a message, or upload the spreadsheet or document it came from",
-      { filename: input.filename, extracted: text.length },
-    );
-  }
+  requireReadable(text, input.filename);
 
   return indexText(env, {
     businessId: input.businessId,
