@@ -72,13 +72,11 @@ export interface Env {
   readonly DOCUMENTS?: R2Bucket;
 }
 
-/**
- * The shortest console key this deployment will treat as a lock.
- *
- * A Worker's address is public, so the key is the only thing between a
- * stranger and the console, and its length is the whole of that defence.
- */
-export const CONSOLE_KEY_MIN_LENGTH = 16;
+// Re-exported rather than declared: the command line has to refuse the same
+// key this deployment would, and it cannot import the runtime. See
+// @muxel/core console-key.ts for why the length is the whole of the rule.
+export { CONSOLE_KEY_MIN_LENGTH } from "@muxel/core";
+import { CONSOLE_KEY_MIN_LENGTH } from "@muxel/core";
 
 /**
  * The operator id of an owner who arrived through the console, not Telegram.

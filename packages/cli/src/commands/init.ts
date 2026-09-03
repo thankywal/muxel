@@ -20,7 +20,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { MuxelError } from "@muxel/core";
+import { CONSOLE_KEY_MIN_LENGTH, MuxelError } from "@muxel/core";
 
 import { emit, progress, table } from "../output.js";
 import { identity, requireWrangler, runWrangler } from "../wrangler.js";
@@ -123,6 +123,20 @@ export function consoleDoors(options: DoorOptions): ConsoleDoors {
       + "--admin-bot-token and --owner-telegram-id together for a console in Telegram. Either "
       + "one on its own is a finished deployment and the other can be added afterwards",
       { doors: ["--console-key", "--admin-bot-token with --owner-telegram-id"] },
+    );
+  }
+
+  // Same reason as the id below: the Worker cannot answer until it exists, and
+  // a key too short to be a lock costs a whole provisioning run before the
+  // setup page says so. The number is the deployment's own, imported rather
+  // than typed here, so the two programs cannot come to disagree about it.
+  if (consoleKey !== null && consoleKey.length < CONSOLE_KEY_MIN_LENGTH) {
+    throw new MuxelError(
+      "invalid_input",
+      `--console-key has to be at least ${CONSOLE_KEY_MIN_LENGTH} characters, and this one is `
+      + "shorter. Your deployment answers on a public address, so that key is the whole lock "
+      + "on its console",
+      { flag: "console-key", minimum: CONSOLE_KEY_MIN_LENGTH },
     );
   }
 
