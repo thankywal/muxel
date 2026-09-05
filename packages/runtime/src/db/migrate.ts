@@ -62,6 +62,11 @@ const MIGRATIONS: readonly Migration[] = [
          filename     TEXT NOT NULL,
          content_type TEXT NOT NULL,
          byte_size    INTEGER NOT NULL,
+         -- Always empty. It held the R2 key of the uploaded original, which
+         -- was kept only so a document could be read as structured data; that
+         -- capability is gone and so is the archive. The column stays because
+         -- every migration here is a CREATE TABLE IF NOT EXISTS and dropping a
+         -- column in SQLite is a table rebuild, which is not safe to run twice.
          object_key   TEXT NOT NULL,
          status       TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'ready', 'failed')),
          chunk_count  INTEGER NOT NULL DEFAULT 0,

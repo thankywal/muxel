@@ -151,34 +151,29 @@ describe("what the assistant is told Muxel is", () => {
   it("denies only capabilities no tool actually provides", () => {
     // The prompt tells the owner what Muxel cannot do. If a tool for one of
     // those ever arrives, the prompt becomes a lie the model repeats, and this
-    // is where that is caught. Web search used to be on this list and is not
-    // any more: the product changed, so the line changed. The law did not.
-    const denied = { email: /mail/, payment: /(pay|charge|invoice)/ };
+    // is where that is caught. Web search has been on this list, then off it,
+    // and is now on it again: the product changed twice and the line followed
+    // both times. The law did not move.
+    const denied = { email: /mail/, payment: /(pay|charge|invoice)/, browsing: /(search_web|web_search|browse)/ };
     expect(loop).toMatch(/does not send email/);
     expect(loop).toMatch(/does not take payments/);
+    expect(loop).toMatch(/does not browse/);
     for (const [what, pattern] of Object.entries(denied)) {
       const offending = TOOLS.filter((tool) => pattern.test(tool.name)).map((tool) => tool.name);
       expect(offending, what).toEqual([]);
     }
   });
 
-  it("no longer claims it cannot browse, now that it can", () => {
-    // The other half of the same law, and the half that would have gone
-    // unnoticed: a denial left behind after the capability arrives is a model
-    // telling the owner no to something it is holding a tool for.
-    expect(TOOLS.some((tool) => tool.name === "web_search")).toBe(true);
-    expect(loop).not.toMatch(/does not browse the web/);
-  });
-
-  it("says a capability is off when it is off, and on when it is on", () => {
-    // One vault entry, two readers: this prompt and the tool itself. They were
-    // allowed to disagree exactly once — the prompt is built from the same
-    // answer the tool will get, so it cannot offer a search that then refuses.
-    expect(loop).toMatch(/capability\.webSearch/);
-    expect(loop).toMatch(/capability\.documentData/);
-    // Built per turn from a read, not from a constant that a deployment with
-    // no key would still be told was true.
-    expect(loop).toMatch(/webSearchConfigured\(env\)/);
-    expect(loop).toMatch(/documentDataConfigured\(env\)/);
+  it("reaches nothing outside the deployment, and says so without a condition", () => {
+    // There were two capabilities here that left the owner's account, each
+    // switched on by a key they added, so the prompt had to be built per turn
+    // from the vault. Both are gone. What replaces that machinery is a plain
+    // sentence, and a sentence cannot disagree with a tool that is not there.
+    expect(loop).toMatch(/reaches nothing outside this deployment at all/);
+    expect(loop).not.toMatch(/capability\./);
+    expect(loop).not.toMatch(/SerpApi|Nutrient/);
+    // Every tool a turn can call is a read or a write inside this deployment.
+    const outside = TOOLS.filter((tool) => /search_web|web_search|document_data|fetch_url/.test(tool.name));
+    expect(outside.map((tool) => tool.name)).toEqual([]);
   });
 });

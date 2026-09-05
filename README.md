@@ -11,18 +11,17 @@ of ours.
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
 <p align="center">
-  <img src="docs/media/serpapi-loop.webp" width="820"
-       alt="The owner asks what other cafes charge for a Chemex; a card proposes adding it at 44.00; one tap, and the shop's own website quotes 44.00 to a customer.">
+  <img src="docs/media/answers-your-customers.webp" width="820"
+       alt="A coffee shop's own website with the Muxel chat bubble open, answering a customer's question about a price from the shop's own list.">
 </p>
 
-<p align="center"><em>The owner asks what other cafés charge. Three SerpApi engines answer,
-with the seller named. One card, one tap — and seconds later the shop's own website is
-selling the thing it did not sell before. Nothing between those two surfaces but the price
-list the tap wrote.</em></p>
+<p align="center"><em>A customer asks the shop's own website a question, and is answered from
+the shop's own price list. No page of ours is in that picture: the widget is one script tag on
+a site that is not ours, talking to a Worker in an account that is not ours either.</em></p>
 
-New here? Read [Before you start](#before-you-start) first. It is three things
-and about ten minutes: two free accounts, and a key you make up. No Telegram
-account is needed to run any of it.
+New here? Read [Before you start](#before-you-start) first. It is two free
+accounts and about ten minutes, with nothing to invent and nothing to type. No
+Telegram account is needed to run any of it.
 
 Helping someone else set this up over chat? The same steps are written as a
 single sendable message, in five languages, in
@@ -36,12 +35,10 @@ you control.
 
 | | |
 | --- | --- |
-| <img src="docs/media/assistant.webp" alt="The console's chat answering a question, with the tools it used as pills under the answer"> | <img src="docs/media/confidence.webp" alt="Six extracted prices, two flagged as low confidence, each row turning green as its write lands"> |
-| **Your own agent, over your own business.** It reads every business, price list, rule and conversation, and proposes changes it cannot make. Every write is a card you tap Yes on, and the tools it used are listed under what it said. | **A confidence is what makes a human in the loop worth having.** Nutrient DWS reads the original file and marks what it is unsure of, so forty equally certain-looking rows become the two worth your attention. |
-| <img src="docs/media/your-website.webp" alt="A coffee shop's own website with the Muxel chat bubble open, quoting a price"> | <img src="docs/media/telegram.webp" alt="A customer asking a Muxel Telegram bot whether the shop delivers"> |
-| **On the website you already have.** One `<script>` tag, in a shadow root, taking your colours. It answers what your documents cover and hands over the one it will not guess at. | **And on Telegram.** The same agent, the same knowledge, a different door — optional, and addable at any time. |
+| <img src="docs/media/assistant.webp" alt="The console's chat answering a question, with the tools it used as pills under the answer"> | <img src="docs/media/telegram.webp" alt="A customer asking a Muxel Telegram bot whether the shop delivers"> |
+| **Your own agent, over your own business.** It reads every business, price list, rule and conversation, and proposes changes it cannot make. Every write is a card you tap Yes on, and the tools it used are listed under what it said. | **And on Telegram.** The same agent, the same knowledge, a different door — optional, and addable at any time. |
 | <img src="docs/media/your-keys.webp" alt="The console's settings screen showing which key is stored, masked, never the key itself"> | |
-| **Every key stays yours.** GitHub, Cloudflare, SerpApi, Nutrient — each sealed in your own KV with your deployment's own master key, and shown back as its first and last four so you know which key it is. | |
+| **Every key stays yours.** GitHub and Cloudflare — each sealed in your own KV with your deployment's own master key, and shown back as its first and last four so you know which key it is. | |
 
 Every screen above is the product running, not a mock-up. The console is served from this
 repository and drawn by its own CSS; the widget is on an ordinary website that is not ours.
@@ -711,23 +708,15 @@ data, and Muxel never displays it.
 
 ### The original of an uploaded file
 
-Muxel binds no R2 bucket by default, because enabling R2 asks for a payment
-method even inside its own free tier, and the deploy is meant to cost nothing
-and ask for no card.
+Muxel binds no R2 bucket, and nothing needs one. An uploaded document is read
+as text, indexed, and the original is not kept.
 
-Without it, an uploaded document is read as text, indexed, and the original is
-not kept. That is enough for every answer Muxel gives a customer.
-
-One feature needs the original: reading a price list as rows with a confidence
-per row, through Nutrient DWS. Extraction reads the file itself, not the prose
-it was flattened into, so there has to be a file. On a deployment with no
-bucket, `read_document_data` says so plainly rather than guessing from the
-text.
-
-To turn it on, create an R2 bucket and add a binding named `DOCUMENTS` to
-`wrangler.jsonc`, then upload the document again: the original is kept from
-that upload onwards, not retrospectively.
-
+It was kept, once: reading a price list as rows rather than as the prose it had
+been flattened into needs the file itself, so the original had to survive the
+upload. That capability is gone, and an archive with no reader is a copy of
+every customer's documents held for no stated purpose. Enabling R2 also asks for
+a payment method even inside its own free tier, and the deploy is meant to cost
+nothing and ask for no card.
 ## Security
 
 * Business data never leaves your Cloudflare account, and never enters the

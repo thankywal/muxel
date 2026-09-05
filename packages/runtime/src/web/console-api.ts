@@ -188,7 +188,8 @@ async function businessCard(env: Env, businessId: string) {
  *      public
  *  14  the two outside capabilities and the owner's own keys for them: live
  *      web data through SerpApi, and a document read as data through Nutrient
- *      DWS
+ *      DWS. Both were removed again at revision 20; this line stays because
+ *      the list is a record of what each revision did, not of what is here now.
  *  15  which key is stored, masked. Additive: a console reading this from a
  *      deployment that predates it gets nothing and says so, rather than
  *      showing the wrong key or hiding the panel.
@@ -206,8 +207,15 @@ async function businessCard(env: Env, businessId: string) {
  *      message carried, and a message that is a file and no words. Additive,
  *      but the console hides the paperclip on a deployment that predates it
  *      rather than offering a door that answers 404.
+ *  20  nothing added, two things gone: the outside capabilities of revision 14
+ *      and the keys that switched them on. `outside` is no longer in the system
+ *      answer and `keyHint` no longer carries those two names. Subtractive, so
+ *      the number is bumped for the record rather than for a console to check:
+ *      an older console reading this finds the fields absent, draws the panels
+ *      off, and its save button would answer 404 — which is why the console in
+ *      this repository lost those panels in the same change.
  */
-export const API_REVISION = 19;
+export const API_REVISION = 20;
 
 /** Telegram's own ceiling for a bot upload. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -1633,16 +1641,12 @@ export async function handleConsoleApi(
 
   // What this deployment is running, and whether anything is waiting for it.
   if (method === "GET" && segments[0] === "system") {
-    const [version, hasToken, usage, access, webSearch, documentData, serpHint, nutrientHint, githubHint, cloudflareHint] =
+    const [version, hasToken, usage, access, githubHint, cloudflareHint] =
       await Promise.all([
         versionStatus(),
         hasSecret(env, "github_token"),
         todayUsageAll(env),
         cloudflareAccess(env),
-        hasSecret(env, "serpapi_key"),
-        hasSecret(env, "nutrient_key"),
-        secretHint(env, "serpapi_key"),
-        secretHint(env, "nutrient_key"),
         secretHint(env, "github_token"),
         secretHint(env, "cloudflare_token"),
       ]);
@@ -1657,23 +1661,11 @@ export async function handleConsoleApi(
       // Whether the neuron figures can be read, and whose account they are for.
       cloudflare: access === null ? null : { account: access.name, accountId: access.accountId },
       origin: (await env.STATE.get(ORIGIN_KEY)) ?? "",
-      // The two capabilities that are off until the owner adds their own key.
-      // Whether the key is there, never the key: the console draws the state
-      // from this and the assistant's prompt reads the same vault, so one
-      // answer serves both and they cannot disagree.
-      outside: { webSearch, documentData },
-      // Which key, written the way a card number is written on a receipt. An
-      // owner who holds several needs to know the right one saved, and "a key
-      // is set" does not tell them that. Kept a sibling of `outside` rather
-      // than folded into it so a console that predates hints still reads the
-      // booleans it expects.
       // Every key this deployment holds, masked. One shape for all of them,
       // because the Security page says the same thing about each and a section
       // that had to say it differently would be a section saying something
       // else. Keyed by the vault's own names so there is nothing to translate.
       keyHint: {
-        serpapi_key: serpHint,
-        nutrient_key: nutrientHint,
         github_token: githubHint,
         cloudflare_token: cloudflareHint,
       },
@@ -1734,36 +1726,6 @@ export async function handleConsoleApi(
     if (method === "DELETE") {
       await clearSecret(env, "cloudflare_token");
       await forgetAccess(env);
-      return json({ ok: true });
-    }
-  }
-
-  /**
-   * The two keys for services outside Cloudflare, both the owner's own.
-   *
-   * One route rather than two, because they are the same act: paste a key,
-   * have it checked against the service before it is kept, and switch a
-   * capability on. A key that does not work is discovered here — while the
-   * owner is looking at the field they typed it into — rather than as a tool
-   * that refuses three days later with nothing to point at.
-   *
-   * What is deliberately not here is a way to read one back. The console shows
-   * that a key is set and never shows the key, so a shared screen cannot leak
-   * it, and this deployment is the only thing that ever holds it.
-   */
-  if (segments[0] === "secrets" && (segments[1] === "serpapi_key" || segments[1] === "nutrient_key")) {
-    const name = segments[1];
-    if (method === "PUT") {
-      const body = (await request.json().catch(() => ({}))) as { token?: string };
-      const token = String(body.token ?? "").trim();
-      if (token.length === 0) return json({ error: "empty" }, 400);
-      const refusal = await probeKey(name, token);
-      if (refusal !== null) return json({ error: "token_rejected", detail: refusal }, 400);
-      await putSecret(env, name, token);
-      return json({ ok: true });
-    }
-    if (method === "DELETE") {
-      await clearSecret(env, name);
       return json({ ok: true });
     }
   }
@@ -1917,44 +1879,3 @@ export async function handleConsoleApi(
   return notFound();
 }
 
-/**
- * Checks a key against the service it belongs to, before it is stored.
- *
- * @returns Why it was refused, or null when the service accepted it.
- *
- * Each is probed on its own cheapest read. SerpApi has an account endpoint
- * that costs no search; Nutrient answers an unauthenticated-looking request
- * with a 401 that is distinguishable from a network failure. What neither does
- * is spend the owner's credits to find out whether their key works.
- *
- * A service that cannot be reached at all is not a rejection. Storing the key
- * in that case is the kinder failure: the owner typed it correctly and the
- * network was down, and refusing it would send them looking for a mistake they
- * did not make.
- */
-async function probeKey(name: "serpapi_key" | "nutrient_key", token: string): Promise<string | null> {
-  try {
-    const response =
-      name === "serpapi_key"
-        // SerpApi's account endpoint reports the plan and the searches left,
-        // and spends none of them.
-        ? await fetch(`https://serpapi.com/account.json?api_key=${encodeURIComponent(token)}`, {
-            signal: AbortSignal.timeout(10_000),
-          })
-        // Nutrient has no account endpoint on this API. The extract endpoint
-        // with nothing attached is refused either way; what differs is how.
-        // A bad key is 401 before any document is read, so this costs no
-        // extraction credits, and a 400 for the missing file means the key got
-        // far enough to be asked about the body.
-        : await fetch("https://api.nutrient.io/extraction/extract", {
-            method: "POST",
-            headers: { authorization: `Bearer ${token}` },
-            body: new FormData(),
-            signal: AbortSignal.timeout(10_000),
-          });
-    if (response.status === 401 || response.status === 403) return "the service did not recognise that key";
-    return null;
-  } catch {
-    return null;
-  }
-}
