@@ -44,9 +44,7 @@ import { listHandovers } from "../db/queries.js";
 import { productsView, saveProductEntry, follow, type After } from "../products.js";
 import { addDocument, syncNotes } from "../rag/ingest.js";
 import { attachmentByName, attachmentNames } from "./store.js";
-import { readDocumentData, UNSURE_BELOW } from "../rag/nutrient.js";
 import { retrieve } from "../rag/retrieve.js";
-import { isSearchKind, webSearch, type SearchKind } from "../web-search.js";
 import { createChannel } from "../web/channel.js";
 import { conversationForCustomer, getCustomer } from "../db/queries.js";
 import { MODEL_PRESETS } from "../telegram/admin.js";
@@ -227,16 +225,14 @@ export const TOOLS: readonly AssistantTool[] = [
         rules,
         notes,
         products,
-        // The id goes with them, the same way a business id does: it is what a
-        // tool is called with. Without it read_document_data could name a
-        // document it had no way to ask for.
+        // The id goes with them so the model can say which document it means
+        // when it reports back, rather than describing one by filename and
+        // leaving the owner to work out which upload it read.
         documents: documents.map((d) => ({
           id: d.id,
           filename: d.filename,
           status: d.status,
           pieces: d.chunkCount,
-          /** Whether the original is still there to be read as data. */
-          original_kept: d.objectKey.length > 0,
         })),
         rememberCustomers: setting.rememberCustomers,
       };
@@ -262,118 +258,6 @@ export const TOOLS: readonly AssistantTool[] = [
       return chunks.length === 0
         ? { found: 0, note: "Nothing matched. The agent would say it does not know." }
         : { found: chunks.length, passages: chunks.map((chunk) => chunk.text.slice(0, 500)) };
-    },
-  },
-  {
-    /**
-     * The one tool that looks outside this deployment.
-     *
-     * A read, so it runs without asking: looking something up changes nothing,
-     * and a search that needed approval would be a search nobody used. What it
-     * finds is the web's, not the business's, and the difference matters enough
-     * that every row carries the seller or the page it came from — a price the
-     * owner cannot trace is one they should not copy onto their own list.
-     */
-    name: "web_search",
-    description:
-      "Search the live web. Use kind=shopping to see what something sells for elsewhere and who "
-      + "sells it, kind=local to see businesses on the map near a place, kind=web for what a page "
-      + "says. Results are from the web, not from this business: say so, and name the source when "
-      + "you quote one. Never put a price you found here on the price list without telling the "
-      + "owner where it came from.",
-    parameters: {
-      type: "object",
-      properties: {
-        query: { type: "string", description: "What to search for." },
-        kind: {
-          type: "string",
-          enum: ["web", "shopping", "local"],
-          description: "web for pages, shopping for prices and sellers, local for places on the map.",
-        },
-        location: { type: "string", description: "City or area, for kind=local. Optional." },
-      },
-      required: ["query"],
-    },
-    writes: false,
-    run: async (ctx, args) => {
-      const asked = str(args, "kind");
-      // An unknown kind falls to the general engine rather than failing: the
-      // model asking for "news" means it wants pages, and a refusal there
-      // costs a whole step to learn a word.
-      const kind: SearchKind = isSearchKind(asked) ? asked : "web";
-      const location = str(args, "location");
-      const found = await webSearch(ctx.env, {
-        query: str(args, "query"),
-        kind,
-        ...(location.length > 0 ? { location } : {}),
-      });
-      return found.results.length === 0 && found.directAnswer.length === 0
-        ? { kind, found: 0, note: "The web returned nothing for that. Do not fill the gap." }
-        : found;
-    },
-  },
-  {
-    /**
-     * Reading a document the way a form is read rather than the way prose is.
-     *
-     * The ordinary extraction asks a model to read the text a file was
-     * flattened into. This reads the original file and comes back with a
-     * confidence per row, which is the only thing that lets a long list be
-     * triaged: the owner still says yes to every price, but they know which
-     * three of the forty to look at hardest.
-     *
-     * A read, and deliberately so. Nothing it returns is on the price list
-     * until the owner taps Yes on a save_price card, which is where the record
-     * of who decided what already lives.
-     */
-    name: "read_document_data",
-    description:
-      "Read one uploaded document as structured data: its items, prices and a confidence for each. "
-      + "Use it before proposing prices from a price list the owner uploaded. Rows with a low "
-      + "confidence are ones to read out to the owner rather than propose silently. Nothing is "
-      + "saved by this; propose each item with save_price and the owner decides.",
-    parameters: {
-      type: "object",
-      properties: {
-        ...BUSINESS_ARG,
-        document_id: { type: "string", description: "From get_business." },
-      },
-      required: ["business_id", "document_id"],
-    },
-    writes: false,
-    run: async (ctx, args) => {
-      const businessId = await reachable(ctx, str(args, "business_id"));
-      const documentId = str(args, "document_id");
-      const documents = await listDocuments(ctx.env, businessId, 100);
-      const document = documents.find((held) => held.id === documentId);
-      if (document === undefined) throw new Error("No document with that id in this business.");
-      if (ctx.env.DOCUMENTS === undefined) {
-        throw new Error(
-          "This deployment has no R2 bucket bound, so it did not keep the original file. "
-          + "Add a DOCUMENTS binding and upload it again.",
-        );
-      }
-      if (document.objectKey.length === 0) {
-        throw new Error(
-          `The original of ${document.filename} was not kept, so it can only be read as text. `
-          + "Uploading it again keeps it.",
-        );
-      }
-      const object = await ctx.env.DOCUMENTS.get(document.objectKey);
-      if (object === null) throw new Error(`The original of ${document.filename} is no longer in storage.`);
-
-      const read = await readDocumentData(ctx.env, {
-        bytes: await object.arrayBuffer(),
-        filename: document.filename,
-        contentType: document.contentType,
-      });
-      return {
-        filename: document.filename,
-        found: read.items.length,
-        unsure: read.unsure,
-        unsure_below: UNSURE_BELOW,
-        items: read.items,
-      };
     },
   },
   {

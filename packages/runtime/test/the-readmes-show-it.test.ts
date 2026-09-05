@@ -184,10 +184,11 @@ describe("what a stranger sees before scrolling", () => {
   }
 
   it("gives the hero the movement and leaves the rest still", () => {
-    // What the top of the page argues is a loop: a price found, one tap, the
-    // shop's own website selling the thing seconds later. A single frame of
-    // that argues nothing, and swapping the animation for a still would leave
-    // every other assertion in this file green.
+    // What the top of the page argues is that a customer gets answered on the
+    // shop's own site, by the shop's own price list, with nothing of ours in
+    // between. A still of a chat window argues that a chat window exists; the
+    // answer arriving is the whole claim, and only motion carries it. Swapping
+    // the animation for a still would leave every other assertion here green.
     const [hero, ...gallery] = picturesIn(ENGLISH);
     expect(moves((hero as Picture).src), `${(hero as Picture).src} does not move`).toBe(true);
     for (const picture of gallery) {
@@ -197,7 +198,7 @@ describe("what a stranger sees before scrolling", () => {
 });
 
 describe("what the pictures weigh", () => {
-  it("keeps docs/media inside one megabyte, all six files together", () => {
+  it("keeps docs/media inside one megabyte, every file together", () => {
     // Said in this file's opening prose too, so somebody adding a screenshot
     // meets the number rather than discovering it. The failure message carries
     // what is spent and what is left, because the answer to being over it is
