@@ -7,6 +7,9 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+**[ลองก่อนได้เลย](https://thankywal.github.io/muxel/try/)** — เว็บไซต์ร้านค้าธรรมดาที่มีผู้ช่วย Muxel อยู่บนนั้น ลองถามราคาดู
+แล้วมันจะตอบจากรายการราคาของร้านนั้นเอง ไม่ต้องติดตั้งอะไร ไม่ต้องมีบัญชี ไม่ต้องมีบัตร
+
 <p align="center">
   <img src="docs/media/answers-your-customers.webp" width="820"
        alt="เว็บไซต์ของร้านกาแฟเองที่เปิดหน้าต่างแชทของ Muxel อยู่ ลูกค้าถามว่าแฟลตไวท์ราคาเท่าไร แล้วคำตอบ 5.50 ก็ปรากฏขึ้นข้าง ๆ เมนูของร้านบนหน้าเดียวกัน">

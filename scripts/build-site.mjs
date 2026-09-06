@@ -94,7 +94,7 @@ export async function buildSite({ base = "/muxel/", out = path.join(ROOT, "site"
   // The console's own files, flat at the root, exactly as they were served.
   const publicDir = path.join(CONSOLE, "public");
   for (const name of await readdir(publicDir)) {
-    if (name === "index.html" || name === "console.html") continue;
+    if (name === "index.html" || name === "console.html" || name === "try.html") continue;
     await cp(path.join(publicDir, name), path.join(OUT, name), { recursive: true });
   }
   // The README's pictures, where the rendered README looks for them.
@@ -107,6 +107,10 @@ export async function buildSite({ base = "/muxel/", out = path.join(ROOT, "site"
   const pages = new Map();
   pages.set("index.html", await readFile(path.join(publicDir, "console.html"), "utf8"));
   pages.set("product/index.html", await readFile(path.join(publicDir, "index.html"), "utf8"));
+  // A shop's site with the widget on it, so the product can be met before it
+  // is installed. Everything else here asks for two accounts and a deploy
+  // first, which is a lot to ask of somebody still deciding whether to look.
+  pages.set("try/index.html", await readFile(path.join(publicDir, "try.html"), "utf8"));
   for (const key of [...Object.keys(LANGS), ...Object.keys(PAGES)]) {
     const file = fileFor(key);
     const from = file.startsWith("README") ? file : path.join("docs", file);

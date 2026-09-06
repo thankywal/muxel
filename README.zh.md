@@ -7,6 +7,9 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+**[先试试](https://thankywal.github.io/muxel/try/)** — 一个装了 Muxel 助手的普通店铺网站。问它一个价格，它会从那家店
+自己的价目表里回答。不用安装，不用注册，也不用绑卡。
+
 <p align="center">
   <img src="docs/media/answers-your-customers.webp" width="820"
        alt="一家咖啡店自己的网站上打开着 Muxel 的对话框,客户问一杯 flat white 多少钱,答案 5.50 就出现在同一页的店铺菜单旁边。">
