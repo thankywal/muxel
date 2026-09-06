@@ -59,13 +59,11 @@
   // here runs on the Workers Free plan with no card. That is a claim on the
   // front page, so it decides this.
   //
-  // What has changed is that the archive is no longer write only. It used to
-  // keep the original of an uploaded document and never read it back; reading a
-  // document as data through Nutrient DWS reads the file itself rather than the
-  // prose it was flattened into, so an owner who wants that needs the original
-  // kept. Add a binding named DOCUMENTS and the runtime picks it up; without
-  // one, read_document_data says the original was not kept rather than reading
-  // something else and calling it the document.
+  // Nothing is bound, so nothing is archived. The original of an uploaded
+  // document used to be kept here so it could later be read as structured data
+  // rather than as the prose it was flattened into; that capability is gone,
+  // and an archive with no reader is a copy of every customer's documents held
+  // for no stated purpose.
 
   "kv_namespaces": [
     {

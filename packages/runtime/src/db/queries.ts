@@ -717,7 +717,6 @@ export async function createDocument(
     filename: string;
     contentType: string;
     byteSize: number;
-    objectKey: string;
   },
 ): Promise<BusinessDocument> {
   assertValidId(input.businessId, "businessId");
@@ -726,7 +725,7 @@ export async function createDocument(
   await env.DB.prepare(
     `INSERT INTO document
        (id, business_id, filename, content_type, byte_size, object_key, status, chunk_count, error, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, NULL, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, '', 'pending', 0, NULL, ?, ?)`,
   )
     .bind(
       id,
@@ -734,7 +733,6 @@ export async function createDocument(
       input.filename,
       input.contentType,
       input.byteSize,
-      input.objectKey,
       timestamp,
       timestamp,
     )
@@ -745,7 +743,6 @@ export async function createDocument(
     filename: input.filename,
     contentType: input.contentType,
     byteSize: input.byteSize,
-    objectKey: input.objectKey,
     status: "pending",
     chunkCount: 0,
     error: null,
@@ -790,7 +787,6 @@ export async function listDocuments(
       filename: string;
       content_type: string;
       byte_size: number;
-      object_key: string;
       status: string;
       chunk_count: number;
       error: string | null;
@@ -803,7 +799,6 @@ export async function listDocuments(
     filename: row.filename,
     contentType: row.content_type,
     byteSize: row.byte_size,
-    objectKey: row.object_key,
     status: row.status as DocumentStatus,
     chunkCount: row.chunk_count,
     error: row.error,

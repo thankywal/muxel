@@ -44,7 +44,6 @@ export interface BusinessDocument {
   readonly filename: string;
   readonly contentType: string;
   readonly byteSize: number;
-  readonly objectKey: string;
   readonly status: DocumentStatus;
   readonly chunkCount: number;
   readonly error: string | null;

@@ -54,14 +54,6 @@ vi.mock("../src/db/queries.js", async (importOriginal) => ({
   listBusinesses: vi.fn(async () => [{ id: "b1", name: "Hanbit Beauty", model: "m1" }]),
   canAccessBusiness: vi.fn(async () => true),
 }));
-vi.mock("../src/rag/nutrient.js", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  documentDataConfigured: vi.fn(async () => false),
-}));
-vi.mock("../src/web-search.js", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  webSearchConfigured: vi.fn(async () => false),
-}));
 
 const { ask } = await import("../src/assistant/loop.js");
 

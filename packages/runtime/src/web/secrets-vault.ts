@@ -18,14 +18,11 @@ import { resolveMasterKey } from "../secrets.js";
 
 /** The names a deployment understands, so a typo cannot create a dead entry. */
 export const SECRET_NAMES = [
+  // Both are the owner's own credentials for their own accounts, held so this
+  // deployment can update itself and read its own usage. Nothing here reaches
+  // a service outside the owner's Cloudflare and GitHub accounts.
   "github_token",
   "cloudflare_token",
-  // Two keys for services outside Cloudflare, both the owner's own. They are
-  // what switches on the two capabilities this deployment cannot provide by
-  // itself: live web data, and reading a document as structured data rather
-  // than as prose. Absent means the capability is off, not that it failed.
-  "serpapi_key",
-  "nutrient_key",
 ] as const;
 export type SecretName = (typeof SECRET_NAMES)[number];
 

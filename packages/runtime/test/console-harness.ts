@@ -38,17 +38,8 @@ export function evaluateConsole(): {
   versionBlock: (version: unknown, repo: string) => string;
   /** The owner's little pixel face, drawn from their name. */
   pixelAvatar: (seed: string) => string;
-  /** The field that collects one key to a service outside this deployment. */
   /** The one line that says which key is stored, used by every section. */
   keyLine: (hint: string) => string;
-  outsidePanel: (panel: {
-    on: boolean;
-    id: string;
-    placeholder: string;
-    leaves: string;
-    where: string;
-    hint?: string;
-  }) => string;
 } {
   const noop = (): unknown => undefined;
   const element = new Proxy(
@@ -109,7 +100,6 @@ export function evaluateConsole(): {
        stepPills,
        versionBlock,
        pixelAvatar,
-       outsidePanel,
        keyLine,
      });`,
     context,
