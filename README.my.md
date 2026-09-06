@@ -8,6 +8,10 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+**[အရင် စမ်းကြည့်ပါ](https://thankywal.github.io/muxel/try/)** — Muxel assistant တပ်ထားသော သာမန် ဆိုင် website တစ်ခုသာ
+ဖြစ်ပါသည်။ စျေးနှုန်း တစ်ခု မေးကြည့်ပါ — ထိုဆိုင်၏ ကိုယ်ပိုင် စာရင်းထဲမှ ပြန်ဖြေပါလိမ့်မည်။
+install စရာ မလို၊ account မလို၊ card မလိုပါ။
+
 <p align="center">
   <img src="docs/media/answers-your-customers.webp" width="820"
        alt="ကော်ဖီဆိုင်တစ်ဆိုင်၏ ကိုယ်ပိုင် website ပေါ်တွင် Muxel chat ဖွင့်ထားသည် — ဖောက်သည်က flat white စျေးနှုန်း မေးလိုက်ရာ ၅.၅၀ ဟူသော အဖြေသည် တူညီသော စာမျက်နှာပေါ်ရှိ ဆိုင်၏ ကိုယ်ပိုင် menu ဘေးတွင် ပေါ်လာသည်။">

@@ -77,6 +77,7 @@ describe("what the build writes", () => {
       // domain that chose it is going to another project.
       "index.html",
       "product/index.html",
+      "try/index.html",
       "docs/index.html",
       ...Object.keys(LANGS as Record<string, string>)
         .filter((key) => key !== "en")
@@ -95,6 +96,28 @@ describe("what the build writes", () => {
     expect(() => file("assets/logo.png")).not.toThrow();
     // The README's pictures, where the rendered README looks for them.
     expect(() => file("docs/media/your-own-console.webp")).not.toThrow();
+  });
+
+  it("lets a stranger meet the product before installing it", () => {
+    // Everything else here asks for two accounts and a deploy first. The page
+    // is a shop's site carrying the one script tag the console generates, so
+    // what a visitor meets is a real deployment answering, not a recording.
+    const shop = file("try/index.html");
+    expect(shop).toMatch(/<script src="https:\/\/[^"]+\/w\/[^"]+\/widget\.js"><\/script>/);
+    // It says what it is. A made-up shop that did not say so would be a lie
+    // told by the one page whose whole job is to be checkable.
+    expect(shop).toContain("This shop is made up");
+    // A shop's page, not one of ours: it carries its own mark, and the only
+    // thing of ours on it is the widget and the line explaining it.
+    expect(shop).toContain('<meta charset="utf-8">');
+    expect(shop).not.toContain("/assets/logo.png");
+  });
+
+  it("is where the front pages send somebody who has not decided yet", () => {
+    for (const name of ["README.md", "README.my.md", "README.th.md", "README.ja.md", "README.zh.md"]) {
+      const text = readFileSync(new URL(`../../../${name}`, import.meta.url), "utf8");
+      expect(text, `${name} does not offer the demo`).toContain(`${CONSOLE_URL}try/`);
+    }
   });
 
   it("answers an unknown path with the page that says what this is", () => {

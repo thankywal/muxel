@@ -7,6 +7,10 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+**[まず試す](https://thankywal.github.io/muxel/try/)** — Muxel のアシスタントを載せた、ふつうのお店のウェブサイトです。
+値段を尋ねてみてください。そのお店自身の価格表から答えます。入れるものも、アカウントも、
+カードも要りません。
+
 <p align="center">
   <img src="docs/media/answers-your-customers.webp" width="820"
        alt="コーヒー店自身のウェブサイトで Muxel のチャットが開き、フラットホワイトの値段を尋ねたお客様に、同じページのメニューと同じ 5.50 という答えが返っている画面。">

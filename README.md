@@ -10,6 +10,9 @@ of ours.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel)
 
+**[Try it first](https://thankywal.github.io/muxel/try/)** — an ordinary shop's website with a Muxel assistant on it. Ask it a
+price and it answers from that shop's own list. Nothing to install, no account, no card.
+
 <p align="center">
   <img src="docs/media/answers-your-customers.webp" width="820"
        alt="A coffee shop's own website with the Muxel chat open: a customer asks what a flat white costs, and the answer, 5.50, arrives beside the shop's own menu on the same page.">
