@@ -25,7 +25,7 @@
  * to a custom domain.
  */
 
-import { generateId, generateShortId, MuxelError } from "@muxel/core";
+import { CONSOLE_HOME, generateId, generateShortId, MuxelError } from "@muxel/core";
 
 import { consoleClaimed, ensureConsoleKey } from "./console-key.js";
 import { open, seal, sha256Hex } from "./crypto.js";
@@ -462,7 +462,7 @@ function renderKeyCard(outcome: SetupOutcome): string {
       <div class="card">
         <p><strong>Your console key</strong></p>
         <p class="key"><code>${escapeHtml(key)}</code></p>
-        <p>Open <strong>app.muxel.site</strong>, paste the address of this page,
+        <p>Open <strong>${CONSOLE_HOME}</strong>, paste the address of this page,
         and paste that key. Nothing else is needed and nothing else was asked of
         you: your deployment made this key itself.</p>
         <p>Keep it where you keep passwords. It is shown here until the first
@@ -494,7 +494,7 @@ export function renderSetupPage(outcome: SetupOutcome): string {
       ${renderKeyCard(outcome)}
       ${
         outcome.issuedKey === undefined
-          ? `<p>Open <strong>app.muxel.site</strong>, paste the address of this page, and
+          ? `<p>Open <strong>${CONSOLE_HOME}</strong>, paste the address of this page, and
       enter your console key. That is your private control panel: add a business
       there and it will ask for the bot your customers will write to.</p>`
           : ""

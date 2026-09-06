@@ -20,7 +20,7 @@ import { randomBytes } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { CONSOLE_KEY_MIN_LENGTH, MuxelError } from "@muxel/core";
+import { CONSOLE_HOME, CONSOLE_KEY_MIN_LENGTH, MuxelError } from "@muxel/core";
 
 import { emit, progress, table } from "../output.js";
 import { identity, requireWrangler, runWrangler } from "../wrangler.js";
@@ -295,8 +295,8 @@ function nextSteps(doors: ConsoleDoors, workerUrl: string | null): string[] {
   if (doors.consoleKey !== null) {
     steps.push(
       workerUrl === null
-        ? "Deploy, then open app.muxel.site, paste the deployment's address and enter your console key."
-        : `Open app.muxel.site, paste ${workerUrl}, and enter your console key.`,
+        ? `Deploy, then open ${CONSOLE_HOME}, paste the deployment's address and enter your console key.`
+        : `Open ${CONSOLE_HOME}, paste ${workerUrl}, and enter your console key.`,
     );
   } else {
     // No key was given, so the deployment made one. It is on the setup page and
@@ -305,9 +305,9 @@ function nextSteps(doors: ConsoleDoors, workerUrl: string | null): string[] {
     steps.push(
       workerUrl === null
         ? "Open the deployment's address in a browser. It shows the console key it made for "
-          + "itself; take it to app.muxel.site with the address."
+          + `itself; take it to ${CONSOLE_HOME} with the address.`
         : `Open ${workerUrl} in a browser. It shows the console key it made for itself; take it `
-          + `to app.muxel.site with ${workerUrl}.`,
+          + `to ${CONSOLE_HOME} with ${workerUrl}.`,
     );
   }
 

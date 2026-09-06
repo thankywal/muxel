@@ -13,6 +13,7 @@
 
 import {
   callbackRefKey,
+  CONSOLE_HOME,
   decodeCallback,
   generateId,
   generateShortId,
@@ -1017,7 +1018,7 @@ export async function screenFor(
       // Telegram's word, who is asking.
       const code = await issuePairingCode(env, userId);
       return {
-        text: `<b>${t(locale, "webConTitle")}</b>\n\n${t(locale, "webConBody")}\n\n<code>${code}</code>\n\n${t(locale, "webConExpiry")}`,
+        text: `<b>${t(locale, "webConTitle")}</b>\n\n${t(locale, "webConBody", { console: CONSOLE_HOME })}\n\n<code>${code}</code>\n\n${t(locale, "webConExpiry")}`,
         rows: [
           row({ text: t(locale, "btnWebConNew"), action: "webcon" }),
           row({ text: t(locale, "back"), action: "home" }),

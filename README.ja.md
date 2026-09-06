@@ -40,7 +40,7 @@ Muxel のサーバーも、Muxel のデータベースも、Muxel のアカウ�
 ## できること
 
 * すべてボタンだけで操作できるコンソールがあります。ブラウザの
-  [app.muxel.site](https://app.muxel.site) で開き、ご希望なら Telegram の bot
+  [thankywal.github.io/muxel](https://thankywal.github.io/muxel/) で開き、ご希望なら Telegram の bot
   としても使えます。どちらでも、セットアップのあとは dashboard も設定ファイルも
   必要ありません。
 * お店ごとにお客様用の bot があり、アップロードした価格表、ポリシー、商品情報を
@@ -136,7 +136,7 @@ webhook をつなぐのもこれです。
 見ていない人が考えるパスワードよりよいからです。
 
 そのキーをコピーして、ほかのパスワードと同じ場所に保管してください。それから
-[app.muxel.site](https://app.muxel.site) を開き、Worker のアドレスを貼り付けて、
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/) を開き、Worker のアドレスを貼り付けて、
 キーを貼り付けます。そのコンソールがあなた専用の操作画面です。そこでお店を追加
 すると、お店の名前を尋ねられます。
 
@@ -343,7 +343,7 @@ Cloudflare のログインで届くのは Workers AI のモデルだけです。
 ## コンソール
 
 セットアップのあとは、すべてコンソールの中で、ボタンを押して行います。ブラウザの
-[app.muxel.site](https://app.muxel.site) で、そして足してあればコンソール bot でも。
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/) で、そして足してあればコンソール bot でも。
 
 | 画面 | 内容 |
 | --- | --- |

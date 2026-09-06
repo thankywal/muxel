@@ -46,7 +46,7 @@ repository and drawn by its own CSS; the widget is on an ordinary website that i
 ## What it does
 
 * A console you drive with buttons: in a browser at
-  [app.muxel.site](https://app.muxel.site), and in a Telegram bot as well if
+  [thankywal.github.io/muxel](https://thankywal.github.io/muxel/), and in a Telegram bot as well if
   you want one. No dashboard and no configuration files after setup either way.
 * A customer bot per business that answers from your uploaded price lists,
   policies and product information.
@@ -155,7 +155,7 @@ invented by a machine that has just been created is a better password than one
 invented by a person who has not seen the thing yet.
 
 Copy that key and keep it where you keep your other passwords. Then open
-[app.muxel.site](https://app.muxel.site), paste your Worker's address in, and
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/), paste your Worker's address in, and
 paste the key. That console is your private control panel. Add a business there
 and it will ask what the business is called.
 
@@ -419,7 +419,7 @@ own token, so the control panel cannot quietly become a customer's chat.
 ## The console
 
 Everything after setup happens in the console, in buttons: at
-[app.muxel.site](https://app.muxel.site) in a browser, and in the console bot
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/) in a browser, and in the console bot
 if you added one.
 
 | Screen | What it holds |

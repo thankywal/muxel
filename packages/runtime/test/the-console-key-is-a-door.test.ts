@@ -14,6 +14,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { CONSOLE_HOME } from "@muxel/core";
+
 const seen = vi.hoisted(() => ({
   operators: [] as number[],
   wrote: [] as string[],
@@ -170,7 +172,7 @@ describe("a deployment with a key and no Telegram", () => {
     const page = renderSetupPage(await setUp({ CONSOLE_KEY: KEY }));
     expect(page).toContain("Your console is connected");
     expect(page).not.toContain("Not ready yet");
-    expect(page).toContain("app.muxel.site");
+    expect(page).toContain(CONSOLE_HOME);
     expect(page).toContain("Telegram is optional");
   });
 });
@@ -240,7 +242,7 @@ describe("a deployment nobody has been asked anything for", () => {
     const outcome = await setUp({});
     const page = renderSetupPage(outcome);
     expect(page).toContain(outcome.issuedKey as string);
-    expect(page).toContain("app.muxel.site");
+    expect(page).toContain(CONSOLE_HOME);
     expect(page).toContain("passwords");
   });
 
@@ -297,7 +299,7 @@ describe("a deployment with both doors", () => {
     expect(seen.operators).toEqual([42, WEB_OWNER_ID]);
     const page = renderSetupPage(outcome);
     expect(page).toContain("@my_console_bot");
-    expect(page).toContain("app.muxel.site");
+    expect(page).toContain(CONSOLE_HOME);
   });
 });
 

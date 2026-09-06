@@ -35,4 +35,4 @@ range.
 own deployment, which is the normal path.
 
 Two faces, chosen by hostname: the product page for `muxel.site`, the console for
-`app.muxel.site`. Any other host gets the product page.
+`thankywal.github.io/muxel`. Any other host gets the product page.

@@ -27,7 +27,7 @@ Otherwise:
 2. Add a secret named `CONSOLE_KEY` — or edit it, if you already set one — and
    put in a new phrase of at least 16 characters. A key you set there wins over
    the one your deployment issued itself.
-3. Open [app.muxel.site](https://app.muxel.site), paste your deployment's
+3. Open [thankywal.github.io/muxel](https://thankywal.github.io/muxel/), paste your deployment's
    address, and enter the new key.
 
 **Changing the key takes the old one back.** Signing in hands your browser a
@@ -199,7 +199,7 @@ what you get is the same Worker the button installs. A test holds the two to
 each other.
 
 When it finishes it prints your address and what to do with it: open
-[app.muxel.site](https://app.muxel.site), paste that address in and enter your
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/), paste that address in and enter your
 console key — which is printed on your deployment's own address — or, if you set
 up a bot instead, open it in Telegram and send `/start`.
 

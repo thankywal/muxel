@@ -48,15 +48,24 @@ export function normalizeBase(value) {
 const URL_START = /(["'`]|url\()\/([A-Za-z0-9._-]+)/g;
 
 /**
+ * The site's own root, which has no path segment to recognise it by.
+ *
+ * `"/"` on its own is far too common in code to rewrite on sight — it is every
+ * split and every join — so only an attribute counts, where it cannot be
+ * anything but a link to the top of this site.
+ */
+const ROOT_LINK = /\b(href|src)="\/"/g;
+
+/**
  * Rewrites the site's own root-absolute URLs onto the base path.
  *
  * `roots` is the first path segment of everything this build emits. Anything
  * else beginning with a slash is somebody else's URL and is left alone.
  */
 export function withBase(text, base, roots) {
-  return text.replace(URL_START, (whole, open, first) =>
-    roots.has(first) ? `${open}${base}${first}` : whole,
-  );
+  return text
+    .replace(URL_START, (whole, open, first) => (roots.has(first) ? `${open}${base}${first}` : whole))
+    .replace(ROOT_LINK, (_whole, attribute) => `${attribute}="${base}"`);
 }
 
 /** Every root-absolute reference to one of the site's own names, unrewritten. */
@@ -65,6 +74,7 @@ export function missedRoots(text, roots) {
   for (const [, , first] of text.matchAll(URL_START)) {
     if (roots.has(first)) missed.add(first);
   }
+  for (const [, attribute] of text.matchAll(ROOT_LINK)) missed.add(`${attribute}="/"`);
   return [...missed];
 }
 
@@ -90,10 +100,13 @@ export async function buildSite({ base = "/muxel/", out = path.join(ROOT, "site"
   // The README's pictures, where the rendered README looks for them.
   await cp(path.join(ROOT, "docs/media"), path.join(OUT, "docs/media"), { recursive: true });
 
+  // The console is the site. It used to be chosen by hostname — app.muxel.site
+  // was the console and muxel.site was the product page — and that domain is
+  // going to another project, so the address an owner is sent to is this one.
   /** The pages this build writes, as path → HTML. */
   const pages = new Map();
-  pages.set("index.html", await readFile(path.join(publicDir, "index.html"), "utf8"));
-  pages.set("console/index.html", await readFile(path.join(publicDir, "console.html"), "utf8"));
+  pages.set("index.html", await readFile(path.join(publicDir, "console.html"), "utf8"));
+  pages.set("product/index.html", await readFile(path.join(publicDir, "index.html"), "utf8"));
   for (const key of [...Object.keys(LANGS), ...Object.keys(PAGES)]) {
     const file = fileFor(key);
     const from = file.startsWith("README") ? file : path.join("docs", file);
@@ -102,8 +115,9 @@ export async function buildSite({ base = "/muxel/", out = path.join(ROOT, "site"
     pages.set(where, renderGuide({ markdown, key }).html);
   }
   // A static host answers an unknown path with this. The product page is the
-  // honest answer: it says what this is and links to everything else.
-  pages.set("404.html", pages.get("index.html"));
+  // honest answer: it says what this is and links to everything else, which is
+  // more use to somebody who mistyped than a console asking for an address.
+  pages.set("404.html", pages.get("product/index.html"));
 
   // What may be rewritten: the first path segment of everything emitted.
   const roots = new Set([

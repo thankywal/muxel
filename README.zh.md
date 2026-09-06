@@ -37,7 +37,7 @@ CSS 绘制;那个对话气泡则在一个并不属于我们的普通网站上。
 ## 它能做什么
 
 * 一个完全用按钮操作的 console:在浏览器里打开
-  [app.muxel.site](https://app.muxel.site),想要的话再加一个 Telegram bot 也
+  [thankywal.github.io/muxel](https://thankywal.github.io/muxel/),想要的话再加一个 Telegram bot 也
   可以。两种方式都一样,设置完成之后不需要后台面板,也不需要改配置文件。
 * 每家店铺配一个面向客户的 bot,它会根据你上传的价目表、店铺规定和商品信息
   来回答问题。
@@ -124,7 +124,7 @@ https://deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel
 想出来的密码更好。
 
 把那串密钥复制下来,存在你放其他密码的地方。然后打开
-[app.muxel.site](https://app.muxel.site),把 Worker 的地址粘进去,再把密钥粘进去。
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/),把 Worker 的地址粘进去,再把密钥粘进去。
 这个 console 就是你的私人控制面板。在里面添加一家店铺,它会问你店铺叫什么名字。
 
 那个页面由我们的域名提供,但它不保存你的任何东西。它必须问你要地址,因为它
@@ -313,7 +313,7 @@ token,免得那个控制面板悄悄变成客户的聊天窗口。
 ## console 里有什么
 
 设置完成之后,所有操作都在 console 里通过按钮完成:在浏览器里打开
-[app.muxel.site](https://app.muxel.site),加过 console bot 的话在那里也一样。
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/),加过 console bot 的话在那里也一样。
 
 | 页面 | 里面有什么 |
 | --- | --- |

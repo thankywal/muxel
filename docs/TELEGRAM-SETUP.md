@@ -52,7 +52,7 @@ When it finishes, open the page Cloudflare shows you. If it says your code copy 
 
 That page also shows your console key, a long random string your deployment made for itself. Copy it and keep it safe: the page stops showing it once you have signed in.
 
-Copy the address of that page too. Then open https://app.muxel.site, paste the address in, and paste the key. That is your console.
+Copy the address of that page too. Then open https://thankywal.github.io/muxel/, paste the address in, and paste the key. That is your console.
 
 It will ask you to add a business. Give it the name of your shop.
 
@@ -99,7 +99,7 @@ Form မှာ:
 
 အဲဒီ စာမျက်နှာမှာ သင့် console key ကိုပါ ပြပါလိမ့်မယ်။ deployment ကိုယ်တိုင် ဆောက်ထားတဲ့ ကျပန်း စာလုံးရှည်တစ်ခုပါ။ ကူးယူပြီး သေချာသိမ်းထားပါ။ တစ်ခါ ဝင်ပြီးရင် အဲဒီစာမျက်နှာက ပြတော့မှာ မဟုတ်ပါဘူး။
 
-စာမျက်နှာရဲ့ လိပ်စာကိုလည်း ကူးယူပါ။ ပြီးရင် https://app.muxel.site ကို ဖွင့်ပြီး လိပ်စာနဲ့ key ကို ကူးထည့်ပါ။ အဲဒါ သင့် console ပါ။
+စာမျက်နှာရဲ့ လိပ်စာကိုလည်း ကူးယူပါ။ ပြီးရင် https://thankywal.github.io/muxel/ ကို ဖွင့်ပြီး လိပ်စာနဲ့ key ကို ကူးထည့်ပါ။ အဲဒါ သင့် console ပါ။
 
 Business တစ်ခု ထည့်ဖို့ တောင်းပါလိမ့်မယ်။ သင့်ဆိုင်နာမည်ကို ပေးလိုက်ပါ။
 
@@ -146,7 +146,7 @@ Cloudflare จะให้คุณเข้าสู่ระบบ เชื�
 
 หน้านั้นจะแสดงรหัสคอนโซลของคุณด้วย เป็นสตริงสุ่มยาว ๆ ที่ deployment สร้างขึ้นเอง คัดลอกไว้และเก็บให้ดี เพราะหน้านั้นจะหยุดแสดงเมื่อคุณเข้าสู่ระบบครั้งแรกแล้ว
 
-คัดลอกที่อยู่ของหน้านั้นไว้ด้วย แล้วเปิด https://app.muxel.site วางที่อยู่ลงไป และวางรหัสนั้น นั่นคือคอนโซลของคุณ
+คัดลอกที่อยู่ของหน้านั้นไว้ด้วย แล้วเปิด https://thankywal.github.io/muxel/ วางที่อยู่ลงไป และวางรหัสนั้น นั่นคือคอนโซลของคุณ
 
 ระบบจะให้คุณเพิ่มธุรกิจ ใส่ชื่อร้านของคุณลงไป
 
@@ -193,7 +193,7 @@ Cloudflare 会让你登录、连接 GitHub，并安装它的 GitHub 应用。请
 
 那个页面上还会显示你的控制台密钥，是你的部署自己生成的一串长随机字符。复制下来好好保存：你第一次登录之后，那个页面就不再显示它了。
 
-把那个页面的地址也复制下来。然后打开 https://app.muxel.site，把地址粘贴进去，再把密钥粘贴进去。那就是你的控制台。
+把那个页面的地址也复制下来。然后打开 https://thankywal.github.io/muxel/，把地址粘贴进去，再把密钥粘贴进去。那就是你的控制台。
 
 它会让你添加一个商家，填你的店名就行。
 
@@ -240,7 +240,7 @@ Cloudflare がログイン、GitHub の連携、そして GitHub アプリのイ
 
 そのページには、deployment が自分で作った長いランダムなコンソールキーも表示されます。コピーして大切に保管してください。一度サインインすると、そのページはもう表示しなくなります。
 
-そのページのアドレスもコピーします。次に https://app.muxel.site を開き、アドレスとキーを貼り付けてください。それがあなたのコンソールです。
+そのページのアドレスもコピーします。次に https://thankywal.github.io/muxel/ を開き、アドレスとキーを貼り付けてください。それがあなたのコンソールです。
 
 ビジネスの追加を求められます。お店の名前を入れてください。
 

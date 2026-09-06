@@ -133,7 +133,7 @@ async function attemptSetup(target) {
       done: true,
       note:
         bot === undefined
-          ? "Setup complete. Open app.muxel.site, paste this address, and enter your console key."
+          ? "Setup complete. Open thankywal.github.io/muxel, paste this address, and enter your console key."
           : `Setup complete. Open @${bot} in Telegram and send /start.`,
     };
   }

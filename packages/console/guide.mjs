@@ -175,7 +175,7 @@ export function renderGuide({ markdown, key = "en" }) {
 <header>
   <a class="brand" href="/docs"><img src="/assets/logo.png" alt=""> Muxel</a>
   <nav class="lang" aria-label="Language">${languages}</nav>
-  <span class="links"><a href="/console/">Console</a><a href="${REPO}" rel="noopener" target="_blank">GitHub</a></span>
+  <span class="links"><a href="/">Console</a><a href="${REPO}" rel="noopener" target="_blank">GitHub</a></span>
 </header>
 <div class="wrap">
   <aside><h3>On this page</h3><ul>${nav}</ul></aside>

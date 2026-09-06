@@ -4,7 +4,7 @@
  * The console's footer said "Docs" and sent people to the product page, which
  * has no docs on it. There is a guide — the README, in five languages, held to
  * the deploy form by other tests — and it was only on GitHub. Rather than a
- * second guide that would drift from the first, app.muxel.site/docs renders
+ * second guide that would drift from the first, the site's /docs renders
  * the first. These hold the render to the README, and the links to the render.
  */
 import { describe, expect, it } from "vitest";
@@ -97,7 +97,7 @@ describe("the render of the README", () => {
     expect(rewriteHref("LICENSE")).toBe("https://github.com/thankywal/muxel/blob/main/LICENSE");
     expect(rewriteHref("SECURITY.md")).toBe("https://github.com/thankywal/muxel/blob/main/SECURITY.md");
     // Absolute and in-page links are not touched.
-    expect(rewriteHref("https://app.muxel.site")).toBe("https://app.muxel.site");
+    expect(rewriteHref("https://example.com")).toBe("https://example.com");
     expect(rewriteHref("#the-console")).toBe("#the-console");
     for (const target of ["/docs/my", "/docs/th", "/docs/ja", "/docs/zh", "/docs/deploy-recovery", "/docs/telegram-setup"]) {
       expect(html).toContain(`href="${target}"`);

@@ -13,6 +13,8 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+
+import { CONSOLE_HOME, CONSOLE_URL } from "@muxel/core";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 // @ts-expect-error the build is plain JavaScript, typed by nothing.
@@ -53,18 +55,28 @@ describe("where the site thinks it lives", () => {
     expect(withBase('href="/docs"', "/", roots)).toBe('href="/docs"');
   });
 
+  it("moves a link to the top of the site, which has no name to recognise it by", () => {
+    const roots = new Set(["docs"]);
+    expect(withBase('href="/"', BASE, roots)).toBe('href="/muxel/"');
+    // Only in an attribute. A lone slash in code is every split and every join.
+    expect(withBase('parts.join("/")', BASE, roots)).toBe('parts.join("/")');
+  });
+
   it("finds a URL that was left at the root", () => {
     const roots = new Set(["notice.json"]);
     expect(missedRoots('fetch("/notice.json")', roots)).toEqual(["notice.json"]);
     expect(missedRoots('fetch("/muxel/notice.json")', roots)).toEqual([]);
+    expect(missedRoots('href="/"', roots)).toEqual(['href="/"']);
   });
 });
 
 describe("what the build writes", () => {
   it("has the product page, the console and the guide in every language", () => {
     const expected = [
+      // The console is the site: it used to be chosen by hostname, and the
+      // domain that chose it is going to another project.
       "index.html",
-      "console/index.html",
+      "product/index.html",
       "docs/index.html",
       ...Object.keys(LANGS as Record<string, string>)
         .filter((key) => key !== "en")
@@ -86,7 +98,8 @@ describe("what the build writes", () => {
   });
 
   it("answers an unknown path with the page that says what this is", () => {
-    expect(file("404.html")).toBe(file("index.html"));
+    // Not the console, which would only ask a lost stranger for an address.
+    expect(file("404.html")).toBe(file("product/index.html"));
   });
 
   it("keeps Jekyll from taking a turn at it", () => {
@@ -114,15 +127,18 @@ describe("every link the site makes to itself", () => {
   });
 
   it("sends the product page to the console and the guide on this site", () => {
-    const index = file("index.html");
-    expect(index).toContain('href="/muxel/console/"');
-    expect(index).toContain('href="/muxel/docs"');
+    const product = file("product/index.html");
+    expect(product).toContain('href="/muxel/"');
+    expect(product).toContain('href="/muxel/docs"');
     // The console used to be a hostname away, on a machine of ours.
-    expect(index).not.toContain("app.muxel.site");
+    expect(product).not.toContain("app.muxel.site");
   });
 
-  it("sends the console's footer to the guide", () => {
-    expect(file("app.js")).toMatch(/href="\/muxel\/docs"[^>]*>Docs</);
+  it("sends the console's footer to the guide and to the product page", () => {
+    const app = file("app.js");
+    expect(app).toMatch(/href="\/muxel\/docs"[^>]*>Docs</);
+    // So the page that says what this is has somewhere to be reached from.
+    expect(app).toContain('href="/muxel/product/"');
   });
 
   it("sends the guide's own header to the console and to GitHub", () => {
@@ -130,7 +146,7 @@ describe("every link the site makes to itself", () => {
     // The header only: the README's own prose is rendered below it verbatim,
     // and what it says is the README's business, not this page's.
     const header = guide.slice(guide.indexOf("<header>"), guide.indexOf("</header>"));
-    expect(header).toContain('href="/muxel/console/"');
+    expect(header).toContain('href="/muxel/"');
     expect(header).toContain("https://github.com/thankywal/muxel");
     expect(header).not.toContain("app.muxel.site");
   });
@@ -148,5 +164,61 @@ describe("the guide is the README", () => {
     expect(file("docs/index.html")).toContain(
       "deploy.workers.cloudflare.com/?url=https://github.com/thankywal/muxel",
     );
+  });
+});
+
+/**
+ * The address every document sends a new owner to.
+ *
+ * It was app.muxel.site, typed out in seventeen places and in five languages,
+ * and the domain it belongs to is going to another project. The programs that
+ * name it now read it from one record. These hold the files that cannot import
+ * anything — the READMEs, the deploy scripts, the console's own HTML — to the
+ * same value, because a document that sends an owner somewhere empty is worse
+ * than one that says nothing.
+ */
+describe("the address the console is published at", () => {
+  const repo = (name: string): string =>
+    readFileSync(new URL(`../../../${name}`, import.meta.url), "utf8");
+
+  const DOCUMENTS = [
+    "README.md",
+    "README.my.md",
+    "README.th.md",
+    "README.ja.md",
+    "README.zh.md",
+    "docs/DEPLOY-RECOVERY.md",
+    "docs/TELEGRAM-SETUP.md",
+    "packages/console/README.md",
+    "scripts/install.mjs",
+    "scripts/deploy.mjs",
+  ];
+
+  it("is one value, and it is where the site is published", () => {
+    expect(CONSOLE_URL).toBe(`https://${CONSOLE_HOME}/`);
+    expect(CONSOLE_HOME).toBe("thankywal.github.io/muxel");
+  });
+
+  it("is what every file that cannot import it says", () => {
+    for (const name of DOCUMENTS) {
+      const text = repo(name);
+      expect(text, `${name} does not name the console`).toContain(CONSOLE_HOME);
+      expect(text, `${name} still sends people to the old address`).not.toContain("app.muxel.site");
+    }
+  });
+
+  it("is what the deployment's own first screen says, from the record", () => {
+    // Read off the source rather than the rendered page: the point is that the
+    // page has no address of its own to drift.
+    const setup = repo("packages/runtime/src/setup.ts");
+    expect(setup).toContain("${CONSOLE_HOME}");
+    expect(setup).not.toContain("app.muxel.site");
+  });
+
+  it("is a variable in the translations, not four copies of a string", () => {
+    const i18n = repo("packages/runtime/src/telegram/i18n.ts");
+    expect(i18n).toContain("{console}");
+    expect(i18n).not.toContain("app.muxel.site");
+    expect(repo("packages/runtime/src/telegram/admin.ts")).toContain("{ console: CONSOLE_HOME }");
   });
 });
