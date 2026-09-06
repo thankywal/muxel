@@ -443,6 +443,7 @@ function shell() {
         <span class="grow"></span>
         <a href="https://github.com/thankywal/muxel" target="_blank" rel="noopener">GitHub</a>
         <a href="/docs" target="_blank" rel="noopener">Docs</a>
+        <a href="/product/" target="_blank" rel="noopener">What Muxel is</a>
       </footer>`
       }
     </main>

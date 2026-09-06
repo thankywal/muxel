@@ -126,11 +126,13 @@ export const STRINGS = {
     zh: "在电脑上打开控制台",
     my: "ကွန်ပျူတာမှာ console ဖွင့်ရန်",
   },
+  // The address is a variable, not four copies of a string: it is decided in
+  // one place and this table is the last thing that should have an opinion.
   webConBody: {
-    en: "Go to app.muxel.site, paste your deployment address, then type this code.",
-    th: "ไปที่ app.muxel.site ใส่ที่อยู่ระบบของคุณ แล้วพิมพ์รหัสนี้",
-    zh: "打开 app.muxel.site，填入你的部署地址，然后输入此代码。",
-    my: "app.muxel.site ကို ဖွင့်ပြီး သင့် deployment လိပ်စာ ထည့်၊ ပြီးရင် ဤကုဒ်ကို ရိုက်ထည့်ပါ။",
+    en: "Go to {console}, paste your deployment address, then type this code.",
+    th: "ไปที่ {console} ใส่ที่อยู่ระบบของคุณ แล้วพิมพ์รหัสนี้",
+    zh: "打开 {console}，填入你的部署地址，然后输入此代码。",
+    my: "{console} ကို ဖွင့်ပြီး သင့် deployment လိပ်စာ ထည့်၊ ပြီးရင် ဤကုဒ်ကို ရိုက်ထည့်ပါ။",
   },
   webConExpiry: {
     en: "It works once, for ten minutes.",

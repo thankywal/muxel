@@ -53,8 +53,11 @@ describe("the notice", () => {
   });
 
   it("is deployed with the console", () => {
-    expect(readFileSync(new URL("../../console/deploy.sh", import.meta.url), "utf8"))
-      .toContain('"$HERE/public/"*.json');
+    // The build copies the console's directory whole rather than naming the
+    // files in it, so a file the console fetches cannot be left behind by
+    // somebody forgetting to add it to a list.
+    expect(readFileSync(new URL("../../../scripts/build-site.mjs", import.meta.url), "utf8"))
+      .toContain("for (const name of await readdir(publicDir))");
   });
 });
 

@@ -42,7 +42,7 @@ Muxel server မရှိ၊ Muxel database မရှိ၊ Muxel account လည
 ## ဘာလုပ်ပေးသလဲ
 
 * ခလုတ်များဖြင့်သာ လုံးဝ အသုံးပြုနိုင်သော console တစ်ခု ပါဝင်ပါသည်။ browser ထဲတွင်
-  [app.muxel.site](https://app.muxel.site) မှ ဖွင့်နိုင်ပြီး လိုချင်ပါက Telegram bot
+  [thankywal.github.io/muxel](https://thankywal.github.io/muxel/) မှ ဖွင့်နိုင်ပြီး လိုချင်ပါက Telegram bot
   အဖြစ်လည်း ထပ်ထည့်နိုင်ပါသည်။ နှစ်မျိုးစလုံးတွင် setup ပြီးနောက် dashboard သို့မဟုတ်
   configuration file များကို ကိုင်တွယ်စရာ မလိုတော့ပါ။
 * လုပ်ငန်းတစ်ခုစီအတွက် customer bot တစ်ခုစီ ရှိပြီး သင် upload တင်ထားသော
@@ -148,7 +148,7 @@ password သည် အရာဝတ္ထုကို မမြင်ရသေး
 သောကြောင့် ဖြစ်သည်။
 
 ထို key ကို ကူးယူပြီး သင့်အခြား password များ ထားသည့်နေရာတွင် သိမ်းထားပါ။ ထို့နောက်
-[app.muxel.site](https://app.muxel.site) ကို ဖွင့်၍ သင့် Worker လိပ်စာကို ကူးထည့်ကာ
+[thankywal.github.io/muxel](https://thankywal.github.io/muxel/) ကို ဖွင့်၍ သင့် Worker လိပ်စာကို ကူးထည့်ကာ
 key ကို ကူးထည့်ပါ။ ထို console သည် သင့်ကိုယ်ပိုင် ထိန်းချုပ်ရာ နေရာ ဖြစ်ပါသည်။ ထိုနေရာတွင်
 လုပ်ငန်းတစ်ခု ထည့်လိုက်လျှင် လုပ်ငန်း၏ အမည်ကို တောင်းပါလိမ့်မည်။
 
@@ -370,7 +370,7 @@ web console တွင် လုပ်ငန်းတစ်ခုကို အမ
 ## console
 
 setup ပြီးနောက် လုပ်ဆောင်ရသမျှ အားလုံးကို console ထဲတွင် ခလုတ်များဖြင့်သာ လုပ်ရပါသည်။
-browser ထဲက [app.muxel.site](https://app.muxel.site) တွင်လည်းကောင်း၊ console bot
+browser ထဲက [thankywal.github.io/muxel](https://thankywal.github.io/muxel/) တွင်လည်းကောင်း၊ console bot
 ထည့်ထားပါက ထိုနေရာတွင်လည်းကောင်း ဖြစ်ပါသည်။
 
 | ဖန်သားပြင် | ဘာတွေ ပါဝင်သလဲ |

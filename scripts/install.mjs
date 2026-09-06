@@ -295,7 +295,7 @@ if (health.status === 200) {
   await get("/setup");
   console.log(`Muxel is running at ${url}`);
   if (consoleKey) {
-    console.log(`Open app.muxel.site, paste ${url}, and enter your console key.`);
+    console.log(`Open thankywal.github.io/muxel, paste ${url}, and enter your console key.`);
   }
   if (adminBotToken && ownerTelegramId) {
     console.log("Open your console bot in Telegram and send /start.");
@@ -317,7 +317,7 @@ if (health.status === 200) {
       "",
       "Open the address above in a browser. A deployment issues itself a console",
       "key on its first run and that page prints it, until the first time somebody",
-      "signs in; take it to app.muxel.site along with the address. To choose your",
+      "signs in; take it to thankywal.github.io/muxel along with the address. To choose your",
       "own key instead, set CONSOLE_KEY in the dashboard under Settings, Variables",
       "and Secrets, at least 16 characters.",
       "",

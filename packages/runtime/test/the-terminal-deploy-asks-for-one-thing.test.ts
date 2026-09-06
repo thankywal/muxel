@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { isMuxelError } from "@muxel/core";
+import { CONSOLE_HOME, isMuxelError } from "@muxel/core";
 
 import { consoleDoors, secretsFor, type ConsoleDoors } from "../../cli/src/commands/init.js";
 import { CONSOLE_KEY_MIN_LENGTH } from "../src/env.js";
@@ -165,7 +165,7 @@ describe("what the recovery document tells somebody who is locked out", () => {
 
   it("answers with the setting they can change, not an install they must redo", () => {
     expect(lockedOut()).toContain("CONSOLE_KEY");
-    expect(lockedOut()).toContain("app.muxel.site");
+    expect(lockedOut()).toContain(CONSOLE_HOME);
     // The length the Worker enforces, read off the Worker rather than typed
     // here, so the document cannot drift away from the rule it describes.
     expect(lockedOut()).toContain(String(CONSOLE_KEY_MIN_LENGTH));

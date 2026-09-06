@@ -1,23 +1,21 @@
 #!/bin/bash
-# Copies the console from this repository onto the host that serves it.
+# Copies the built site onto a host that serves it with the file server here.
 #
-# The repository is the source of truth and this is the only direction, so the
-# two copies cannot drift into disagreeing with each other.
+# GitHub Pages is the site's home and builds it itself; this is for a host that
+# is not Pages. Both serve what scripts/build-site.mjs writes, so there is one
+# site and two places it can be put, rather than two sites.
 set -euo pipefail
 TARGET="${1:-/opt/muxel-console}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-
 ROOT="$(cd "$HERE/../.." && pwd)"
 
-mkdir -p "$TARGET/public/assets" "$TARGET/public/docs/media" "$TARGET/guide"
-cp "$HERE/server.mjs" "$HERE/guide.mjs" "$HERE/package.json" "$TARGET/"
-cp "$HERE/public/"*.html "$HERE/public/"*.css "$HERE/public/"*.js "$HERE/public/"*.json "$TARGET/public/"
-cp "$HERE/public/assets/"* "$TARGET/public/assets/"
-# The guide is the README, so the README travels with the console: all five
-# languages, the two documents it links to, and the images all of them show.
-cp "$ROOT"/README.md "$ROOT"/README.*.md "$TARGET/guide/"
-cp "$ROOT/docs/DEPLOY-RECOVERY.md" "$ROOT/docs/TELEGRAM-SETUP.md" "$TARGET/guide/"
-cp "$ROOT/docs/media/"* "$TARGET/public/docs/media/"
+# Served at the root here, so the site is built to think it lives there.
+SITE_BASE=/ node "$ROOT/scripts/build-site.mjs"
+
+mkdir -p "$TARGET"
+rm -rf "$TARGET/site"
+cp -r "$ROOT/site" "$TARGET/site"
+cp "$HERE/server.mjs" "$HERE/package.json" "$TARGET/"
 
 cd "$TARGET"
 npm install --omit=dev --silent

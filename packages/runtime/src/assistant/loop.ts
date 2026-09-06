@@ -10,6 +10,7 @@
  * tool added later cannot arrive without one. See assistant/tools.ts.
  */
 
+import { CONSOLE_HOME } from "@muxel/core";
 import { converse, type ChatMessage } from "../ai/gateway.js";
 import type { Env } from "../env.js";
 import { listBusinesses } from "../db/queries.js";
@@ -49,7 +50,7 @@ function aboutMuxel(): string {
   "Muxel answers an owner's customers on Telegram and through a chat widget on their website. It",
   "runs entirely inside the owner's own Cloudflare account — Workers, D1, KV and Vectorize — which",
   "is why there is no Muxel account to sign up for and no server of ours between a customer and",
-  "their data. The console at app.muxel.site is a page of files; it talks to the owner's own",
+  `their data. The console at ${CONSOLE_HOME} is a page of files; it talks to the owner's own`,
   "deployment directly from their browser.",
   "",
   "A business is one agent: one set of material, one voice, and the channels it answers on. It",
