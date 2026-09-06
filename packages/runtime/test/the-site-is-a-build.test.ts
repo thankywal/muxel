@@ -94,7 +94,7 @@ describe("what the build writes", () => {
     expect(() => file("app.css")).not.toThrow();
     expect(() => file("assets/logo.png")).not.toThrow();
     // The README's pictures, where the rendered README looks for them.
-    expect(() => file("docs/media/assistant.webp")).not.toThrow();
+    expect(() => file("docs/media/your-own-console.webp")).not.toThrow();
   });
 
   it("answers an unknown path with the page that says what this is", () => {
