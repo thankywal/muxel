@@ -12,12 +12,13 @@ of ours.
 
 <p align="center">
   <img src="docs/media/answers-your-customers.webp" width="820"
-       alt="A coffee shop's own website with the Muxel chat bubble open, answering a customer's question about a price from the shop's own list.">
+       alt="A coffee shop's own website with the Muxel chat open: a customer asks what a flat white costs, and the answer, 5.50, arrives beside the shop's own menu on the same page.">
 </p>
 
-<p align="center"><em>A customer asks the shop's own website a question, and is answered from
-the shop's own price list. No page of ours is in that picture: the widget is one script tag on
-a site that is not ours, talking to a Worker in an account that is not ours either.</em></p>
+<p align="center"><em>One run of the product, recorded end to end. A customer asks the shop's own website a
+question and is answered from the shop's own price list — the same 5.50 printed on the menu
+behind the chat. No page of ours is in that picture: the widget is one script tag on a site that
+is not ours, talking to a Worker in an account that is not ours either.</em></p>
 
 New here? Read [Before you start](#before-you-start) first. It is two free
 accounts and about ten minutes, with nothing to invent and nothing to type. No
@@ -35,13 +36,14 @@ you control.
 
 | | |
 | --- | --- |
-| <img src="docs/media/assistant.webp" alt="The console's chat answering a question, with the tools it used as pills under the answer"> | <img src="docs/media/telegram.webp" alt="A customer asking a Muxel Telegram bot whether the shop delivers"> |
-| **Your own agent, over your own business.** It reads every business, price list, rule and conversation, and proposes changes it cannot make. Every write is a card you tap Yes on, and the tools it used are listed under what it said. | **And on Telegram.** The same agent, the same knowledge, a different door — optional, and addable at any time. |
-| <img src="docs/media/your-keys.webp" alt="The console's settings screen showing which key is stored, masked, never the key itself"> | |
-| **Every key stays yours.** GitHub and Cloudflare — each sealed in your own KV with your deployment's own master key, and shown back as its first and last four so you know which key it is. | |
+| <img src="docs/media/your-own-console.webp" alt="The console's screen for that shop, counting six messages answered today, thirteen customers, thirteen priced items and five documents."> | <img src="docs/media/the-price-it-answered-from.webp" alt="The price list tab, thirteen drinks with their prices, Flat White at 5.50 among them, each row marked as typed in by the owner."> |
+| **Your own console, over your own deployment.** The six messages it counts are the ones from the picture above. Nothing was arranged for the screenshot: the deployment answered, and the console is reading it back. | **The list the answer came from.** Every line is the owner's own, typed in or read out of a document they uploaded. The agent quotes it. It does not invent it. |
+| <img src="docs/media/what-it-could-not-answer.webp" alt="The console's message view showing that same conversation, ending with the agent saying it does not have the opening hours and is passing the question to a person, above a Take over button."> | |
+| **And when it does not know.** Asked for Sunday opening hours, which are in none of the shop's documents, it says so and hands the question to a person. The owner sees the whole thread and can take it over mid-conversation. | |
 
-Every screen above is the product running, not a mock-up. The console is served from this
-repository and drawn by its own CSS; the widget is on an ordinary website that is not ours.
+All four pictures are frames of that one run: the widget on an ordinary page carrying nothing
+but the script tag the console generated, a deployment in an ordinary Cloudflare account, and the
+console as this repository publishes it. Nothing here is a mock-up and nothing was staged.
 
 ## What it does
 
