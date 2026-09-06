@@ -1,0 +1,69 @@
+# The site, served by GitHub Pages.
+#
+# It used to be an express process on a VPS. Everything it did that needed a
+# process — rendering the README into the guide — happens here instead, at
+# build time, and what is served is files. Nothing of an owner's passes through
+# it either way: the console is a page that talks to the owner's own Worker
+# directly, so this is a static host and that is all it needs to be.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and never cancel one halfway: a cancelled deploy leaves
+# the site as it was, but a queued one is worth waiting for.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The console is outside the workspace, so its one dependency — the
+      # markdown renderer the guide is built with — is installed on its own.
+      - name: Install the console's own dependencies
+        run: npm --prefix packages/console install --omit=dev --no-package-lock
+
+      # Turns Pages on the first time this runs, and reports where the site
+      # will live. A project site sits under /<repo>/ and a custom domain sits
+      # at the root; base_path is that difference, from GitHub rather than
+      # guessed here, so adding a domain later changes nothing in this file.
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Build the site
+        run: node scripts/build-site.mjs
+        env:
+          SITE_BASE: ${{ steps.pages.outputs.base_path }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

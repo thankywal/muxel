@@ -11,9 +11,8 @@
 # itself, and shows it to you on its own front page the first time you open it.
 #
 # Everything Muxel can be given — a console bot in Telegram, a key for a model
-# from another provider, live web search, reading a document as data — is added
-# afterwards, from the Worker's own Settings, Variables and Secrets, by someone
-# who by then knows what it is for.
+# from another provider — is added afterwards, from the Worker's own Settings,
+# Variables and Secrets, by someone who by then knows what it is for.
 #
 # Copy this file to .dev.vars for local development. Never commit real values:
 # .dev.vars is ignored by git for that reason.

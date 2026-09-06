@@ -29,19 +29,20 @@ describe("the links that promise a guide", () => {
 
   it("send the product page's guide link there too", () => {
     const index = consoleFile("public/index.html");
-    expect(index).toContain('href="https://app.muxel.site/docs"');
+    // On this site, now that the site is one build rather than two hosts.
+    expect(index).toContain('href="/docs"');
     expect(index).not.toContain("docs/TELEGRAM-SETUP.md");
   });
 
-  it("are served by the console, which reads the README beside it", () => {
-    const server = consoleFile("server.mjs");
-    expect(server).toContain('"/docs/:key"');
-    expect(server).toContain('import { fileFor, renderGuide } from "./guide.mjs"');
-    // deploy.sh carries what the render needs, or the route reads nothing.
-    const deploy = consoleFile("deploy.sh");
-    for (const needed of ['"$HERE/guide.mjs"', "README.md", "README.*.md", "DEPLOY-RECOVERY.md", "TELEGRAM-SETUP.md", "docs/media/"]) {
-      expect(deploy, `deploy.sh does not carry ${needed}`).toContain(needed);
-    }
+  it("are written by the build, which reads the READMEs of the repository", () => {
+    const build = readFileSync(new URL("../../../scripts/build-site.mjs", import.meta.url), "utf8");
+    expect(build).toContain('from "../packages/console/guide.mjs"');
+    // Every language and both documents, from the lists rather than a copy of
+    // them, so a language added to the guide cannot be left out of the site.
+    expect(build).toContain("[...Object.keys(LANGS), ...Object.keys(PAGES)]");
+    expect(build).toContain("renderGuide({ markdown, key })");
+    // The pictures the READMEs show, where the rendered README looks for them.
+    expect(build).toContain('path.join(ROOT, "docs/media")');
   });
 });
 
