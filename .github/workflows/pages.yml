@@ -28,11 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      # Node and nothing else. This job never installs the workspace, so it has
+      # no pnpm store of its own, and asking setup-node to cache one failed the
+      # build whenever no other run had left one behind: after a quiet week, or
+      # a new lockfile. Each time the site was built and uploaded, and then not
+      # published.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       # The console is outside the workspace, so its one dependency — the
       # markdown renderer the guide is built with — is installed on its own.
