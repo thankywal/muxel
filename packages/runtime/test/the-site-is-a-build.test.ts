@@ -113,6 +113,20 @@ describe("what the build writes", () => {
     expect(shop).not.toContain("/assets/logo.png");
   });
 
+  it("says so when the assistant it demonstrates does not load", () => {
+    // The deployment behind this page lost its database, and for over a month
+    // the page showed an empty corner under a line telling people to open the
+    // chat in it. A page that is real rather than recorded can be down; what it
+    // must not do is be down in silence.
+    const shop = file("try/index.html");
+    expect(shop).toMatch(/<p class="down" id="down"[^>]*\bhidden>/);
+    const listening = shop.indexOf('addEventListener("error"');
+    const widget = shop.search(/<script src="https:\/\/[^"]+\/w\/[^"]+\/widget\.js"><\/script>/);
+    expect(listening, "nothing listens for the widget failing to load").toBeGreaterThan(-1);
+    // A script that fails to load says so once, to whoever is already listening.
+    expect(listening, "the listener is added after the tag it listens for").toBeLessThan(widget);
+  });
+
   it("is where the front pages send somebody who has not decided yet", () => {
     for (const name of ["README.md", "README.my.md", "README.th.md", "README.ja.md", "README.zh.md"]) {
       const text = readFileSync(new URL(`../../../${name}`, import.meta.url), "utf8");
