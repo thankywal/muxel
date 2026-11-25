@@ -479,6 +479,11 @@ export function renderSetupPage(outcome: SetupOutcome): string {
   // console key and no bot is set up, not half built, and a page that read
   // otherwise would send its owner looking for a bot nobody asked them for.
   const telegram = bot !== "";
+  // Whether there is an owner, never who. This page answers anyone who has the
+  // address, and it used to print the owner's Telegram id to all of them: a
+  // number that names a person's own account, which nobody setting up the
+  // deployment needs read back to them and nobody else should be handed.
+  const owner = outcome.owner !== null ? "set" : "not set";
   const body = outcome.ok
     ? `
       <p class="ok">Your console is connected.</p>
@@ -487,7 +492,7 @@ export function renderSetupPage(outcome: SetupOutcome): string {
         ${
           telegram
             ? `<dt>Console bot</dt><dd>@${bot}</dd>
-        <dt>Owner</dt><dd>Telegram id ${outcome.owner}</dd>`
+        <dt>Owner</dt><dd>${owner}</dd>`
             : `<dt>Console bot</dt><dd>none</dd>`
         }
       </dl>

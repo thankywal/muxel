@@ -38,6 +38,48 @@ function html(body: string, status = 200): Response {
   });
 }
 
+/**
+ * Whether the database answers the cheapest question there is.
+ *
+ * Cheap on purpose: /health is asked by every console that opens and by every
+ * deploy, and it has to stay something anyone can ask without thinking.
+ */
+async function databaseAnswers(env: Env): Promise<boolean> {
+  try {
+    await env.DB.prepare("SELECT 1").first();
+    return true;
+  } catch (error) {
+    console.error("health: the database did not answer", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+/**
+ * The answer when a request fails on its way in, which in practice means the
+ * database it needs is not there.
+ *
+ * The failure used to escape as Cloudflare's error 1101: a plain text page with
+ * no cross origin headers, which a browser will not hand to a script at all. A
+ * shop's chat bubble simply never appeared, and the console had nothing it
+ * could show. The reason goes to the log, where the owner can read it. The
+ * response says only that the deployment cannot answer, because anyone can ask.
+ */
+function unavailable(door: string, error: unknown, cors: Readonly<Record<string, string>>): Response {
+  console.error(`${door} request failed`, {
+    code: isMuxelError(error) ? error.code : "unknown",
+    error: error instanceof Error ? error.message : String(error),
+  });
+  return new Response(
+    JSON.stringify({ error: "unavailable", message: "This deployment cannot answer right now." }),
+    {
+      status: 503,
+      headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...cors },
+    },
+  );
+}
+
 import { handleConsoleApi } from "./web/console-api.js";
 import { CORS, handleConsoleRequest } from "./web/console.js";
 
@@ -53,14 +95,20 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
       const missing = missingConfiguration(env);
       const configured = (await peekMasterKey(env)) !== null;
+      // Asked of the database itself, because nothing else here can tell. The
+      // master key lives in KV, so a deployment whose database had been deleted
+      // went on reporting ready for over a month while every chat bubble and
+      // every console call it served failed. Only asked once nothing is
+      // missing: a binding that is not there cannot be asked anything.
+      const reachable = missing.length > 0 || (await databaseAnswers(env));
       return new Response(
         JSON.stringify({
           service: "muxel",
-          status: missing.length > 0 ? "not_configured" : configured ? "ready" : "awaiting_setup",
+          status: missing.length > 0 ? "not_configured" : !reachable ? "database_unavailable" : configured ? "ready" : "awaiting_setup",
           missing,
         }),
         {
-          status: missing.length === 0 ? 200 : 503,
+          status: missing.length === 0 && reachable ? 200 : 503,
           headers: { "content-type": "application/json; charset=utf-8", ...CORS },
         },
       );
@@ -94,23 +142,36 @@ export default {
     // The web console. Bearer authenticated against a code the owner got from
     // the console bot, so the same operator checks apply as on Telegram.
     if (url.pathname.startsWith("/admin/")) {
-      await ensureSchema(env);
-      const rest = url.pathname.slice("/admin".length);
-      // The data API the web console lays out for itself, checked first so a
-      // path under it never falls through to the screen renderer.
-      if (rest.startsWith("/api/")) {
-        const answered = await handleConsoleApi(env, request, rest.slice("/api".length), (work) => ctx.waitUntil(work));
-        if (answered !== null) return answered;
+      // Every preflight under here was already answered this way, by both
+      // handlers below, but only after the schema check. Answered first, a
+      // console can still read why its real request failed while the database
+      // is unreachable, instead of seeing a refused preflight and nothing else.
+      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+      try {
+        await ensureSchema(env);
+        const rest = url.pathname.slice("/admin".length);
+        // The data API the web console lays out for itself, checked first so a
+        // path under it never falls through to the screen renderer.
+        if (rest.startsWith("/api/")) {
+          const answered = await handleConsoleApi(env, request, rest.slice("/api".length), (work) => ctx.waitUntil(work));
+          if (answered !== null) return answered;
+        }
+        const handled = await handleConsoleRequest(env, request, rest);
+        if (handled !== null) return handled;
+      } catch (error) {
+        return unavailable("console", error, CORS);
       }
-      const handled = await handleConsoleRequest(env, request, rest);
-      if (handled !== null) return handled;
     }
 
     // The website channel. Public by nature, so it validates the origin and
     // the daily allowance itself rather than relying on a secret path.
     if (url.pathname.startsWith("/w/")) {
-      await ensureSchema(env);
-      return handleWebRequest(request, env, ctx, url.pathname.slice("/w/".length));
+      try {
+        await ensureSchema(env);
+        return await handleWebRequest(request, env, ctx, url.pathname.slice("/w/".length));
+      } catch (error) {
+        return unavailable("website", error, { "access-control-allow-origin": "*" });
+      }
     }
 
     if (request.method === "POST" && url.pathname.startsWith("/tg/")) {
